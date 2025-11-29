@@ -326,15 +326,7 @@ body {
   background: none;
 }
 
-.response-meta {
-  display: flex;
-  gap: 1rem;
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border-color);
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
+/* Response Meta - moved to Phase 2 section */
 
 /* Empty State */
 .empty-state {
@@ -526,18 +518,17 @@ body {
 .response-meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 1rem;
   padding: 0.75rem 0;
   margin-top: 1rem;
   border-top: 1px solid var(--border-color);
   font-size: 0.75rem;
   color: var(--text-muted);
-  opacity: 0;
-  transition: opacity 0.3s;
 }
 
-.response-meta.visible {
-  opacity: 1;
+.response-meta:empty {
+  display: none;
 }
 
 .meta-item {
