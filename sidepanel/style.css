@@ -126,6 +126,35 @@ body {
   color: var(--text-muted);
 }
 
+.image-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.image-toggle:hover {
+  border-color: var(--border-active);
+  color: var(--text-secondary);
+}
+
+.image-toggle input {
+  display: none;
+}
+
+.image-toggle:has(input:checked) {
+  background: linear-gradient(135deg, #ec4899, #8b5cf6);
+  border-color: transparent;
+  color: white;
+}
+
 .btn-send {
   display: flex;
   align-items: center;
@@ -1086,5 +1115,160 @@ body {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
   }
+}
+
+/* ============================================
+   Image Generation
+   ============================================ */
+
+.image-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.generated-image {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+}
+
+.generated-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.generated-image img:hover {
+  transform: scale(1.02);
+}
+
+.generated-image .image-actions {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: linear-gradient(transparent, rgba(0,0,0,0.8));
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.generated-image:hover .image-actions {
+  opacity: 1;
+}
+
+.image-actions button {
+  flex: 1;
+  padding: 0.375rem 0.5rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.6875rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.image-actions button:hover {
+  background: var(--accent);
+}
+
+/* Image lightbox */
+.lightbox {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+  cursor: zoom-out;
+}
+
+.lightbox.hidden {
+  display: none;
+}
+
+.lightbox img {
+  max-width: 95%;
+  max-height: 95%;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 40px;
+  height: 40px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Image badge for models */
+.model-badge-image {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  background: linear-gradient(135deg, #ec4899, #8b5cf6);
+  border-radius: 3px;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: white;
+  margin-left: 0.375rem;
+  text-transform: uppercase;
+}
+
+.model-badge-image svg {
+  width: 10px;
+  height: 10px;
+}
+
+/* Image loading state */
+.image-generating {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  margin-top: 1rem;
+}
+
+.image-generating .spinner-large {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 0.75rem;
+}
+
+.image-generating span {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
 }
 

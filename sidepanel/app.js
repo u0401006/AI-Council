@@ -58,8 +58,9 @@ const MODELS = {
   'anthropic/claude-3.5-sonnet': { name: 'Claude 3.5 Sonnet', provider: 'Anthropic', inputPrice: 3, outputPrice: 15 },
   // Google
   'google/gemini-3-pro-preview': { name: 'Gemini 3 Pro', provider: 'Google', inputPrice: 1.25, outputPrice: 5 },
-  'google/gemini-3-pro-image-preview': { name: 'Gemini 3 Pro Image', provider: 'Google', inputPrice: 1.25, outputPrice: 5 },
+  'google/gemini-3-pro-image-preview': { name: 'Gemini 3 Pro Image', provider: 'Google', inputPrice: 0.3, outputPrice: 2.5 },
   'google/gemini-2.5-flash': { name: 'Gemini 2.5 Flash', provider: 'Google', inputPrice: 0.15, outputPrice: 0.6 },
+  'google/gemini-2.5-flash-image-preview': { name: 'Gemini 2.5 Flash Image', provider: 'Google', inputPrice: 0.3, outputPrice: 2.5 },
   'google/gemini-2.0-flash-001': { name: 'Gemini 2.0 Flash', provider: 'Google', inputPrice: 0.1, outputPrice: 0.4 },
   'google/gemini-1.5-pro': { name: 'Gemini 1.5 Pro', provider: 'Google', inputPrice: 1.25, outputPrice: 5 },
   // Others
@@ -140,14 +141,17 @@ function parseReviewResponse(content) {
 // ============================================
 // Main App State
 // ============================================
+const IMAGE_MODELS = ['google/gemini-3-pro-image-preview', 'google/gemini-2.5-flash-image-preview'];
+
 let councilModels = [];
 let chairmanModel = '';
 let enableReview = true;
+let enableImage = false;
 let responses = new Map();
 let reviews = new Map();
 let activeTab = null;
 let currentQuery = '';
-let currentConversation = null; // Store current conversation data
+let currentConversation = null;
 let historyVisible = false;
 
 // DOM Elements
@@ -156,6 +160,7 @@ const sendBtn = document.getElementById('sendBtn');
 const settingsBtn = document.getElementById('settingsBtn');
 const historyBtn = document.getElementById('historyBtn');
 const exportBtn = document.getElementById('exportBtn');
+const imageToggle = document.getElementById('imageToggle');
 const modelCountEl = document.getElementById('modelCount');
 const emptyState = document.getElementById('emptyState');
 const errorBanner = document.getElementById('errorBanner');
@@ -169,6 +174,8 @@ const closeExportModal = document.getElementById('closeExportModal');
 const exportMd = document.getElementById('exportMd');
 const exportJson = document.getElementById('exportJson');
 const copyClipboard = document.getElementById('copyClipboard');
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightboxImg');
 
 // Stage elements
 const stage1Section = document.getElementById('stage1Section');
@@ -208,6 +215,9 @@ function setupEventListeners() {
   settingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
   dismissError.addEventListener('click', () => errorBanner.classList.add('hidden'));
 
+  // Image toggle
+  imageToggle.addEventListener('change', () => { enableImage = imageToggle.checked; });
+
   // History
   historyBtn.addEventListener('click', toggleHistory);
   clearHistoryBtn.addEventListener('click', clearHistory);
@@ -219,6 +229,10 @@ function setupEventListeners() {
   exportMd.addEventListener('click', () => exportAsMarkdown());
   exportJson.addEventListener('click', () => exportAsJson());
   copyClipboard.addEventListener('click', () => copyToClipboard());
+
+  // Lightbox
+  lightbox.addEventListener('click', () => lightbox.classList.add('hidden'));
+  document.querySelector('.lightbox-close')?.addEventListener('click', () => lightbox.classList.add('hidden'));
 
   // Toggle stage sections
   document.querySelectorAll('.toggle-btn').forEach(btn => {
@@ -237,6 +251,86 @@ function setupEventListeners() {
     if (changes.enableReview) enableReview = changes.enableReview.newValue;
     updateModelCount();
   });
+}
+
+// ============================================
+// Image Functions
+// ============================================
+function isImageModel(model) {
+  return IMAGE_MODELS.some(m => model.includes(m.split('/')[1]));
+}
+
+function renderImages(images, container) {
+  if (!images || images.length === 0) return;
+  
+  const gallery = document.createElement('div');
+  gallery.className = 'image-gallery';
+  
+  images.forEach((imgSrc, idx) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'generated-image';
+    
+    const img = document.createElement('img');
+    img.src = imgSrc;
+    img.alt = `Generated image ${idx + 1}`;
+    img.addEventListener('click', () => openLightbox(imgSrc));
+    
+    const actions = document.createElement('div');
+    actions.className = 'image-actions';
+    
+    const downloadBtn = document.createElement('button');
+    downloadBtn.textContent = 'Download';
+    downloadBtn.addEventListener('click', (e) => { e.stopPropagation(); downloadImage(imgSrc, idx); });
+    
+    const copyBtn = document.createElement('button');
+    copyBtn.textContent = 'Copy';
+    copyBtn.addEventListener('click', (e) => { e.stopPropagation(); copyImageToClipboard(imgSrc); });
+    
+    actions.appendChild(downloadBtn);
+    actions.appendChild(copyBtn);
+    wrapper.appendChild(img);
+    wrapper.appendChild(actions);
+    gallery.appendChild(wrapper);
+  });
+  
+  container.appendChild(gallery);
+}
+
+function openLightbox(src) {
+  lightboxImg.src = src;
+  lightbox.classList.remove('hidden');
+}
+
+async function downloadImage(src, idx) {
+  try {
+    const response = await fetch(src);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mav-image-${Date.now()}-${idx}.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Image downloaded');
+  } catch (e) {
+    // For data URLs, direct download
+    const a = document.createElement('a');
+    a.href = src;
+    a.download = `mav-image-${Date.now()}-${idx}.png`;
+    a.click();
+    showToast('Image downloaded');
+  }
+}
+
+async function copyImageToClipboard(src) {
+  try {
+    const response = await fetch(src);
+    const blob = await response.blob();
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+    showToast('Image copied');
+  } catch (e) {
+    showToast('Failed to copy image', true);
+  }
 }
 
 // ============================================
@@ -626,7 +720,8 @@ function resetButton() {
 function renderTabs() {
   modelTabs.innerHTML = councilModels.map(model => {
     const info = getModelInfo(model);
-    return `<button class="tab" data-model="${model}" title="${info.provider}">${info.name}<span class="status-dot"></span></button>`;
+    const imgBadge = isImageModel(model) && enableImage ? '<span class="model-badge-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>IMG</span>' : '';
+    return `<button class="tab" data-model="${model}" title="${info.provider}">${info.name}${imgBadge}<span class="status-dot"></span></button>`;
   }).join('');
   modelTabs.querySelectorAll('.tab').forEach(tab => { tab.addEventListener('click', () => setActiveTab(tab.dataset.model)); });
 }
@@ -672,37 +767,65 @@ function finalizeResponse(model, content, latency) {
 async function queryModel(model, query) {
   const startTime = Date.now();
   const parser = createStreamingParser();
-  responses.set(model, { content: '', status: 'loading', latency: 0 });
+  const shouldGenerateImage = enableImage && isImageModel(model);
+  
+  responses.set(model, { content: '', status: 'loading', latency: 0, images: [] });
   updateTabStatus(model, 'loading');
   const contentEl = document.getElementById(`content-${cssEscape(model)}`);
-  if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">Connecting to ${getModelName(model)}...</span></div>`;
+  
+  if (shouldGenerateImage) {
+    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">Generating image with ${getModelName(model)}...</span></div><div class="image-generating"><div class="spinner-large"></div><span>Creating visual content...</span></div>`;
+  } else {
+    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">Connecting to ${getModelName(model)}...</span></div>`;
+  }
 
   try {
     const port = chrome.runtime.connect({ name: 'stream' });
     await new Promise((resolve, reject) => {
       let content = '';
+      let images = [];
+      
       port.onMessage.addListener((msg) => {
-        if (msg.type === 'CHUNK') { content += msg.content; updateResponseContent(model, parser.append(msg.content)); }
+        if (msg.type === 'CHUNK') { 
+          content += msg.content; 
+          updateResponseContent(model, parser.append(msg.content)); 
+        }
         else if (msg.type === 'DONE') {
           const latency = Date.now() - startTime;
-          responses.set(model, { content, status: 'done', latency });
+          images = msg.images || [];
+          responses.set(model, { content, status: 'done', latency, images });
           updateTabStatus(model, 'done');
-          document.getElementById(`content-${cssEscape(model)}`).innerHTML = parseMarkdown(content);
+          
+          const el = document.getElementById(`content-${cssEscape(model)}`);
+          if (el) {
+            el.innerHTML = parseMarkdown(content);
+            if (images.length > 0) {
+              renderImages(images, el);
+            }
+          }
           finalizeResponse(model, content, latency);
           port.disconnect();
           resolve();
         } else if (msg.type === 'ERROR') {
-          responses.set(model, { content: '', status: 'error', latency: 0 });
+          responses.set(model, { content: '', status: 'error', latency: 0, images: [] });
           updateTabStatus(model, 'error');
           if (contentEl) contentEl.innerHTML = `<div class="error-state"><p>${escapeHtml(msg.error)}</p></div>`;
           port.disconnect();
           reject(new Error(msg.error));
         }
       });
-      port.postMessage({ type: 'QUERY_MODEL_STREAM', payload: { model, messages: [{ role: 'user', content: query }] } });
+      
+      port.postMessage({ 
+        type: 'QUERY_MODEL_STREAM', 
+        payload: { 
+          model, 
+          messages: [{ role: 'user', content: query }],
+          enableImage: shouldGenerateImage
+        } 
+      });
     });
   } catch (err) {
-    responses.set(model, { content: '', status: 'error', latency: 0 });
+    responses.set(model, { content: '', status: 'error', latency: 0, images: [] });
     updateTabStatus(model, 'error');
   }
 }

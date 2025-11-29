@@ -10,8 +10,9 @@ const AVAILABLE_MODELS = [
   { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic' },
   // Google
   { id: 'google/gemini-3-pro-preview', name: 'Gemini 3 Pro', provider: 'Google' },
-  { id: 'google/gemini-3-pro-image-preview', name: 'Gemini 3 Pro Image', provider: 'Google' },
+  { id: 'google/gemini-3-pro-image-preview', name: 'Gemini 3 Pro Image', provider: 'Google', canImage: true },
   { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Google' },
+  { id: 'google/gemini-2.5-flash-image-preview', name: 'Gemini 2.5 Flash Image', provider: 'Google', canImage: true },
   { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', provider: 'Google' },
   { id: 'google/gemini-1.5-pro', name: 'Gemini 1.5 Pro', provider: 'Google' },
   // Others
@@ -51,7 +52,7 @@ function renderModelList() {
   modelListEl.innerHTML = AVAILABLE_MODELS.map(model => `
     <label class="model-item">
       <input type="checkbox" value="${model.id}" data-model>
-      <span class="model-name">${model.name}</span>
+      <span class="model-name">${model.name}${model.canImage ? '<span class="image-badge">IMG</span>' : ''}</span>
       <span class="model-provider">${model.provider}</span>
     </label>
   `).join('');
