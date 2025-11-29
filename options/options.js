@@ -1,11 +1,20 @@
 // Available models configuration
 const AVAILABLE_MODELS = [
+  // OpenAI
+  { id: 'openai/gpt-5.1', name: 'GPT-5.1', provider: 'OpenAI' },
   { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI' },
   { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI' },
+  // Anthropic
+  { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5', provider: 'Anthropic' },
   { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'Anthropic' },
   { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic' },
+  // Google
+  { id: 'google/gemini-3-pro-preview', name: 'Gemini 3 Pro', provider: 'Google' },
+  { id: 'google/gemini-3-pro-image-preview', name: 'Gemini 3 Pro Image', provider: 'Google' },
+  { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Google' },
   { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', provider: 'Google' },
   { id: 'google/gemini-1.5-pro', name: 'Gemini 1.5 Pro', provider: 'Google' },
+  // Others
   { id: 'x-ai/grok-3', name: 'Grok 3', provider: 'xAI' },
   { id: 'meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B', provider: 'Meta' },
   { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', provider: 'DeepSeek' },
@@ -13,13 +22,13 @@ const AVAILABLE_MODELS = [
 ];
 
 const DEFAULT_MODELS = [
-  'openai/gpt-4o',
-  'anthropic/claude-sonnet-4',
-  'google/gemini-2.0-flash-001',
-  'x-ai/grok-3'
+  'openai/gpt-5.1',
+  'anthropic/claude-sonnet-4.5',
+  'google/gemini-3-pro-preview',
+  'google/gemini-2.5-flash'
 ];
 
-const DEFAULT_CHAIRMAN = 'anthropic/claude-sonnet-4';
+const DEFAULT_CHAIRMAN = 'anthropic/claude-sonnet-4.5';
 
 // DOM Elements
 const apiKeyInput = document.getElementById('apiKey');
