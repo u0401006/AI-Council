@@ -736,14 +736,13 @@ body {
 }
 
 .stage-content {
-  /* max-height: 0; */
-  overflow: hidden;
-  transition: max-height 0.3s ease-out;
+  display: none;
+  overflow-y: auto;
 }
 
-/* .stage-content.expanded {
-  max-height: 2000px;
-} */
+.stage-content.expanded {
+  display: block;
+}
 
 .stage-section.collapsed .toggle-btn {
   transform: rotate(-90deg);
