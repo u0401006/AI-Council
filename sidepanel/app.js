@@ -788,8 +788,40 @@ function finalizeResponse(model, content, latency) {
   const cursor = contentEl.querySelector('.cursor');
   if (cursor) cursor.remove();
   const cost = calculateCost(model, estimateTokens(currentQuery), estimateTokens(content));
-  metaEl.innerHTML = `<span class="meta-item">${(latency / 1000).toFixed(2)}s</span><span class="meta-item">~${estimateTokens(content)} tokens</span><span class="meta-item">${formatCost(cost.total)}</span>`;
+  metaEl.innerHTML = `
+    <span class="meta-item">${(latency / 1000).toFixed(2)}s</span>
+    <span class="meta-item">~${estimateTokens(content)} tokens</span>
+    <span class="meta-item">${formatCost(cost.total)}</span>
+    <button class="copy-response-btn" data-content="${escapeAttr(content)}" title="Copy response">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+      <span>Copy</span>
+    </button>
+  `;
   metaEl.classList.add('visible');
+  
+  // Add copy handler
+  metaEl.querySelector('.copy-response-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const text = btn.dataset.content;
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.classList.add('copied');
+      btn.querySelector('span').textContent = 'Copied!';
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.querySelector('span').textContent = 'Copy';
+      }, 1500);
+    } catch (err) {
+      showToast('Failed to copy', true);
+    }
+  });
+}
+
+function escapeAttr(text) {
+  return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 async function queryModel(model, query) {
