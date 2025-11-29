@@ -7,7 +7,6 @@ function parseMarkdown(text) {
   
   let html = escapeHtmlMd(text);
   
-  // Temporarily protect code blocks
   const codeBlocks = [];
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
     codeBlocks.push({ lang, code });
@@ -20,7 +19,6 @@ function parseMarkdown(text) {
     return `__INLINE_CODE_${inlineCodes.length - 1}__`;
   });
 
-  // Apply formatting rules
   html = html
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
@@ -33,10 +31,7 @@ function parseMarkdown(text) {
     .replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
     .replace(/^---$/gm, '<hr>');
 
-  // Wrap consecutive <li> in <ul>
   html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-  
-  // Paragraphs
   html = '<p>' + html.replace(/\n\n+/g, '</p><p>') + '</p>';
   html = html.replace(/<p><\/p>/g, '');
   html = html.replace(/<p>(<h[234]>)/g, '$1');
@@ -49,7 +44,6 @@ function parseMarkdown(text) {
   html = html.replace(/(<\/pre>)<\/p>/g, '$1');
   html = html.replace(/<p>(<hr>)<\/p>/g, '$1');
 
-  // Restore code blocks
   codeBlocks.forEach((block, i) => {
     html = html.replace(
       `__CODE_BLOCK_${i}__`,
@@ -65,25 +59,15 @@ function parseMarkdown(text) {
 }
 
 function escapeHtmlMd(text) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function createStreamingParser() {
   let buffer = '';
   return {
-    append(chunk) {
-      buffer += chunk;
-      return parseMarkdown(buffer);
-    },
-    getContent() {
-      return buffer;
-    },
-    reset() {
-      buffer = '';
-    }
+    append(chunk) { buffer += chunk; return parseMarkdown(buffer); },
+    getContent() { return buffer; },
+    reset() { buffer = ''; }
   };
 }
 
@@ -92,96 +76,106 @@ function createStreamingParser() {
 // ============================================
 
 const MODELS = {
-  'openai/gpt-4o': {
-    name: 'GPT-4o',
-    provider: 'OpenAI',
-    inputPrice: 2.5,
-    outputPrice: 10,
-  },
-  'openai/gpt-4o-mini': {
-    name: 'GPT-4o Mini',
-    provider: 'OpenAI',
-    inputPrice: 0.15,
-    outputPrice: 0.6,
-  },
-  'anthropic/claude-sonnet-4': {
-    name: 'Claude Sonnet 4',
-    provider: 'Anthropic',
-    inputPrice: 3,
-    outputPrice: 15,
-  },
-  'anthropic/claude-3.5-sonnet': {
-    name: 'Claude 3.5 Sonnet',
-    provider: 'Anthropic',
-    inputPrice: 3,
-    outputPrice: 15,
-  },
-  'google/gemini-2.0-flash-001': {
-    name: 'Gemini 2.0 Flash',
-    provider: 'Google',
-    inputPrice: 0.1,
-    outputPrice: 0.4,
-  },
-  'google/gemini-1.5-pro': {
-    name: 'Gemini 1.5 Pro',
-    provider: 'Google',
-    inputPrice: 1.25,
-    outputPrice: 5,
-  },
-  'x-ai/grok-3': {
-    name: 'Grok 3',
-    provider: 'xAI',
-    inputPrice: 3,
-    outputPrice: 15,
-  },
-  'meta-llama/llama-3.1-405b-instruct': {
-    name: 'Llama 3.1 405B',
-    provider: 'Meta',
-    inputPrice: 2,
-    outputPrice: 2,
-  },
-  'deepseek/deepseek-r1': {
-    name: 'DeepSeek R1',
-    provider: 'DeepSeek',
-    inputPrice: 0.55,
-    outputPrice: 2.19,
-  },
-  'mistralai/mistral-large-2411': {
-    name: 'Mistral Large',
-    provider: 'Mistral',
-    inputPrice: 2,
-    outputPrice: 6,
-  }
+  'openai/gpt-4o': { name: 'GPT-4o', provider: 'OpenAI', inputPrice: 2.5, outputPrice: 10 },
+  'openai/gpt-4o-mini': { name: 'GPT-4o Mini', provider: 'OpenAI', inputPrice: 0.15, outputPrice: 0.6 },
+  'anthropic/claude-sonnet-4': { name: 'Claude Sonnet 4', provider: 'Anthropic', inputPrice: 3, outputPrice: 15 },
+  'anthropic/claude-3.5-sonnet': { name: 'Claude 3.5 Sonnet', provider: 'Anthropic', inputPrice: 3, outputPrice: 15 },
+  'google/gemini-2.0-flash-001': { name: 'Gemini 2.0 Flash', provider: 'Google', inputPrice: 0.1, outputPrice: 0.4 },
+  'google/gemini-1.5-pro': { name: 'Gemini 1.5 Pro', provider: 'Google', inputPrice: 1.25, outputPrice: 5 },
+  'x-ai/grok-3': { name: 'Grok 3', provider: 'xAI', inputPrice: 3, outputPrice: 15 },
+  'meta-llama/llama-3.1-405b-instruct': { name: 'Llama 3.1 405B', provider: 'Meta', inputPrice: 2, outputPrice: 2 },
+  'deepseek/deepseek-r1': { name: 'DeepSeek R1', provider: 'DeepSeek', inputPrice: 0.55, outputPrice: 2.19 },
+  'mistralai/mistral-large-2411': { name: 'Mistral Large', provider: 'Mistral', inputPrice: 2, outputPrice: 6 }
 };
 
 function getModelInfo(modelId) {
-  return MODELS[modelId] || {
-    name: modelId.split('/').pop(),
-    provider: modelId.split('/')[0],
-    inputPrice: 0,
-    outputPrice: 0,
-  };
+  return MODELS[modelId] || { name: modelId.split('/').pop(), provider: modelId.split('/')[0], inputPrice: 0, outputPrice: 0 };
 }
 
-function getModelName(modelId) {
-  return getModelInfo(modelId).name;
-}
-
-function estimateTokens(text) {
-  return Math.ceil(text.length / 4);
-}
-
+function getModelName(modelId) { return getModelInfo(modelId).name; }
+function estimateTokens(text) { return Math.ceil(text.length / 4); }
 function calculateCost(modelId, inputTokens, outputTokens) {
   const info = getModelInfo(modelId);
   const inputCost = (inputTokens / 1_000_000) * info.inputPrice;
   const outputCost = (outputTokens / 1_000_000) * info.outputPrice;
   return { input: inputCost, output: outputCost, total: inputCost + outputCost };
 }
-
 function formatCost(cost) {
   if (cost < 0.0001) return '<$0.0001';
   if (cost < 0.01) return `$${cost.toFixed(4)}`;
   return `$${cost.toFixed(3)}`;
+}
+
+// ============================================
+// Inline: lib/council.js
+// ============================================
+
+function generateReviewPrompt(query, responses, currentModel) {
+  const otherResponses = responses
+    .filter(r => r.model !== currentModel)
+    .map((r, i) => ({ label: `Response ${String.fromCharCode(65 + i)}`, content: r.content }));
+
+  if (otherResponses.length === 0) return null;
+
+  const responsesText = otherResponses.map(r => `### ${r.label}\n${r.content}`).join('\n\n---\n\n');
+
+  return `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
+
+## User's Question
+${query}
+
+## Responses to Evaluate
+${responsesText}
+
+## Your Task
+Rank these responses from best to worst. Output in this exact JSON format:
+\`\`\`json
+{
+  "rankings": [
+    {"response": "A", "rank": 1, "reason": "Brief reason"},
+    {"response": "B", "rank": 2, "reason": "Brief reason"}
+  ]
+}
+\`\`\`
+
+Be objective. Focus on factual accuracy and helpfulness.`;
+}
+
+function generateChairmanPrompt(query, responses, aggregatedRanking = null) {
+  const responsesText = responses.map((r, i) => `### Expert ${i + 1} (${getModelName(r.model)})\n${r.content}`).join('\n\n---\n\n');
+
+  let rankingInfo = '';
+  if (aggregatedRanking && aggregatedRanking.length > 0) {
+    rankingInfo = `\n## Peer Review Ranking\nBased on peer evaluation: ${aggregatedRanking.map((r, i) => `${i + 1}. ${getModelName(r.model)}`).join(', ')}\n`;
+  }
+
+  return `You are the Chairman of an AI Council. Synthesize the expert responses into a single, comprehensive final answer.
+
+## User's Question
+${query}
+
+## Expert Responses
+${responsesText}
+${rankingInfo}
+## Your Task
+Create a single authoritative answer that:
+1. Incorporates the best insights from all experts
+2. Resolves contradictions by favoring accurate information
+3. Is well-organized and comprehensive
+
+Provide your answer directly, without meta-commentary.`;
+}
+
+function parseReviewResponse(content) {
+  try {
+    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = jsonMatch ? jsonMatch[1] : content;
+    const parsed = JSON.parse(jsonStr.trim());
+    return parsed.rankings || parsed;
+  } catch (e) {
+    console.error('Failed to parse review:', e);
+    return null;
+  }
 }
 
 // ============================================
@@ -190,7 +184,10 @@ function formatCost(cost) {
 
 // State
 let councilModels = [];
+let chairmanModel = '';
+let enableReview = true;
 let responses = new Map();
+let reviews = new Map();
 let activeTab = null;
 let currentQuery = '';
 
@@ -199,13 +196,22 @@ const queryInput = document.getElementById('queryInput');
 const sendBtn = document.getElementById('sendBtn');
 const settingsBtn = document.getElementById('settingsBtn');
 const modelCountEl = document.getElementById('modelCount');
-const resultsSection = document.getElementById('resultsSection');
 const emptyState = document.getElementById('emptyState');
-const modelTabs = document.getElementById('modelTabs');
-const responseContainer = document.getElementById('responseContainer');
 const errorBanner = document.getElementById('errorBanner');
 const errorText = document.getElementById('errorText');
 const dismissError = document.getElementById('dismissError');
+
+// Stage elements
+const stage1Section = document.getElementById('stage1Section');
+const stage2Section = document.getElementById('stage2Section');
+const stage3Section = document.getElementById('stage3Section');
+const modelTabs = document.getElementById('modelTabs');
+const responseContainer = document.getElementById('responseContainer');
+const reviewResults = document.getElementById('reviewResults');
+const finalAnswer = document.getElementById('finalAnswer');
+const stage1Status = document.getElementById('stage1Status');
+const stage2Status = document.getElementById('stage2Status');
+const stage3Status = document.getElementById('stage3Status');
 
 // Initialize
 async function init() {
@@ -216,9 +222,12 @@ async function init() {
 async function loadSettings() {
   const result = await chrome.storage.sync.get({
     councilModels: [],
-    chairmanModel: ''
+    chairmanModel: 'anthropic/claude-sonnet-4',
+    enableReview: true
   });
   councilModels = result.councilModels;
+  chairmanModel = result.chairmanModel;
+  enableReview = result.enableReview;
   updateModelCount();
 }
 
@@ -229,64 +238,167 @@ function updateModelCount() {
 
 function setupEventListeners() {
   sendBtn.addEventListener('click', handleSend);
-  
   queryInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      handleSend();
-    }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend();
   });
+  settingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
+  dismissError.addEventListener('click', () => errorBanner.classList.add('hidden'));
 
-  settingsBtn.addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
-  });
-
-  dismissError.addEventListener('click', () => {
-    errorBanner.classList.add('hidden');
+  // Toggle stage sections
+  document.querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const targetId = btn.dataset.target;
+      const content = document.getElementById(targetId);
+      const section = btn.closest('.stage-section');
+      content.classList.toggle('expanded');
+      section.classList.toggle('collapsed');
+    });
   });
 
   chrome.storage.onChanged.addListener((changes) => {
-    if (changes.councilModels) {
-      councilModels = changes.councilModels.newValue || [];
-      updateModelCount();
-    }
+    if (changes.councilModels) councilModels = changes.councilModels.newValue || [];
+    if (changes.chairmanModel) chairmanModel = changes.chairmanModel.newValue;
+    if (changes.enableReview) enableReview = changes.enableReview.newValue;
+    updateModelCount();
   });
 }
 
 async function handleSend() {
   const query = queryInput.value.trim();
-  if (!query) return;
-  
-  if (councilModels.length === 0) {
+  if (!query || councilModels.length === 0) {
+    if (!query) return;
     showError('No models selected. Please configure in Settings.');
     return;
   }
 
   currentQuery = query;
   responses.clear();
+  reviews.clear();
   activeTab = null;
-  
+
+  // Reset UI
   sendBtn.disabled = true;
-  sendBtn.innerHTML = '<span class="spinner"></span><span>Querying...</span>';
+  sendBtn.innerHTML = '<span class="spinner"></span><span>Running Council...</span>';
   emptyState.classList.add('hidden');
-  resultsSection.classList.remove('hidden');
   errorBanner.classList.add('hidden');
+
+  // Show stages
+  stage1Section.classList.remove('hidden');
+  stage2Section.classList.remove('hidden', 'stage-skipped');
+  stage3Section.classList.remove('hidden');
   
-  renderTabs();
-  renderResponsePanels();
-  
-  if (councilModels.length > 0) {
-    setActiveTab(councilModels[0]);
+  document.getElementById('stage1Content').classList.add('expanded');
+  document.getElementById('stage2Content').classList.remove('expanded');
+  document.getElementById('stage3Content').classList.remove('expanded');
+
+  // Reset stage statuses
+  stage1Status.textContent = '';
+  stage1Status.className = 'stage-status';
+  stage2Status.textContent = '';
+  stage2Status.className = 'stage-status';
+  stage3Status.textContent = '';
+  stage3Status.className = 'stage-status';
+
+  try {
+    // === STAGE 1: Query all models ===
+    stage1Status.textContent = 'Querying...';
+    stage1Status.classList.add('loading');
+    
+    renderTabs();
+    renderResponsePanels();
+    if (councilModels.length > 0) setActiveTab(councilModels[0]);
+
+    await Promise.allSettled(councilModels.map(model => queryModel(model, query)));
+    
+    const successfulResponses = Array.from(responses.entries())
+      .filter(([_, r]) => r.status === 'done')
+      .map(([model, r]) => ({ model, content: r.content }));
+
+    stage1Status.textContent = `${successfulResponses.length}/${councilModels.length} completed`;
+    stage1Status.classList.remove('loading');
+    stage1Status.classList.add('done');
+
+    // Collapse stage 1
+    document.getElementById('stage1Content').classList.remove('expanded');
+    stage1Section.classList.add('collapsed');
+
+    if (successfulResponses.length < 2) {
+      showError('Need at least 2 successful responses for council.');
+      resetButton();
+      return;
+    }
+
+    // === STAGE 2: Peer Review (optional) ===
+    let aggregatedRanking = null;
+    
+    if (enableReview && successfulResponses.length >= 2) {
+      stage2Status.textContent = 'Reviewing...';
+      stage2Status.classList.add('loading');
+      document.getElementById('stage2Content').classList.add('expanded');
+
+      reviewResults.innerHTML = `
+        <div class="loading-indicator">
+          <div class="loading-dots"><span></span><span></span><span></span></div>
+          <span class="loading-text">Models are reviewing each other...</span>
+        </div>
+      `;
+
+      // Each model reviews others (in parallel)
+      await Promise.allSettled(
+        councilModels.map(model => runReview(model, query, successfulResponses))
+      );
+
+      // Aggregate rankings
+      aggregatedRanking = aggregateRankings(successfulResponses);
+      renderReviewResults(aggregatedRanking);
+
+      stage2Status.textContent = 'Complete';
+      stage2Status.classList.remove('loading');
+      stage2Status.classList.add('done');
+      
+      // Collapse stage 2
+      document.getElementById('stage2Content').classList.remove('expanded');
+      stage2Section.classList.add('collapsed');
+    } else {
+      stage2Section.classList.add('stage-skipped');
+      stage2Status.textContent = 'Skipped';
+      reviewResults.innerHTML = '<div class="skipped-message">Peer review disabled in settings</div>';
+    }
+
+    // === STAGE 3: Chairman Synthesis ===
+    stage3Status.textContent = 'Synthesizing...';
+    stage3Status.classList.add('loading');
+    document.getElementById('stage3Content').classList.add('expanded');
+
+    finalAnswer.innerHTML = `
+      <div class="chairman-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+        ${getModelName(chairmanModel)}
+      </div>
+      <div class="loading-indicator">
+        <div class="loading-dots"><span></span><span></span><span></span></div>
+        <span class="loading-text">Chairman is synthesizing final answer...</span>
+      </div>
+    `;
+
+    await runChairman(query, successfulResponses, aggregatedRanking);
+
+    stage3Status.textContent = 'Complete';
+    stage3Status.classList.remove('loading');
+    stage3Status.classList.add('done');
+
+  } catch (err) {
+    console.error('Council error:', err);
+    showError(err.message);
   }
 
-  const results = await Promise.allSettled(
-    councilModels.map(model => queryModel(model, query))
-  );
-  
-  const errors = results.filter(r => r.status === 'rejected');
-  if (errors.length === councilModels.length) {
-    showError('All queries failed. Check your API key and try again.');
-  }
-  
+  resetButton();
+}
+
+function resetButton() {
   sendBtn.disabled = false;
   sendBtn.innerHTML = '<span>Send</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
 }
@@ -294,14 +406,8 @@ async function handleSend() {
 function renderTabs() {
   modelTabs.innerHTML = councilModels.map(model => {
     const info = getModelInfo(model);
-    return `
-      <button class="tab" data-model="${model}" title="${info.provider}">
-        ${info.name}
-        <span class="status-dot"></span>
-      </button>
-    `;
+    return `<button class="tab" data-model="${model}" title="${info.provider}">${info.name}<span class="status-dot"></span></button>`;
   }).join('');
-
   modelTabs.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => setActiveTab(tab.dataset.model));
   });
@@ -313,7 +419,7 @@ function renderResponsePanels() {
       <div class="response-content" id="content-${cssEscape(model)}">
         <div class="loading-indicator">
           <div class="loading-dots"><span></span><span></span><span></span></div>
-          <span class="loading-text">Waiting for response...</span>
+          <span class="loading-text">Waiting...</span>
         </div>
       </div>
       <div class="response-meta" id="meta-${cssEscape(model)}"></div>
@@ -323,34 +429,21 @@ function renderResponsePanels() {
 
 function setActiveTab(model) {
   activeTab = model;
-  modelTabs.querySelectorAll('.tab').forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.model === model);
-  });
-  responseContainer.querySelectorAll('.response-panel').forEach(panel => {
-    panel.classList.toggle('active', panel.dataset.model === model);
-  });
+  modelTabs.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.model === model));
+  responseContainer.querySelectorAll('.response-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.model === model));
 }
 
 function updateTabStatus(model, status) {
   const tab = modelTabs.querySelector(`[data-model="${model}"]`);
-  if (tab) {
-    const dot = tab.querySelector('.status-dot');
-    dot.className = `status-dot ${status}`;
-  }
+  if (tab) tab.querySelector('.status-dot').className = `status-dot ${status}`;
 }
 
 function updateResponseContent(model, html) {
   const contentEl = document.getElementById(`content-${cssEscape(model)}`);
-  if (!contentEl) return;
-  contentEl.innerHTML = html + '<span class="cursor"></span>';
-  
-  const panel = contentEl.closest('.response-panel');
-  if (panel && panel.scrollHeight - panel.scrollTop - panel.clientHeight < 100) {
-    panel.scrollTop = panel.scrollHeight;
-  }
+  if (contentEl) contentEl.innerHTML = html + '<span class="cursor"></span>';
 }
 
-function finalizeResponse(model, content, latency, usage = null) {
+function finalizeResponse(model, content, latency) {
   const contentEl = document.getElementById(`content-${cssEscape(model)}`);
   const metaEl = document.getElementById(`meta-${cssEscape(model)}`);
   if (!contentEl || !metaEl) return;
@@ -359,70 +452,27 @@ function finalizeResponse(model, content, latency, usage = null) {
   if (cursor) cursor.remove();
 
   const inputTokens = estimateTokens(currentQuery);
-  const outputTokens = usage?.completion_tokens || estimateTokens(content);
+  const outputTokens = estimateTokens(content);
   const cost = calculateCost(model, inputTokens, outputTokens);
   
   metaEl.innerHTML = `
-    <span class="meta-item" title="Response time">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"></circle>
-        <path d="M12 6v6l4 2"></path>
-      </svg>
-      ${(latency / 1000).toFixed(2)}s
-    </span>
-    <span class="meta-item" title="Output tokens">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-      </svg>
-      ~${outputTokens} tokens
-    </span>
-    <span class="meta-item" title="Estimated cost">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="12" y1="1" x2="12" y2="23"></line>
-        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-      </svg>
-      ${formatCost(cost.total)}
-    </span>
+    <span class="meta-item">${(latency / 1000).toFixed(2)}s</span>
+    <span class="meta-item">~${outputTokens} tokens</span>
+    <span class="meta-item">${formatCost(cost.total)}</span>
   `;
   metaEl.classList.add('visible');
-}
-
-function showErrorInPanel(model, errorMessage) {
-  const contentEl = document.getElementById(`content-${cssEscape(model)}`);
-  if (!contentEl) return;
-  
-  contentEl.innerHTML = `
-    <div class="error-state">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="8" x2="12" y2="12"></line>
-        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-      </svg>
-      <p>${escapeHtml(errorMessage)}</p>
-      <button class="retry-btn" data-model="${model}">Retry</button>
-    </div>
-  `;
-  
-  contentEl.querySelector('.retry-btn')?.addEventListener('click', () => {
-    queryModel(model, currentQuery);
-  });
 }
 
 async function queryModel(model, query) {
   const startTime = Date.now();
   const parser = createStreamingParser();
   
-  responses.set(model, { content: '', status: 'loading', latency: 0, parser });
+  responses.set(model, { content: '', status: 'loading', latency: 0 });
   updateTabStatus(model, 'loading');
-  
+
   const contentEl = document.getElementById(`content-${cssEscape(model)}`);
   if (contentEl) {
-    contentEl.innerHTML = `
-      <div class="loading-indicator">
-        <div class="loading-dots"><span></span><span></span><span></span></div>
-        <span class="loading-text">Connecting to ${getModelName(model)}...</span>
-      </div>
-    `;
+    contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">Connecting to ${getModelName(model)}...</span></div>`;
   }
 
   try {
@@ -430,61 +480,175 @@ async function queryModel(model, query) {
     
     await new Promise((resolve, reject) => {
       let content = '';
-      let firstChunk = true;
 
       port.onMessage.addListener((message) => {
-        if (message.type === 'START') {
-          if (contentEl) {
-            const loadingText = contentEl.querySelector('.loading-text');
-            if (loadingText) loadingText.textContent = 'Receiving response...';
-          }
-        } else if (message.type === 'CHUNK') {
-          if (firstChunk) firstChunk = false;
+        if (message.type === 'CHUNK') {
           content += message.content;
-          const html = parser.append(message.content);
-          updateResponseContent(model, html);
+          updateResponseContent(model, parser.append(message.content));
         } else if (message.type === 'DONE') {
           const latency = Date.now() - startTime;
-          responses.set(model, { content, status: 'done', latency, parser });
+          responses.set(model, { content, status: 'done', latency });
           updateTabStatus(model, 'done');
-          
-          const finalHtml = parseMarkdown(content);
-          const el = document.getElementById(`content-${cssEscape(model)}`);
-          if (el) el.innerHTML = finalHtml;
-          
-          finalizeResponse(model, content, latency, message.usage);
+          document.getElementById(`content-${cssEscape(model)}`).innerHTML = parseMarkdown(content);
+          finalizeResponse(model, content, latency);
           port.disconnect();
           resolve();
         } else if (message.type === 'ERROR') {
-          responses.set(model, { content: '', status: 'error', latency: 0, parser });
+          responses.set(model, { content: '', status: 'error', latency: 0 });
           updateTabStatus(model, 'error');
-          showErrorInPanel(model, message.error);
+          if (contentEl) contentEl.innerHTML = `<div class="error-state"><p>${escapeHtml(message.error)}</p></div>`;
           port.disconnect();
           reject(new Error(message.error));
         }
       });
 
-      port.onDisconnect.addListener(() => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
+      port.postMessage({ type: 'QUERY_MODEL_STREAM', payload: { model, messages: [{ role: 'user', content: query }] } });
+    });
+  } catch (err) {
+    responses.set(model, { content: '', status: 'error', latency: 0 });
+    updateTabStatus(model, 'error');
+  }
+}
+
+async function runReview(reviewerModel, query, allResponses) {
+  const prompt = generateReviewPrompt(query, allResponses, reviewerModel);
+  if (!prompt) return;
+
+  try {
+    const result = await queryModelNonStreaming(reviewerModel, prompt);
+    const rankings = parseReviewResponse(result);
+    if (rankings) {
+      // Map back to real models
+      const otherModels = allResponses.filter(r => r.model !== reviewerModel).map(r => r.model);
+      const mappedRankings = rankings.map(r => {
+        const idx = r.response.charCodeAt(0) - 65;
+        return { model: otherModels[idx], rank: r.rank, reason: r.reason };
+      });
+      reviews.set(reviewerModel, mappedRankings);
+    }
+  } catch (err) {
+    console.error(`Review by ${reviewerModel} failed:`, err);
+  }
+}
+
+function aggregateRankings(allResponses) {
+  const scores = {};
+  allResponses.forEach(r => { scores[r.model] = { totalRank: 0, count: 0 }; });
+
+  reviews.forEach((rankings) => {
+    rankings.forEach(r => {
+      if (scores[r.model]) {
+        scores[r.model].totalRank += r.rank;
+        scores[r.model].count += 1;
+      }
+    });
+  });
+
+  return Object.entries(scores)
+    .filter(([_, v]) => v.count > 0)
+    .map(([model, v]) => ({ model, avgRank: v.totalRank / v.count }))
+    .sort((a, b) => a.avgRank - b.avgRank);
+}
+
+function renderReviewResults(ranking) {
+  if (!ranking || ranking.length === 0) {
+    reviewResults.innerHTML = '<div class="skipped-message">No review data available</div>';
+    return;
+  }
+
+  const rankingHtml = ranking.map((r, i) => `
+    <div class="ranking-item rank-${i + 1}">
+      <span class="rank-badge">${i + 1}</span>
+      <span class="ranking-model">${getModelName(r.model)}</span>
+      <span class="ranking-score">avg: ${r.avgRank.toFixed(2)}</span>
+    </div>
+  `).join('');
+
+  // Collect reasons
+  const reasons = [];
+  reviews.forEach((rankings, reviewer) => {
+    rankings.forEach(r => {
+      if (r.reason) {
+        reasons.push({ reviewer: getModelName(reviewer), model: getModelName(r.model), reason: r.reason });
+      }
+    });
+  });
+
+  const reasonsHtml = reasons.length > 0 ? `
+    <div class="review-detail">
+      <div class="review-detail-title">Review Comments</div>
+      <div class="review-reasons">
+        ${reasons.slice(0, 6).map(r => `<div class="review-reason"><strong>${r.model}:</strong> ${escapeHtml(r.reason)}</div>`).join('')}
+      </div>
+    </div>
+  ` : '';
+
+  reviewResults.innerHTML = `
+    <div class="review-summary">
+      <div class="ranking-list">${rankingHtml}</div>
+    </div>
+    ${reasonsHtml}
+  `;
+}
+
+async function runChairman(query, allResponses, aggregatedRanking) {
+  const prompt = generateChairmanPrompt(query, allResponses, aggregatedRanking);
+  const parser = createStreamingParser();
+
+  try {
+    const port = chrome.runtime.connect({ name: 'stream' });
+    
+    await new Promise((resolve, reject) => {
+      let content = '';
+      let started = false;
+
+      port.onMessage.addListener((message) => {
+        if (message.type === 'CHUNK') {
+          if (!started) {
+            started = true;
+            finalAnswer.innerHTML = `
+              <div class="chairman-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+                ${getModelName(chairmanModel)}
+              </div>
+              <div class="response-content"></div>
+            `;
+          }
+          content += message.content;
+          finalAnswer.querySelector('.response-content').innerHTML = parser.append(message.content) + '<span class="cursor"></span>';
+        } else if (message.type === 'DONE') {
+          const contentEl = finalAnswer.querySelector('.response-content');
+          if (contentEl) {
+            contentEl.innerHTML = parseMarkdown(content);
+          }
+          port.disconnect();
+          resolve();
+        } else if (message.type === 'ERROR') {
+          finalAnswer.innerHTML = `<div class="error-state"><p>Chairman failed: ${escapeHtml(message.error)}</p></div>`;
+          port.disconnect();
+          reject(new Error(message.error));
         }
       });
 
-      port.postMessage({
-        type: 'QUERY_MODEL_STREAM',
-        payload: {
-          model,
-          messages: [{ role: 'user', content: query }]
-        }
-      });
+      port.postMessage({ type: 'QUERY_MODEL_STREAM', payload: { model: chairmanModel, messages: [{ role: 'user', content: prompt }] } });
     });
   } catch (err) {
-    console.error(`Error querying ${model}:`, err);
-    responses.set(model, { content: '', status: 'error', latency: 0 });
-    updateTabStatus(model, 'error');
-    showErrorInPanel(model, err.message || 'Connection failed');
-    throw err;
+    console.error('Chairman error:', err);
   }
+}
+
+async function queryModelNonStreaming(model, prompt) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: 'QUERY_MODEL', payload: { model, messages: [{ role: 'user', content: prompt }] } },
+      (response) => {
+        if (response?.error) reject(new Error(response.error));
+        else resolve(response?.choices?.[0]?.message?.content || '');
+      }
+    );
+  });
 }
 
 function showError(message) {

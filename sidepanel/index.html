@@ -35,21 +35,54 @@
       </div>
     </div>
 
-    <div id="resultsSection" class="results-section hidden">
-      <div class="stage-header">
+    <!-- Stage 1: Model Responses -->
+    <div id="stage1Section" class="stage-section hidden">
+      <div class="stage-header" data-stage="1">
         <span class="stage-label">Stage 1</span>
         <span class="stage-title">Model Responses</span>
+        <span class="stage-status" id="stage1Status"></span>
+        <button class="toggle-btn" data-target="stage1Content">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
       </div>
-      
-      <div class="tabs" id="modelTabs">
-        <!-- Populated by JS -->
-      </div>
-      
-      <div class="response-container" id="responseContainer">
-        <!-- Populated by JS -->
+      <div id="stage1Content" class="stage-content">
+        <div class="tabs" id="modelTabs"></div>
+        <div class="response-container" id="responseContainer"></div>
       </div>
     </div>
 
+    <!-- Stage 2: Peer Review -->
+    <div id="stage2Section" class="stage-section hidden">
+      <div class="stage-header" data-stage="2">
+        <span class="stage-label stage-label-secondary">Stage 2</span>
+        <span class="stage-title">Peer Review</span>
+        <span class="stage-status" id="stage2Status"></span>
+        <button class="toggle-btn" data-target="stage2Content">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+      </div>
+      <div id="stage2Content" class="stage-content">
+        <div id="reviewResults" class="review-results"></div>
+      </div>
+    </div>
+
+    <!-- Stage 3: Final Answer -->
+    <div id="stage3Section" class="stage-section hidden">
+      <div class="stage-header" data-stage="3">
+        <span class="stage-label stage-label-accent">Stage 3</span>
+        <span class="stage-title">Final Answer</span>
+        <span class="stage-status" id="stage3Status"></span>
+      </div>
+      <div id="stage3Content" class="stage-content expanded">
+        <div id="finalAnswer" class="final-answer"></div>
+      </div>
+    </div>
+
+    <!-- Empty State -->
     <div id="emptyState" class="empty-state">
       <div class="empty-icon">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -59,6 +92,7 @@
       <p>Ask a question to query multiple AI models</p>
     </div>
 
+    <!-- Error Banner -->
     <div id="errorBanner" class="error-banner hidden">
       <span id="errorText"></span>
       <button id="dismissError" class="dismiss-btn">&times;</button>
@@ -68,4 +102,3 @@
   <script src="app.js"></script>
 </body>
 </html>
-

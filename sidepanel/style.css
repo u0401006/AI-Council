@@ -589,3 +589,263 @@ body {
   font-style: italic;
 }
 
+/* ============================================
+   Stage Sections (Phase 3)
+   ============================================ */
+
+.stage-section {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.stage-section.hidden {
+  display: none;
+}
+
+.stage-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.stage-header:hover {
+  background: var(--bg-elevated);
+}
+
+.stage-label {
+  padding: 0.25rem 0.5rem;
+  background: var(--accent);
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: white;
+}
+
+.stage-label-secondary {
+  background: #8b5cf6;
+}
+
+.stage-label-accent {
+  background: linear-gradient(135deg, var(--accent) 0%, #a855f7 100%);
+}
+
+.stage-title {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.stage-status {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.stage-status.loading {
+  color: var(--warning);
+}
+
+.stage-status.done {
+  color: var(--success);
+}
+
+.toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+.stage-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+}
+
+.stage-content.expanded {
+  max-height: 2000px;
+}
+
+.stage-section.collapsed .toggle-btn {
+  transform: rotate(-90deg);
+}
+
+/* Stage 2: Review Results */
+.review-results {
+  padding: 1rem;
+}
+
+.review-summary {
+  margin-bottom: 1rem;
+}
+
+.ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ranking-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  border-left: 3px solid transparent;
+}
+
+.ranking-item.rank-1 {
+  border-left-color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.ranking-item.rank-2 {
+  border-left-color: #9ca3af;
+}
+
+.ranking-item.rank-3 {
+  border-left-color: #b45309;
+}
+
+.rank-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.rank-1 .rank-badge {
+  background: #fbbf24;
+  color: #0a0a0b;
+}
+
+.ranking-model {
+  font-size: 0.875rem;
+  font-weight: 500;
+  flex: 1;
+}
+
+.ranking-score {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.review-detail {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.review-detail-title {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.review-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.review-reason {
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.review-reason strong {
+  color: var(--text-primary);
+}
+
+/* Stage 3: Final Answer */
+.final-answer {
+  padding: 1rem;
+}
+
+.final-answer .response-content {
+  font-size: 0.9375rem;
+  line-height: 1.8;
+}
+
+.final-answer-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+  color: var(--text-muted);
+}
+
+.chairman-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  background: linear-gradient(135deg, var(--accent) 0%, #a855f7 100%);
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: white;
+  margin-bottom: 1rem;
+}
+
+.chairman-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Progress indicator */
+.progress-bar {
+  width: 100%;
+  height: 2px;
+  background: var(--bg-tertiary);
+  border-radius: 1px;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #a855f7);
+  border-radius: 1px;
+  transition: width 0.3s ease;
+}
+
+/* Skipped state */
+.stage-skipped {
+  opacity: 0.5;
+}
+
+.stage-skipped .stage-label {
+  background: var(--text-muted);
+}
+
+.skipped-message {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
