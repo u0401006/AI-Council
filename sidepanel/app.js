@@ -85,49 +85,25 @@ function generateReviewPrompt(query, responses, currentModel) {
   const otherResponses = responses.filter(r => r.model !== currentModel).map((r, i) => ({ label: `Response ${String.fromCharCode(65 + i)}`, content: r.content }));
   if (otherResponses.length === 0) return null;
   const responsesText = otherResponses.map(r => `### ${r.label}\n${r.content}`).join('\n\n---\n\n');
-  return `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
-
-## User's Question
-${query}
-
-## Responses to Evaluate
-${responsesText}
-
-## Your Task
-Rank these responses from best to worst. Output in this exact JSON format:
-\`\`\`json
-{
-  "rankings": [
-    {"response": "A", "rank": 1, "reason": "Brief reason"},
-    {"response": "B", "rank": 2, "reason": "Brief reason"}
-  ]
-}
-\`\`\`
-
-Be objective. Focus on factual accuracy and helpfulness.`;
+  
+  // Use custom prompt with placeholders replaced
+  return customReviewPrompt
+    .replace('{query}', query)
+    .replace('{responses}', responsesText);
 }
 
 function generateChairmanPrompt(query, responses, aggregatedRanking = null) {
   const responsesText = responses.map((r, i) => `### Expert ${i + 1} (${getModelName(r.model)})\n${r.content}`).join('\n\n---\n\n');
   let rankingInfo = '';
   if (aggregatedRanking && aggregatedRanking.length > 0) {
-    rankingInfo = `\n## Peer Review Ranking\nBased on peer evaluation: ${aggregatedRanking.map((r, i) => `${i + 1}. ${getModelName(r.model)}`).join(', ')}\n`;
+    rankingInfo = `## Peer Review Ranking\nBased on peer evaluation: ${aggregatedRanking.map((r, i) => `${i + 1}. ${getModelName(r.model)}`).join(', ')}`;
   }
-  return `You are the Chairman of an AI Council. Synthesize the expert responses into a single, comprehensive final answer.
-
-## User's Question
-${query}
-
-## Expert Responses
-${responsesText}
-${rankingInfo}
-## Your Task
-Create a single authoritative answer that:
-1. Incorporates the best insights from all experts
-2. Resolves contradictions by favoring accurate information
-3. Is well-organized and comprehensive
-
-Provide your answer directly, without meta-commentary.`;
+  
+  // Use custom prompt with placeholders replaced
+  return customChairmanPrompt
+    .replace('{query}', query)
+    .replace('{responses}', responsesText)
+    .replace('{ranking}', rankingInfo);
 }
 
 function parseReviewResponse(content) {
@@ -143,10 +119,52 @@ function parseReviewResponse(content) {
 // ============================================
 const IMAGE_MODELS = ['google/gemini-3-pro-image-preview', 'google/gemini-2.5-flash-image-preview'];
 
+// Default prompts (same as options.js)
+const DEFAULT_REVIEW_PROMPT = `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
+
+## User's Question
+{query}
+
+## Responses to Evaluate
+{responses}
+
+## Your Task
+Rank these responses from best to worst. Output in this exact JSON format:
+\`\`\`json
+{
+  "rankings": [
+    {"response": "A", "rank": 1, "reason": "Brief reason"},
+    {"response": "B", "rank": 2, "reason": "Brief reason"}
+  ]
+}
+\`\`\`
+
+Be objective. Focus on factual accuracy and helpfulness.`;
+
+const DEFAULT_CHAIRMAN_PROMPT = `You are the Chairman of an AI Council. Synthesize the expert responses into a single, comprehensive final answer.
+
+## User's Question
+{query}
+
+## Expert Responses
+{responses}
+
+{ranking}
+
+## Your Task
+Create a single authoritative answer that:
+1. Incorporates the best insights from all experts
+2. Resolves contradictions by favoring accurate information
+3. Is well-organized and comprehensive
+
+Provide your answer directly, without meta-commentary.`;
+
 let councilModels = [];
 let chairmanModel = '';
 let enableReview = true;
 let enableImage = false;
+let customReviewPrompt = DEFAULT_REVIEW_PROMPT;
+let customChairmanPrompt = DEFAULT_CHAIRMAN_PROMPT;
 let responses = new Map();
 let reviews = new Map();
 let activeTab = null;
@@ -198,10 +216,18 @@ async function init() {
 }
 
 async function loadSettings() {
-  const result = await chrome.storage.sync.get({ councilModels: [], chairmanModel: 'anthropic/claude-sonnet-4', enableReview: true });
+  const result = await chrome.storage.sync.get({ 
+    councilModels: [], 
+    chairmanModel: 'anthropic/claude-sonnet-4.5', 
+    enableReview: true,
+    reviewPrompt: DEFAULT_REVIEW_PROMPT,
+    chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT
+  });
   councilModels = result.councilModels;
   chairmanModel = result.chairmanModel;
   enableReview = result.enableReview;
+  customReviewPrompt = result.reviewPrompt || DEFAULT_REVIEW_PROMPT;
+  customChairmanPrompt = result.chairmanPrompt || DEFAULT_CHAIRMAN_PROMPT;
   updateModelCount();
 }
 
@@ -249,6 +275,8 @@ function setupEventListeners() {
     if (changes.councilModels) councilModels = changes.councilModels.newValue || [];
     if (changes.chairmanModel) chairmanModel = changes.chairmanModel.newValue;
     if (changes.enableReview) enableReview = changes.enableReview.newValue;
+    if (changes.reviewPrompt) customReviewPrompt = changes.reviewPrompt.newValue || DEFAULT_REVIEW_PROMPT;
+    if (changes.chairmanPrompt) customChairmanPrompt = changes.chairmanPrompt.newValue || DEFAULT_CHAIRMAN_PROMPT;
     updateModelCount();
   });
 }

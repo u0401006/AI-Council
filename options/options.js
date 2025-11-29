@@ -31,11 +31,54 @@ const DEFAULT_MODELS = [
 
 const DEFAULT_CHAIRMAN = 'anthropic/claude-sonnet-4.5';
 
+// Default prompts
+const DEFAULT_REVIEW_PROMPT = `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
+
+## User's Question
+{query}
+
+## Responses to Evaluate
+{responses}
+
+## Your Task
+Rank these responses from best to worst. Output in this exact JSON format:
+\`\`\`json
+{
+  "rankings": [
+    {"response": "A", "rank": 1, "reason": "Brief reason"},
+    {"response": "B", "rank": 2, "reason": "Brief reason"}
+  ]
+}
+\`\`\`
+
+Be objective. Focus on factual accuracy and helpfulness.`;
+
+const DEFAULT_CHAIRMAN_PROMPT = `You are the Chairman of an AI Council. Synthesize the expert responses into a single, comprehensive final answer.
+
+## User's Question
+{query}
+
+## Expert Responses
+{responses}
+
+{ranking}
+
+## Your Task
+Create a single authoritative answer that:
+1. Incorporates the best insights from all experts
+2. Resolves contradictions by favoring accurate information
+3. Is well-organized and comprehensive
+
+Provide your answer directly, without meta-commentary.`;
+
 // DOM Elements
 const apiKeyInput = document.getElementById('apiKey');
 const modelListEl = document.getElementById('modelList');
 const chairmanSelect = document.getElementById('chairmanModel');
 const enableReviewCheckbox = document.getElementById('enableReview');
+const reviewPromptTextarea = document.getElementById('reviewPrompt');
+const chairmanPromptTextarea = document.getElementById('chairmanPrompt');
+const resetPromptsBtn = document.getElementById('resetPromptsBtn');
 const saveBtn = document.getElementById('saveBtn');
 const statusEl = document.getElementById('status');
 
@@ -46,6 +89,7 @@ async function init() {
   await loadSettings();
   
   saveBtn.addEventListener('click', saveSettings);
+  resetPromptsBtn.addEventListener('click', resetPrompts);
 }
 
 function renderModelList() {
@@ -69,12 +113,16 @@ async function loadSettings() {
     apiKey: '',
     councilModels: DEFAULT_MODELS,
     chairmanModel: DEFAULT_CHAIRMAN,
-    enableReview: true
+    enableReview: true,
+    reviewPrompt: DEFAULT_REVIEW_PROMPT,
+    chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT
   });
 
   apiKeyInput.value = result.apiKey;
   enableReviewCheckbox.checked = result.enableReview;
   chairmanSelect.value = result.chairmanModel;
+  reviewPromptTextarea.value = result.reviewPrompt;
+  chairmanPromptTextarea.value = result.chairmanPrompt;
 
   // Set model checkboxes
   const checkboxes = modelListEl.querySelectorAll('[data-model]');
@@ -87,6 +135,8 @@ async function saveSettings() {
   const apiKey = apiKeyInput.value.trim();
   const enableReview = enableReviewCheckbox.checked;
   const chairmanModel = chairmanSelect.value;
+  const reviewPrompt = reviewPromptTextarea.value.trim() || DEFAULT_REVIEW_PROMPT;
+  const chairmanPrompt = chairmanPromptTextarea.value.trim() || DEFAULT_CHAIRMAN_PROMPT;
   
   // Get selected models
   const checkboxes = modelListEl.querySelectorAll('[data-model]:checked');
@@ -101,10 +151,18 @@ async function saveSettings() {
     apiKey,
     councilModels,
     chairmanModel,
-    enableReview
+    enableReview,
+    reviewPrompt,
+    chairmanPrompt
   });
 
   showStatus('Settings saved', 'success');
+}
+
+function resetPrompts() {
+  reviewPromptTextarea.value = DEFAULT_REVIEW_PROMPT;
+  chairmanPromptTextarea.value = DEFAULT_CHAIRMAN_PROMPT;
+  showStatus('Prompts reset to default', 'success');
 }
 
 function showStatus(message, type) {
@@ -116,4 +174,3 @@ function showStatus(message, type) {
 }
 
 init();
-

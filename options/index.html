@@ -49,13 +49,32 @@
       <p class="hint">Disabling saves API costs but skips model ranking</p>
     </section>
 
+    <section class="card">
+      <div class="section-header">
+        <h2>Prompt Templates</h2>
+        <button type="button" id="resetPromptsBtn" class="btn-secondary">Reset to Default</button>
+      </div>
+      <p class="hint">Customize the instructions given to AI models. Use placeholders: <code>{query}</code> for user question, <code>{responses}</code> for model responses, <code>{ranking}</code> for review ranking.</p>
+      
+      <div class="field">
+        <label for="reviewPrompt">Review Prompt (Stage 2)</label>
+        <p class="hint">Instructions for models to evaluate each other's responses</p>
+        <textarea id="reviewPrompt" rows="10" placeholder="Enter review instructions..."></textarea>
+      </div>
+
+      <div class="field">
+        <label for="chairmanPrompt">Chairman Prompt (Stage 3)</label>
+        <p class="hint">Instructions for the chairman to synthesize the final answer</p>
+        <textarea id="chairmanPrompt" rows="10" placeholder="Enter chairman instructions..."></textarea>
+      </div>
+    </section>
+
     <div class="actions">
       <button id="saveBtn" class="btn-primary">Save Settings</button>
       <span id="status" class="status"></span>
     </div>
   </div>
 
-  <script src="options.js" type="module"></script>
+  <script src="options.js"></script>
 </body>
 </html>
-
