@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MAV Settings</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>MAV Settings</h1>
+      <p class="subtitle">Multi-AI Voting Configuration</p>
+    </header>
+
+    <section class="card">
+      <h2>API Configuration</h2>
+      <div class="field">
+        <label for="apiKey">OpenRouter API Key</label>
+        <input type="password" id="apiKey" placeholder="sk-or-v1-..." autocomplete="off">
+        <p class="hint">Get your key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Council Models</h2>
+      <p class="hint">Select models to participate in the council</p>
+      <div class="model-list" id="modelList">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Chairman Model</h2>
+      <div class="field">
+        <label for="chairmanModel">Select the model to synthesize final answer</label>
+        <select id="chairmanModel">
+          <!-- Populated by JS -->
+        </select>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Options</h2>
+      <div class="field checkbox-field">
+        <input type="checkbox" id="enableReview" checked>
+        <label for="enableReview">Enable peer review stage (Stage 2)</label>
+      </div>
+      <p class="hint">Disabling saves API costs but skips model ranking</p>
+    </section>
+
+    <div class="actions">
+      <button id="saveBtn" class="btn-primary">Save Settings</button>
+      <span id="status" class="status"></span>
+    </div>
+  </div>
+
+  <script src="options.js" type="module"></script>
+</body>
+</html>
+

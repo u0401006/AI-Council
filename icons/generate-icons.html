@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate MAV Icons</title>
+  <style>
+    body { font-family: system-ui; padding: 2rem; background: #1a1a1a; color: #fff; }
+    .preview { display: flex; gap: 1rem; margin: 1rem 0; }
+    canvas { background: #333; }
+    button { padding: 0.5rem 1rem; margin: 0.5rem; cursor: pointer; }
+    a { color: #6366f1; }
+  </style>
+</head>
+<body>
+  <h1>Generate MAV Extension Icons</h1>
+  <p>Click buttons to download PNG icons:</p>
+  
+  <div class="preview">
+    <div>
+      <canvas id="c16" width="16" height="16"></canvas>
+      <br><button onclick="download(16)">Download 16x16</button>
+    </div>
+    <div>
+      <canvas id="c48" width="48" height="48"></canvas>
+      <br><button onclick="download(48)">Download 48x48</button>
+    </div>
+    <div>
+      <canvas id="c128" width="128" height="128"></canvas>
+      <br><button onclick="download(128)">Download 128x128</button>
+    </div>
+  </div>
+  
+  <p>Save all three files to the <code>icons/</code> folder as <code>icon16.png</code>, <code>icon48.png</code>, <code>icon128.png</code></p>
+
+  <script>
+    const sizes = [16, 48, 128];
+    
+    function drawIcon(ctx, size) {
+      const scale = size / 128;
+      
+      // Background
+      ctx.fillStyle = '#0a0a0b';
+      roundRect(ctx, 0, 0, size, size, 24 * scale);
+      ctx.fill();
+      
+      // Gradient
+      const grad = ctx.createLinearGradient(0, 0, size, size);
+      grad.addColorStop(0, '#6366f1');
+      grad.addColorStop(1, '#a855f7');
+      
+      // Nodes
+      ctx.fillStyle = grad;
+      circle(ctx, 40 * scale, 50 * scale, 12 * scale);
+      circle(ctx, 88 * scale, 50 * scale, 12 * scale);
+      circle(ctx, 64 * scale, 90 * scale, 12 * scale);
+      
+      // Lines
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 4 * scale;
+      ctx.beginPath();
+      ctx.moveTo(40 * scale, 50 * scale);
+      ctx.lineTo(88 * scale, 50 * scale);
+      ctx.moveTo(40 * scale, 50 * scale);
+      ctx.lineTo(64 * scale, 90 * scale);
+      ctx.moveTo(88 * scale, 50 * scale);
+      ctx.lineTo(64 * scale, 90 * scale);
+      ctx.stroke();
+    }
+    
+    function circle(ctx, x, y, r) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+    
+    function download(size) {
+      const canvas = document.getElementById('c' + size);
+      const link = document.createElement('a');
+      link.download = `icon${size}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+    
+    // Draw all
+    sizes.forEach(size => {
+      const canvas = document.getElementById('c' + size);
+      const ctx = canvas.getContext('2d');
+      drawIcon(ctx, size);
+    });
+  </script>
+</body>
+</html>
+
