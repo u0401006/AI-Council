@@ -9,14 +9,42 @@
 <body>
   <div class="app">
     <header class="header">
-      <h1>MAV</h1>
-      <button id="settingsBtn" class="icon-btn" title="Settings">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M12 1v4m0 14v4m-7-11H1m22 0h-4M4.22 4.22l2.83 2.83m9.9 9.9l2.83 2.83m0-15.56l-2.83 2.83m-9.9 9.9l-2.83 2.83"></path>
-        </svg>
-      </button>
+      <div class="header-left">
+        <button id="historyBtn" class="icon-btn" title="History">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+        </button>
+        <h1>MAV</h1>
+      </div>
+      <div class="header-right">
+        <button id="exportBtn" class="icon-btn" title="Export" style="display: none;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </button>
+        <button id="settingsBtn" class="icon-btn" title="Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 1v4m0 14v4m-7-11H1m22 0h-4M4.22 4.22l2.83 2.83m9.9 9.9l2.83 2.83m0-15.56l-2.83 2.83m-9.9 9.9l-2.83 2.83"></path>
+          </svg>
+        </button>
+      </div>
     </header>
+
+    <!-- History Panel -->
+    <div id="historyPanel" class="history-panel hidden">
+      <div class="history-header">
+        <span>History</span>
+        <button id="clearHistoryBtn" class="text-btn">Clear All</button>
+      </div>
+      <div id="historyList" class="history-list">
+        <!-- Populated by JS -->
+      </div>
+    </div>
 
     <div class="input-section">
       <textarea 
@@ -96,6 +124,41 @@
     <div id="errorBanner" class="error-banner hidden">
       <span id="errorText"></span>
       <button id="dismissError" class="dismiss-btn">&times;</button>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="exportModal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Export Conversation</h3>
+          <button id="closeExportModal" class="dismiss-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="export-options">
+            <button id="exportMd" class="export-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+              </svg>
+              <span>Markdown (.md)</span>
+            </button>
+            <button id="exportJson" class="export-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+              </svg>
+              <span>JSON (.json)</span>
+            </button>
+            <button id="copyClipboard" class="export-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span>Copy to Clipboard</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
