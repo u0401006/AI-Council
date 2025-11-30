@@ -73,6 +73,7 @@ Provide your answer directly, without meta-commentary.`;
 
 // DOM Elements
 const apiKeyInput = document.getElementById('apiKey');
+const braveApiKeyInput = document.getElementById('braveApiKey');
 const modelListEl = document.getElementById('modelList');
 const chairmanSelect = document.getElementById('chairmanModel');
 const enableReviewCheckbox = document.getElementById('enableReview');
@@ -111,6 +112,7 @@ function renderChairmanSelect() {
 async function loadSettings() {
   const result = await chrome.storage.sync.get({
     apiKey: '',
+    braveApiKey: '',
     councilModels: DEFAULT_MODELS,
     chairmanModel: DEFAULT_CHAIRMAN,
     enableReview: true,
@@ -119,6 +121,7 @@ async function loadSettings() {
   });
 
   apiKeyInput.value = result.apiKey;
+  braveApiKeyInput.value = result.braveApiKey;
   enableReviewCheckbox.checked = result.enableReview;
   chairmanSelect.value = result.chairmanModel;
   reviewPromptTextarea.value = result.reviewPrompt;
@@ -133,6 +136,7 @@ async function loadSettings() {
 
 async function saveSettings() {
   const apiKey = apiKeyInput.value.trim();
+  const braveApiKey = braveApiKeyInput.value.trim();
   const enableReview = enableReviewCheckbox.checked;
   const chairmanModel = chairmanSelect.value;
   const reviewPrompt = reviewPromptTextarea.value.trim() || DEFAULT_REVIEW_PROMPT;
@@ -149,6 +153,7 @@ async function saveSettings() {
 
   await chrome.storage.sync.set({
     apiKey,
+    braveApiKey,
     councilModels,
     chairmanModel,
     enableReview,

@@ -204,6 +204,7 @@ const contextBadge = document.getElementById('contextBadge');
 const contextItemsEl = document.getElementById('contextItems');
 const capturePageBtn = document.getElementById('capturePageBtn');
 const captureSelectionBtn = document.getElementById('captureSelectionBtn');
+const webSearchBtn = document.getElementById('webSearchBtn');
 const pasteContextBtn = document.getElementById('pasteContextBtn');
 const clearContextBtn = document.getElementById('clearContextBtn');
 
@@ -282,6 +283,7 @@ function setupEventListeners() {
   contextHeader.addEventListener('click', toggleContextPanel);
   capturePageBtn.addEventListener('click', capturePageContent);
   captureSelectionBtn.addEventListener('click', captureSelection);
+  webSearchBtn.addEventListener('click', webSearch);
   pasteContextBtn.addEventListener('click', pasteContext);
   clearContextBtn.addEventListener('click', clearContext);
 
@@ -441,6 +443,57 @@ async function pasteContext() {
   }
 }
 
+async function webSearch() {
+  try {
+    // Use queryInput value or prompt for search query
+    let searchQuery = queryInput.value.trim();
+    if (!searchQuery) {
+      searchQuery = prompt('輸入搜尋關鍵字：');
+    }
+    
+    if (!searchQuery || searchQuery.length < 1) {
+      showToast('請輸入搜尋關鍵字', true);
+      return;
+    }
+    
+    webSearchBtn.disabled = true;
+    webSearchBtn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span>';
+    
+    const response = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: searchQuery });
+    
+    if (response.error) {
+      showToast(response.error, true);
+      return;
+    }
+    
+    const { results, query } = response;
+    
+    if (!results || results.length === 0) {
+      showToast('找不到相關結果', true);
+      return;
+    }
+    
+    // Format search results as context content
+    const content = results.map((r, i) => 
+      `[${i + 1}] ${r.title}\n${r.url}\n${r.description}`
+    ).join('\n\n');
+    
+    addContextItem({
+      type: 'search',
+      title: `搜尋: ${query}`,
+      content: content,
+      results: results
+    });
+    
+    showToast(`已加入 ${results.length} 筆搜尋結果`);
+  } catch (err) {
+    showToast('搜尋失敗：' + err.message, true);
+  } finally {
+    webSearchBtn.disabled = false;
+    webSearchBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><span>網搜</span>`;
+  }
+}
+
 function addContextItem(item) {
   const id = crypto.randomUUID();
   const contextItem = {
@@ -494,11 +547,13 @@ function renderContextItems() {
   contextItemsEl.innerHTML = contextItems.map(item => {
     const preview = item.content.slice(0, 150).replace(/\n/g, ' ');
     const charCount = item.content.length;
-    const iconClass = item.type === 'page' ? 'page' : item.type === 'selection' ? 'selection' : 'paste';
+    const iconClass = item.type === 'page' ? 'page' : item.type === 'selection' ? 'selection' : item.type === 'search' ? 'search' : 'paste';
     const iconSvg = item.type === 'page' 
       ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line></svg>'
       : item.type === 'selection'
       ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>'
+      : item.type === 'search'
+      ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>'
       : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
     
     return `

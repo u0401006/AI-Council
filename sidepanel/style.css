@@ -1462,6 +1462,10 @@ body {
   background: #10b981;
 }
 
+.context-item-icon.search {
+  background: #f59e0b;
+}
+
 .context-item-body {
   flex: 1;
   min-width: 0;

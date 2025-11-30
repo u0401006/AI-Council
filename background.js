@@ -73,6 +73,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
   
+  if (message.type === 'WEB_SEARCH') {
+    handleWebSearch(message.query)
+      .then(sendResponse)
+      .catch(err => sendResponse({ error: err.message }));
+    return true;
+  }
+  
   return false;
 });
 
@@ -90,6 +97,46 @@ chrome.runtime.onConnect.addListener((port) => {
 async function getApiKey() {
   const result = await chrome.storage.sync.get('apiKey');
   return result.apiKey;
+}
+
+async function getBraveApiKey() {
+  const result = await chrome.storage.sync.get('braveApiKey');
+  return result.braveApiKey;
+}
+
+// Handle web search request
+async function handleWebSearch(query) {
+  const braveApiKey = await getBraveApiKey();
+  
+  if (!braveApiKey) {
+    throw new Error('Brave Search API 金鑰尚未設定，請至設定頁面新增');
+  }
+
+  const response = await fetch(
+    `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`,
+    {
+      headers: {
+        'Accept': 'application/json',
+        'X-Subscription-Token': braveApiKey
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`搜尋失敗: ${response.status} ${errorText}`);
+  }
+
+  const data = await response.json();
+  
+  // Extract relevant results
+  const results = (data.web?.results || []).slice(0, 5).map(result => ({
+    title: result.title,
+    url: result.url,
+    description: result.description || ''
+  }));
+
+  return { results, query };
 }
 
 // Handle get page content request
