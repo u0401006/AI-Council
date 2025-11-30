@@ -226,6 +226,140 @@ const stage1Status = document.getElementById('stage1Status');
 const stage2Status = document.getElementById('stage2Status');
 const stage3Status = document.getElementById('stage3Status');
 
+// Stepper element
+const stepper = document.getElementById('stepper');
+
+// ============================================
+// Stepper Functions
+// ============================================
+
+function showStepper() {
+  stepper.classList.remove('hidden');
+  // Reset all steps to pending
+  stepper.querySelectorAll('.step').forEach(step => {
+    step.classList.remove('active', 'done', 'skipped', 'pending');
+    step.classList.add('pending');
+  });
+}
+
+function hideStepper() {
+  stepper.classList.add('hidden');
+}
+
+function updateStepperState(stepNumber, state) {
+  const step = stepper.querySelector(`[data-step="${stepNumber}"]`);
+  if (!step) return;
+  
+  step.classList.remove('pending', 'active', 'done', 'skipped');
+  step.classList.add(state);
+  
+  // Update connectors
+  if (state === 'done' && stepNumber < 3) {
+    const connector = step.nextElementSibling;
+    if (connector && connector.classList.contains('step-connector')) {
+      connector.classList.add('filled');
+    }
+  }
+}
+
+function setStepActive(stepNumber) {
+  // Set all previous steps to done
+  for (let i = 1; i < stepNumber; i++) {
+    updateStepperState(i, 'done');
+  }
+  // Set current step to active
+  updateStepperState(stepNumber, 'active');
+  // Set remaining steps to pending
+  for (let i = stepNumber + 1; i <= 3; i++) {
+    updateStepperState(i, 'pending');
+  }
+}
+
+function setStepDone(stepNumber) {
+  updateStepperState(stepNumber, 'done');
+}
+
+function setStepSkipped(stepNumber) {
+  updateStepperState(stepNumber, 'skipped');
+}
+
+function setAllStepsDone() {
+  for (let i = 1; i <= 3; i++) {
+    updateStepperState(i, 'done');
+  }
+}
+
+// ============================================
+// Stage Summary Functions
+// ============================================
+
+const stage1Summary = document.getElementById('stage1Summary');
+const stage2Summary = document.getElementById('stage2Summary');
+const stage3Summary = document.getElementById('stage3Summary');
+
+function updateStage1Summary(responsesData) {
+  if (!stage1Summary) return;
+  
+  const completed = responsesData.filter(r => r.status === 'done').length;
+  const total = responsesData.length;
+  
+  if (completed === 0) {
+    stage1Summary.innerHTML = '';
+    return;
+  }
+  
+  // Find fastest model
+  const doneResponses = responsesData.filter(r => r.status === 'done' && r.latency);
+  let fastestInfo = '';
+  if (doneResponses.length > 0) {
+    const fastest = doneResponses.reduce((a, b) => a.latency < b.latency ? a : b);
+    fastestInfo = ` · <span class="highlight">${getModelName(fastest.model)}</span> ${(fastest.latency / 1000).toFixed(1)}s`;
+  }
+  
+  stage1Summary.innerHTML = `${completed}/${total} 完成${fastestInfo}`;
+}
+
+function updateStage2Summary(ranking) {
+  if (!stage2Summary) return;
+  
+  if (!ranking || ranking.length === 0) {
+    stage2Summary.innerHTML = '';
+    return;
+  }
+  
+  const winner = ranking[0];
+  stage2Summary.innerHTML = `#1 <span class="highlight">${getModelName(winner.model)}</span>`;
+}
+
+function updateStage3Summary(chairModel) {
+  if (!stage3Summary) return;
+  
+  if (!chairModel) {
+    stage3Summary.innerHTML = '';
+    return;
+  }
+  
+  stage3Summary.innerHTML = `主席：<span class="highlight">${getModelName(chairModel)}</span>`;
+}
+
+function clearAllSummaries() {
+  if (stage1Summary) stage1Summary.innerHTML = '';
+  if (stage2Summary) stage2Summary.innerHTML = '';
+  if (stage3Summary) stage3Summary.innerHTML = '';
+}
+
+// ============================================
+// Auto-grow Textarea
+// ============================================
+
+function autoGrowTextarea() {
+  // Reset height to auto to get the correct scrollHeight
+  queryInput.style.height = 'auto';
+  // Set height to scrollHeight, clamped by CSS min/max
+  const newHeight = Math.min(Math.max(queryInput.scrollHeight, 56), 180);
+  queryInput.style.height = newHeight + 'px';
+}
+
 // ============================================
 // Initialize
 // ============================================
@@ -259,6 +393,10 @@ function setupEventListeners() {
   queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend(); });
   settingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
   dismissError.addEventListener('click', () => errorBanner.classList.add('hidden'));
+  
+  // Auto-grow textarea
+  queryInput.addEventListener('input', autoGrowTextarea);
+  autoGrowTextarea(); // Initial sizing
 
   // Image toggle
   imageToggle.addEventListener('change', () => { enableImage = imageToggle.checked; });
@@ -303,14 +441,43 @@ function setupEventListeners() {
     }
   });
 
-  // Toggle stage sections
+  // Toggle stage sections (accordion mode - only one expanded at a time)
   document.querySelectorAll('.toggle-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const content = document.getElementById(btn.dataset.target);
       const section = btn.closest('.stage-section');
-      content.classList.toggle('expanded');
-      section.classList.toggle('collapsed');
+      const isCurrentlyExpanded = content.classList.contains('expanded');
+      
+      // Collapse all other stage sections first (accordion behavior)
+      document.querySelectorAll('.stage-section').forEach(otherSection => {
+        if (otherSection !== section) {
+          const otherContent = otherSection.querySelector('.stage-content');
+          if (otherContent) {
+            otherContent.classList.remove('expanded');
+            otherSection.classList.add('collapsed');
+          }
+        }
+      });
+      
+      // Toggle current section
+      if (isCurrentlyExpanded) {
+        content.classList.remove('expanded');
+        section.classList.add('collapsed');
+      } else {
+        content.classList.add('expanded');
+        section.classList.remove('collapsed');
+      }
+    });
+  });
+  
+  // Also allow clicking on stage header to toggle
+  document.querySelectorAll('.stage-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      // Don't trigger if clicking on toggle button (it has its own handler)
+      if (e.target.closest('.toggle-btn')) return;
+      const toggleBtn = header.querySelector('.toggle-btn');
+      if (toggleBtn) toggleBtn.click();
     });
   });
 
@@ -529,12 +696,24 @@ function clearContext() {
   showToast('已清除參考資料');
 }
 
+const contextCharCount = document.getElementById('contextCharCount');
+
 function updateContextBadge() {
   if (contextItems.length > 0) {
     contextBadge.textContent = contextItems.length;
     contextBadge.classList.remove('hidden');
+    
+    // Calculate total characters
+    const totalChars = contextItems.reduce((sum, item) => sum + item.content.length, 0);
+    if (contextCharCount) {
+      contextCharCount.textContent = formatCharCount(totalChars);
+      contextCharCount.classList.remove('hidden');
+    }
   } else {
     contextBadge.classList.add('hidden');
+    if (contextCharCount) {
+      contextCharCount.classList.add('hidden');
+    }
   }
 }
 
@@ -975,6 +1154,13 @@ async function handleSend() {
   exportBtn.style.display = 'none';
   canvasSection.classList.add('hidden');
 
+  // Clear summaries
+  clearAllSummaries();
+
+  // Show stepper and set initial state
+  showStepper();
+  setStepActive(1);
+
   stage1Section.classList.remove('hidden');
   stage2Section.classList.remove('hidden', 'stage-skipped');
   stage3Section.classList.remove('hidden');
@@ -1015,6 +1201,12 @@ async function handleSend() {
     stage1Status.textContent = `${successfulResponses.length}/${councilModels.length} 完成`;
     stage1Status.classList.remove('loading');
     stage1Status.classList.add('done');
+    
+    // Update stepper: Stage 1 done
+    setStepDone(1);
+    
+    // Update Stage 1 summary
+    updateStage1Summary(successfulResponses.map(r => ({ ...r, status: 'done' })));
 
     document.getElementById('stage1Content').classList.remove('expanded');
     stage1Section.classList.add('collapsed');
@@ -1027,6 +1219,9 @@ async function handleSend() {
 
     // === STAGE 2 ===
     if (enableReview && successfulResponses.length >= 2) {
+      // Update stepper: Stage 2 active
+      setStepActive(2);
+      
       stage2Status.textContent = '審查中...';
       stage2Status.classList.add('loading');
       document.getElementById('stage2Content').classList.add('expanded');
@@ -1042,15 +1237,30 @@ async function handleSend() {
       stage2Status.classList.remove('loading');
       stage2Status.classList.add('done');
       
+      // Update stepper: Stage 2 done
+      setStepDone(2);
+      
+      // Update Stage 2 summary
+      updateStage2Summary(aggregatedRanking);
+      
       document.getElementById('stage2Content').classList.remove('expanded');
       stage2Section.classList.add('collapsed');
     } else {
       stage2Section.classList.add('stage-skipped');
       stage2Status.textContent = '已跳過';
       reviewResults.innerHTML = '<div class="skipped-message">互評審查已停用</div>';
+      
+      // Update stepper: Stage 2 skipped
+      setStepSkipped(2);
     }
 
     // === STAGE 3 ===
+    // Update stepper: Stage 3 active
+    setStepActive(3);
+    
+    // Update Stage 3 summary
+    updateStage3Summary(chairmanModel);
+    
     stage3Status.textContent = '彙整中...';
     stage3Status.classList.add('loading');
     document.getElementById('stage3Content').classList.add('expanded');
@@ -1070,6 +1280,9 @@ async function handleSend() {
     stage3Status.textContent = '完成';
     stage3Status.classList.remove('loading');
     stage3Status.classList.add('done');
+    
+    // Update stepper: All done
+    setAllStepsDone();
 
     // Show canvas section
     canvasSection.classList.remove('hidden');
@@ -1099,13 +1312,67 @@ function resetButton() {
   sendBtn.innerHTML = '<span>送出</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
 }
 
+const MODEL_TAB_THRESHOLD = 3; // Switch to dropdown when more than this
+
 function renderTabs() {
-  modelTabs.innerHTML = councilModels.map(model => {
-    const info = getModelInfo(model);
-    const imgBadge = isImageModel(model) && enableImage ? '<span class="model-badge-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>IMG</span>' : '';
-    return `<button class="tab" data-model="${model}" title="${info.provider}">${info.name}${imgBadge}<span class="status-dot"></span></button>`;
-  }).join('');
-  modelTabs.querySelectorAll('.tab').forEach(tab => { tab.addEventListener('click', () => setActiveTab(tab.dataset.model)); });
+  const useDropdown = councilModels.length > MODEL_TAB_THRESHOLD;
+  
+  if (useDropdown) {
+    // Render dropdown mode for many models
+    modelTabs.innerHTML = `
+      <div class="model-dropdown-wrapper">
+        <button class="model-dropdown-trigger" id="modelDropdownTrigger">
+          <span class="dropdown-selected-name">選擇模型</span>
+          <span class="dropdown-status-dot"></span>
+          <svg class="dropdown-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+        <div class="model-dropdown-menu hidden" id="modelDropdownMenu">
+          ${councilModels.map(model => {
+            const info = getModelInfo(model);
+            const imgBadge = isImageModel(model) && enableImage ? '<span class="model-badge-image">IMG</span>' : '';
+            return `<button class="model-dropdown-item" data-model="${model}">
+              <span class="dropdown-item-name">${info.name}${imgBadge}</span>
+              <span class="dropdown-item-provider">${info.provider}</span>
+              <span class="status-dot"></span>
+            </button>`;
+          }).join('')}
+        </div>
+      </div>
+      <span class="model-count-badge">${councilModels.length} 個模型</span>
+    `;
+    
+    // Setup dropdown event listeners
+    const trigger = document.getElementById('modelDropdownTrigger');
+    const menu = document.getElementById('modelDropdownMenu');
+    
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.classList.toggle('hidden');
+    });
+    
+    document.addEventListener('click', (e) => {
+      if (!trigger.contains(e.target) && !menu.contains(e.target)) {
+        menu.classList.add('hidden');
+      }
+    });
+    
+    menu.querySelectorAll('.model-dropdown-item').forEach(item => {
+      item.addEventListener('click', () => {
+        setActiveTab(item.dataset.model);
+        menu.classList.add('hidden');
+      });
+    });
+  } else {
+    // Render regular tabs for few models
+    modelTabs.innerHTML = councilModels.map(model => {
+      const info = getModelInfo(model);
+      const imgBadge = isImageModel(model) && enableImage ? '<span class="model-badge-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>IMG</span>' : '';
+      return `<button class="tab" data-model="${model}" title="${info.provider}">${info.name}${imgBadge}<span class="status-dot"></span></button>`;
+    }).join('');
+    modelTabs.querySelectorAll('.tab').forEach(tab => { tab.addEventListener('click', () => setActiveTab(tab.dataset.model)); });
+  }
 }
 
 function renderResponsePanels() {
@@ -1121,13 +1388,57 @@ function renderResponsePanels() {
 
 function setActiveTab(model) {
   activeTab = model;
+  const info = getModelInfo(model);
+  
+  // Handle regular tabs mode
   modelTabs.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.model === model));
+  
+  // Handle dropdown mode
+  const trigger = document.getElementById('modelDropdownTrigger');
+  if (trigger) {
+    const selectedName = trigger.querySelector('.dropdown-selected-name');
+    const statusDot = trigger.querySelector('.dropdown-status-dot');
+    if (selectedName) selectedName.textContent = info.name;
+    
+    // Copy status from the item
+    const item = modelTabs.querySelector(`.model-dropdown-item[data-model="${model}"]`);
+    if (item && statusDot) {
+      const itemStatus = item.querySelector('.status-dot');
+      statusDot.className = itemStatus ? itemStatus.className : 'dropdown-status-dot';
+    }
+    
+    // Update active state in dropdown menu
+    modelTabs.querySelectorAll('.model-dropdown-item').forEach(item => {
+      item.classList.toggle('active', item.dataset.model === model);
+    });
+  }
+  
   responseContainer.querySelectorAll('.response-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.model === model));
 }
 
 function updateTabStatus(model, status) {
-  const tab = modelTabs.querySelector(`[data-model="${model}"]`);
-  if (tab) tab.querySelector('.status-dot').className = `status-dot ${status}`;
+  // Update regular tab status
+  const tab = modelTabs.querySelector(`.tab[data-model="${model}"]`);
+  if (tab) {
+    const dot = tab.querySelector('.status-dot');
+    if (dot) dot.className = `status-dot ${status}`;
+  }
+  
+  // Update dropdown item status
+  const dropdownItem = modelTabs.querySelector(`.model-dropdown-item[data-model="${model}"]`);
+  if (dropdownItem) {
+    const dot = dropdownItem.querySelector('.status-dot');
+    if (dot) dot.className = `status-dot ${status}`;
+    
+    // Also update trigger if this is the active model
+    if (model === activeTab) {
+      const trigger = document.getElementById('modelDropdownTrigger');
+      if (trigger) {
+        const triggerDot = trigger.querySelector('.dropdown-status-dot');
+        if (triggerDot) triggerDot.className = `dropdown-status-dot status-dot ${status}`;
+      }
+    }
+  }
 }
 
 function updateResponseContent(model, html) {
