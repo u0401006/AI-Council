@@ -16,12 +16,12 @@
   
   <div class="preview">
     <div>
-      <canvas id="c16" width="16" height="16"></canvas>
-      <br><button onclick="download(16)">Download 16x16</button>
+      <canvas id="c32" width="32" height="32"></canvas>
+      <br><button onclick="download(32)">Download 32x32</button>
     </div>
     <div>
-      <canvas id="c48" width="48" height="48"></canvas>
-      <br><button onclick="download(48)">Download 48x48</button>
+      <canvas id="c64" width="64" height="64"></canvas>
+      <br><button onclick="download(64)">Download 64x64</button>
     </div>
     <div>
       <canvas id="c128" width="128" height="128"></canvas>
@@ -29,10 +29,10 @@
     </div>
   </div>
   
-  <p>Save all three files to the <code>icons/</code> folder as <code>icon16.png</code>, <code>icon48.png</code>, <code>icon128.png</code></p>
+  <p>Save all three files to the <code>icons/</code> folder as <code>icon32.png</code>, <code>icon64.png</code>, <code>icon128.png</code></p>
 
   <script>
-    const sizes = [16, 48, 128];
+    const sizes = [32, 64, 128];
     
     function drawIcon(ctx, size) {
       const scale = size / 128;

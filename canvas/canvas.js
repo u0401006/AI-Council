@@ -1,0 +1,615 @@
+// MAV Canvas - WYSIWYG Markdown Editor with AI Assist
+
+// ============================================
+// State
+// ============================================
+let currentDocId = null;
+let autoSaveTimeout = null;
+let selectedText = '';
+let selectedRange = null;
+
+// DOM Elements
+const editor = document.getElementById('editor');
+const docTitle = document.getElementById('docTitle');
+const saveStatus = document.getElementById('saveStatus');
+const aiToolbar = document.getElementById('aiToolbar');
+const aiOverlay = document.getElementById('aiOverlay');
+const aiLoadingText = document.getElementById('aiLoadingText');
+const importModal = document.getElementById('importModal');
+const exportModal = document.getElementById('exportModal');
+const translateModal = document.getElementById('translateModal');
+const importList = document.getElementById('importList');
+const importEmpty = document.getElementById('importEmpty');
+const toastContainer = document.getElementById('toastContainer');
+
+// ============================================
+// Initialize
+// ============================================
+async function init() {
+  setupEventListeners();
+  await checkForImport();
+  await loadSavedDoc();
+}
+
+function setupEventListeners() {
+  // Toolbar buttons
+  document.querySelectorAll('.toolbar-btn').forEach(btn => {
+    btn.addEventListener('click', () => handleToolbarAction(btn.dataset.action));
+  });
+
+  // Header buttons
+  document.getElementById('importBtn').addEventListener('click', showImportModal);
+  document.getElementById('exportBtn').addEventListener('click', showExportModal);
+  document.getElementById('newDocBtn').addEventListener('click', newDocument);
+
+  // Editor events
+  editor.addEventListener('input', handleEditorInput);
+  editor.addEventListener('keydown', handleEditorKeydown);
+  editor.addEventListener('mouseup', handleTextSelection);
+  editor.addEventListener('keyup', handleTextSelection);
+
+  // AI toolbar buttons
+  document.querySelectorAll('.ai-btn').forEach(btn => {
+    btn.addEventListener('click', () => handleAiAction(btn.dataset.action));
+  });
+
+  // Modal close buttons
+  document.querySelectorAll('.modal-close').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById(btn.dataset.close).classList.add('hidden');
+    });
+  });
+
+  // Export buttons
+  document.querySelectorAll('.export-btn').forEach(btn => {
+    btn.addEventListener('click', () => handleExport(btn.dataset.format));
+  });
+
+  // Language buttons
+  document.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.addEventListener('click', () => handleTranslate(btn.dataset.lang));
+  });
+
+  // Close modals on backdrop click
+  document.querySelectorAll('.modal').forEach(modal => {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.classList.add('hidden');
+    });
+  });
+
+  // Hide AI toolbar on click outside
+  document.addEventListener('mousedown', (e) => {
+    if (!aiToolbar.contains(e.target) && !editor.contains(e.target)) {
+      aiToolbar.classList.add('hidden');
+    }
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', handleGlobalKeydown);
+}
+
+// ============================================
+// Import from Council
+// ============================================
+async function checkForImport() {
+  const result = await chrome.storage.local.get('canvasImport');
+  if (result.canvasImport) {
+    const { content, title, query } = result.canvasImport;
+    if (content) {
+      editor.innerHTML = markdownToHtml(content);
+      docTitle.textContent = title || query?.slice(0, 30) || 'Imported';
+      await chrome.storage.local.remove('canvasImport');
+      showToast('Content imported');
+    }
+  }
+}
+
+async function showImportModal() {
+  const result = await chrome.storage.local.get('conversations');
+  const conversations = result.conversations || [];
+  
+  if (conversations.length === 0) {
+    importList.classList.add('hidden');
+    importEmpty.classList.remove('hidden');
+  } else {
+    importEmpty.classList.add('hidden');
+    importList.classList.remove('hidden');
+    
+    importList.innerHTML = conversations.slice(0, 10).map(conv => `
+      <div class="import-item" data-id="${conv.id}">
+        <div class="import-item-title">${escapeHtml(conv.query?.slice(0, 50) || 'Untitled')}${conv.query?.length > 50 ? '...' : ''}</div>
+        <div class="import-item-preview">${escapeHtml(conv.finalAnswer?.slice(0, 100) || '')}...</div>
+        <div class="import-item-meta">${formatDate(conv.timestamp)} · ${conv.models?.length || 0} models</div>
+      </div>
+    `).join('');
+    
+    importList.querySelectorAll('.import-item').forEach(item => {
+      item.addEventListener('click', () => importConversation(item.dataset.id));
+    });
+  }
+  
+  importModal.classList.remove('hidden');
+}
+
+async function importConversation(id) {
+  const result = await chrome.storage.local.get('conversations');
+  const conversations = result.conversations || [];
+  const conv = conversations.find(c => c.id === id);
+  
+  if (conv?.finalAnswer) {
+    editor.innerHTML = markdownToHtml(conv.finalAnswer);
+    docTitle.textContent = conv.query?.slice(0, 30) || 'Imported';
+    importModal.classList.add('hidden');
+    showToast('Content imported');
+    scheduleSave();
+  }
+}
+
+// ============================================
+// Editor Actions
+// ============================================
+function handleToolbarAction(action) {
+  editor.focus();
+  
+  switch (action) {
+    case 'bold':
+      document.execCommand('bold');
+      break;
+    case 'italic':
+      document.execCommand('italic');
+      break;
+    case 'code':
+      wrapSelection('code');
+      break;
+    case 'h1':
+      document.execCommand('formatBlock', false, 'h1');
+      break;
+    case 'h2':
+      document.execCommand('formatBlock', false, 'h2');
+      break;
+    case 'h3':
+      document.execCommand('formatBlock', false, 'h3');
+      break;
+    case 'ul':
+      document.execCommand('insertUnorderedList');
+      break;
+    case 'ol':
+      document.execCommand('insertOrderedList');
+      break;
+    case 'quote':
+      document.execCommand('formatBlock', false, 'blockquote');
+      break;
+    case 'link':
+      const url = prompt('Enter URL:');
+      if (url) document.execCommand('createLink', false, url);
+      break;
+    case 'hr':
+      document.execCommand('insertHorizontalRule');
+      break;
+  }
+  
+  scheduleSave();
+}
+
+function wrapSelection(tag) {
+  const selection = window.getSelection();
+  if (selection.rangeCount === 0) return;
+  
+  const range = selection.getRangeAt(0);
+  const selectedText = range.toString();
+  
+  if (selectedText) {
+    const element = document.createElement(tag);
+    element.textContent = selectedText;
+    range.deleteContents();
+    range.insertNode(element);
+  }
+}
+
+function handleEditorInput() {
+  scheduleSave();
+}
+
+function handleEditorKeydown(e) {
+  // Tab handling
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    document.execCommand('insertText', false, '  ');
+  }
+  
+  // Enter in code block
+  if (e.key === 'Enter' && !e.shiftKey) {
+    const selection = window.getSelection();
+    if (selection.anchorNode?.parentElement?.tagName === 'CODE') {
+      e.preventDefault();
+      document.execCommand('insertText', false, '\n');
+    }
+  }
+}
+
+function handleGlobalKeydown(e) {
+  // Ctrl/Cmd + B = Bold
+  if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+    e.preventDefault();
+    handleToolbarAction('bold');
+  }
+  // Ctrl/Cmd + I = Italic
+  if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+    e.preventDefault();
+    handleToolbarAction('italic');
+  }
+  // Ctrl/Cmd + S = Save
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    saveDocument();
+  }
+  // Escape = Close modals
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal:not(.hidden)').forEach(m => m.classList.add('hidden'));
+    aiToolbar.classList.add('hidden');
+  }
+}
+
+// ============================================
+// Text Selection & AI Toolbar
+// ============================================
+function handleTextSelection() {
+  const selection = window.getSelection();
+  const text = selection.toString().trim();
+  
+  if (text.length > 0) {
+    selectedText = text;
+    selectedRange = selection.getRangeAt(0).cloneRange();
+    showAiToolbar(selection);
+  } else {
+    aiToolbar.classList.add('hidden');
+    selectedText = '';
+    selectedRange = null;
+  }
+}
+
+function showAiToolbar(selection) {
+  const range = selection.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+  
+  aiToolbar.classList.remove('hidden');
+  
+  // Position above selection
+  const toolbarRect = aiToolbar.getBoundingClientRect();
+  let left = rect.left + (rect.width / 2) - (toolbarRect.width / 2);
+  let top = rect.top - toolbarRect.height - 8;
+  
+  // Keep in viewport
+  if (left < 10) left = 10;
+  if (left + toolbarRect.width > window.innerWidth - 10) {
+    left = window.innerWidth - toolbarRect.width - 10;
+  }
+  if (top < 10) {
+    top = rect.bottom + 8; // Position below if no space above
+  }
+  
+  aiToolbar.style.left = `${left}px`;
+  aiToolbar.style.top = `${top}px`;
+}
+
+// ============================================
+// AI Actions
+// ============================================
+async function handleAiAction(action) {
+  if (!selectedText || !selectedRange) {
+    showToast('Please select text first', true);
+    return;
+  }
+  
+  aiToolbar.classList.add('hidden');
+  
+  if (action === 'translate') {
+    translateModal.classList.remove('hidden');
+    return;
+  }
+  
+  const prompts = {
+    rewrite: `Rewrite the following text to be clearer and more concise. Keep the same meaning and tone. Return only the rewritten text, no explanations.\n\nText:\n${selectedText}`,
+    summarize: `Summarize the following text in 1-2 sentences. Return only the summary, no explanations.\n\nText:\n${selectedText}`,
+    expand: `Expand on the following text with more detail and examples. Keep the same style. Return only the expanded text, no explanations.\n\nText:\n${selectedText}`
+  };
+  
+  await executeAiEdit(prompts[action], action);
+}
+
+async function handleTranslate(lang) {
+  translateModal.classList.add('hidden');
+  
+  if (!selectedText || !selectedRange) {
+    showToast('Please select text first', true);
+    return;
+  }
+  
+  const langNames = {
+    'zh-TW': 'Traditional Chinese',
+    'zh-CN': 'Simplified Chinese',
+    'en': 'English',
+    'ja': 'Japanese',
+    'ko': 'Korean'
+  };
+  
+  const prompt = `Translate the following text to ${langNames[lang]}. Return only the translation, no explanations.\n\nText:\n${selectedText}`;
+  await executeAiEdit(prompt, 'translate');
+}
+
+async function executeAiEdit(prompt, actionName) {
+  showAiLoading(`AI is ${actionName}ing...`);
+  
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: 'QUERY_MODEL',
+      payload: {
+        model: 'anthropic/claude-sonnet-4',
+        messages: [{ role: 'user', content: prompt }]
+      }
+    });
+    
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    
+    const newText = result.choices?.[0]?.message?.content?.trim();
+    if (!newText) {
+      throw new Error('No response from AI');
+    }
+    
+    // Replace selected text
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(selectedRange);
+    
+    document.execCommand('insertText', false, newText);
+    
+    hideAiLoading();
+    showToast(`Text ${actionName}d`);
+    scheduleSave();
+    
+  } catch (err) {
+    hideAiLoading();
+    showToast(`Failed: ${err.message}`, true);
+  }
+}
+
+function showAiLoading(text) {
+  aiLoadingText.textContent = text;
+  aiOverlay.classList.remove('hidden');
+}
+
+function hideAiLoading() {
+  aiOverlay.classList.add('hidden');
+}
+
+// ============================================
+// Save/Load
+// ============================================
+function scheduleSave() {
+  saveStatus.textContent = 'Saving...';
+  saveStatus.className = 'save-status saving';
+  
+  clearTimeout(autoSaveTimeout);
+  autoSaveTimeout = setTimeout(saveDocument, 1000);
+}
+
+async function saveDocument() {
+  const content = editor.innerHTML;
+  const markdown = htmlToMarkdown(content);
+  
+  if (!currentDocId) {
+    currentDocId = crypto.randomUUID();
+  }
+  
+  const doc = {
+    id: currentDocId,
+    title: docTitle.textContent,
+    content: markdown,
+    html: content,
+    timestamp: Date.now()
+  };
+  
+  await chrome.storage.local.set({ canvasDoc: doc });
+  
+  saveStatus.textContent = 'Saved';
+  saveStatus.className = 'save-status saved';
+}
+
+async function loadSavedDoc() {
+  const result = await chrome.storage.local.get('canvasDoc');
+  if (result.canvasDoc) {
+    const doc = result.canvasDoc;
+    currentDocId = doc.id;
+    docTitle.textContent = doc.title || 'Untitled';
+    editor.innerHTML = doc.html || markdownToHtml(doc.content || '');
+  }
+}
+
+function newDocument() {
+  if (editor.innerHTML.trim() && !confirm('Create new document? Unsaved changes will be lost.')) {
+    return;
+  }
+  
+  currentDocId = null;
+  docTitle.textContent = 'Untitled';
+  editor.innerHTML = '';
+  chrome.storage.local.remove('canvasDoc');
+  showToast('New document created');
+}
+
+// ============================================
+// Export
+// ============================================
+function showExportModal() {
+  exportModal.classList.remove('hidden');
+}
+
+function handleExport(format) {
+  const content = editor.innerHTML;
+  const markdown = htmlToMarkdown(content);
+  const plainText = editor.innerText;
+  
+  switch (format) {
+    case 'md':
+      downloadFile(`${docTitle.textContent}.md`, markdown, 'text/markdown');
+      break;
+    case 'txt':
+      downloadFile(`${docTitle.textContent}.txt`, plainText, 'text/plain');
+      break;
+    case 'copy':
+      navigator.clipboard.writeText(markdown)
+        .then(() => showToast('Copied to clipboard'))
+        .catch(() => showToast('Failed to copy', true));
+      break;
+  }
+  
+  exportModal.classList.add('hidden');
+}
+
+function downloadFile(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('File downloaded');
+}
+
+// ============================================
+// Markdown Conversion
+// ============================================
+function markdownToHtml(md) {
+  if (!md) return '';
+  
+  let html = escapeHtml(md);
+  
+  // Code blocks
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => 
+    `<pre><code class="language-${lang}">${code}</code></pre>`
+  );
+  
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  
+  // Bold & Italic
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  
+  // Headings
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  
+  // Links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  
+  // Lists
+  html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+  
+  // Blockquotes
+  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+  
+  // Horizontal rules
+  html = html.replace(/^---$/gm, '<hr>');
+  
+  // Paragraphs
+  html = '<p>' + html.replace(/\n\n+/g, '</p><p>') + '</p>';
+  
+  // Clean up
+  html = html
+    .replace(/<p><\/p>/g, '')
+    .replace(/<p>(<h[1-3]>)/g, '$1')
+    .replace(/(<\/h[1-3]>)<\/p>/g, '$1')
+    .replace(/<p>(<ul>)/g, '$1')
+    .replace(/(<\/ul>)<\/p>/g, '$1')
+    .replace(/<p>(<blockquote>)/g, '$1')
+    .replace(/(<\/blockquote>)<\/p>/g, '$1')
+    .replace(/<p>(<pre>)/g, '$1')
+    .replace(/(<\/pre>)<\/p>/g, '$1')
+    .replace(/<p>(<hr>)<\/p>/g, '$1');
+  
+  return html;
+}
+
+function htmlToMarkdown(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  
+  let md = '';
+  
+  function processNode(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent;
+    }
+    
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    
+    const tag = node.tagName.toLowerCase();
+    const children = Array.from(node.childNodes).map(processNode).join('');
+    
+    switch (tag) {
+      case 'h1': return `# ${children}\n\n`;
+      case 'h2': return `## ${children}\n\n`;
+      case 'h3': return `### ${children}\n\n`;
+      case 'p': return `${children}\n\n`;
+      case 'strong': case 'b': return `**${children}**`;
+      case 'em': case 'i': return `*${children}*`;
+      case 'code': 
+        if (node.parentElement?.tagName === 'PRE') return children;
+        return `\`${children}\``;
+      case 'pre': return `\`\`\`\n${children}\`\`\`\n\n`;
+      case 'a': return `[${children}](${node.href})`;
+      case 'ul': return children;
+      case 'ol': return children;
+      case 'li': return `- ${children}\n`;
+      case 'blockquote': return `> ${children}\n\n`;
+      case 'hr': return '---\n\n';
+      case 'br': return '\n';
+      case 'div': return `${children}\n`;
+      default: return children;
+    }
+  }
+  
+  md = Array.from(div.childNodes).map(processNode).join('');
+  
+  // Clean up extra newlines
+  return md.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// ============================================
+// Utilities
+// ============================================
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function formatDate(timestamp) {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now - date;
+  
+  if (diff < 60000) return 'Just now';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return date.toLocaleDateString();
+}
+
+function showToast(message, isError = false) {
+  const toast = document.createElement('div');
+  toast.className = `toast${isError ? ' error' : ''}`;
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+  setTimeout(() => toast.remove(), 2500);
+}
+
+// Initialize
+init();
+

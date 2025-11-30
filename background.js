@@ -27,6 +27,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  if (message.type === 'GET_PAGE_CONTENT') {
+    handleGetPageContent(message.tabId)
+      .then(sendResponse)
+      .catch(err => sendResponse({ error: err.message }));
+    return true;
+  }
+  
+  if (message.type === 'GET_SELECTION') {
+    handleGetSelection(message.tabId)
+      .then(sendResponse)
+      .catch(err => sendResponse({ error: err.message }));
+    return true;
+  }
+  
+  if (message.type === 'OPEN_CANVAS') {
+    handleOpenCanvas(message.payload);
+    sendResponse({ success: true });
+    return false;
+  }
+  
   return false;
 });
 
@@ -44,6 +64,81 @@ chrome.runtime.onConnect.addListener((port) => {
 async function getApiKey() {
   const result = await chrome.storage.sync.get('apiKey');
   return result.apiKey;
+}
+
+// Handle get page content request
+async function handleGetPageContent(tabId) {
+  try {
+    // Check if we can access this tab
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
+      throw new Error('Cannot access this page type (browser internal page)');
+    }
+    
+    // Inject content script
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content/content.js']
+    });
+    
+    // Get content
+    const response = await chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_CONTENT' });
+    if (response.success) {
+      return response.data;
+    } else {
+      throw new Error(response.error || 'Failed to get page content');
+    }
+  } catch (err) {
+    if (err.message.includes('Cannot access')) {
+      throw err;
+    }
+    throw new Error(`Cannot access page: ${err.message}`);
+  }
+}
+
+// Handle get selection request
+async function handleGetSelection(tabId) {
+  try {
+    // Check if we can access this tab
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
+      throw new Error('Cannot access this page type (browser internal page)');
+    }
+    
+    // Inject content script
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content/content.js']
+    });
+    
+    const response = await chrome.tabs.sendMessage(tabId, { type: 'GET_SELECTION' });
+    if (response.success) {
+      return response.data;
+    } else {
+      throw new Error(response.error || 'Failed to get selection');
+    }
+  } catch (err) {
+    if (err.message.includes('Cannot access')) {
+      throw err;
+    }
+    throw new Error(`Cannot access page: ${err.message}`);
+  }
+}
+
+// Handle open canvas
+function handleOpenCanvas(payload) {
+  const url = chrome.runtime.getURL('canvas/index.html');
+  const params = new URLSearchParams();
+  if (payload?.content) {
+    // Store content in local storage for canvas to retrieve
+    chrome.storage.local.set({ canvasImport: payload });
+  }
+  chrome.windows.create({
+    url: url,
+    type: 'popup',
+    width: 800,
+    height: 700
+  });
 }
 
 async function handleModelQuery(payload) {

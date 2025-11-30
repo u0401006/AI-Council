@@ -3,8 +3,8 @@
   "name": "MAV - Multi-AI Voting",
   "version": "1.0.0",
   "description": "Query multiple LLMs in parallel, let them review each other, and get a synthesized answer",
-  "permissions": ["storage", "sidePanel"],
-  "host_permissions": ["https://openrouter.ai/*"],
+  "permissions": ["storage", "sidePanel", "activeTab", "scripting", "clipboardRead", "clipboardWrite"],
+  "host_permissions": ["https://openrouter.ai/*", "<all_urls>"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -13,8 +13,18 @@
     "default_path": "sidepanel/index.html"
   },
   "options_page": "options/index.html",
+  "icons": {
+    "32": "icons/icon32.png",
+    "64": "icons/icon64.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
-    "default_title": "Open MAV Panel"
+    "default_title": "Open MAV Panel",
+    "default_icon": {
+      "32": "icons/icon32.png",
+      "64": "icons/icon64.png",
+      "128": "icons/icon128.png"
+    }
   }
 }
 

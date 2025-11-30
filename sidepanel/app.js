@@ -171,6 +171,7 @@ let activeTab = null;
 let currentQuery = '';
 let currentConversation = null;
 let historyVisible = false;
+let contextItems = []; // Array of { id, type, title, content, timestamp }
 
 // DOM Elements
 const queryInput = document.getElementById('queryInput');
@@ -194,6 +195,21 @@ const exportJson = document.getElementById('exportJson');
 const copyClipboard = document.getElementById('copyClipboard');
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightboxImg');
+
+// Context elements
+const contextHeader = document.getElementById('contextHeader');
+const contextToggle = document.getElementById('contextToggle');
+const contextContent = document.getElementById('contextContent');
+const contextBadge = document.getElementById('contextBadge');
+const contextItemsEl = document.getElementById('contextItems');
+const capturePageBtn = document.getElementById('capturePageBtn');
+const captureSelectionBtn = document.getElementById('captureSelectionBtn');
+const pasteContextBtn = document.getElementById('pasteContextBtn');
+const clearContextBtn = document.getElementById('clearContextBtn');
+
+// Canvas elements
+const canvasSection = document.getElementById('canvasSection');
+const canvasBtn = document.getElementById('canvasBtn');
 
 // Stage elements
 const stage1Section = document.getElementById('stage1Section');
@@ -260,6 +276,16 @@ function setupEventListeners() {
   lightbox.addEventListener('click', () => lightbox.classList.add('hidden'));
   document.querySelector('.lightbox-close')?.addEventListener('click', () => lightbox.classList.add('hidden'));
 
+  // Context section
+  contextHeader.addEventListener('click', toggleContextPanel);
+  capturePageBtn.addEventListener('click', capturePageContent);
+  captureSelectionBtn.addEventListener('click', captureSelection);
+  pasteContextBtn.addEventListener('click', pasteContext);
+  clearContextBtn.addEventListener('click', clearContext);
+
+  // Canvas button
+  canvasBtn.addEventListener('click', openCanvas);
+
   // Toggle stage sections
   document.querySelectorAll('.toggle-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -278,6 +304,251 @@ function setupEventListeners() {
     if (changes.reviewPrompt) customReviewPrompt = changes.reviewPrompt.newValue || DEFAULT_REVIEW_PROMPT;
     if (changes.chairmanPrompt) customChairmanPrompt = changes.chairmanPrompt.newValue || DEFAULT_CHAIRMAN_PROMPT;
     updateModelCount();
+  });
+}
+
+// ============================================
+// Context Functions
+// ============================================
+
+function toggleContextPanel() {
+  contextContent.classList.toggle('hidden');
+  contextToggle.classList.toggle('expanded');
+}
+
+async function getActiveTabId() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab?.id;
+}
+
+async function capturePageContent() {
+  try {
+    capturePageBtn.disabled = true;
+    capturePageBtn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span>';
+    
+    const tabId = await getActiveTabId();
+    if (!tabId) {
+      showToast('No active tab found', true);
+      return;
+    }
+    
+    const response = await chrome.runtime.sendMessage({ type: 'GET_PAGE_CONTENT', tabId });
+    
+    if (response.error) {
+      showToast(response.error, true);
+      return;
+    }
+    
+    const { title, url, content } = response;
+    if (!content || content.length < 10) {
+      showToast('No content found on page', true);
+      return;
+    }
+    
+    addContextItem({
+      type: 'page',
+      title: title || url,
+      content: content,
+      url: url
+    });
+    
+    showToast('Page content captured');
+  } catch (err) {
+    showToast('Failed to capture page: ' + err.message, true);
+  } finally {
+    capturePageBtn.disabled = false;
+    capturePageBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span>Capture Page</span>`;
+  }
+}
+
+async function captureSelection() {
+  try {
+    captureSelectionBtn.disabled = true;
+    
+    const tabId = await getActiveTabId();
+    if (!tabId) {
+      showToast('No active tab found', true);
+      return;
+    }
+    
+    const response = await chrome.runtime.sendMessage({ type: 'GET_SELECTION', tabId });
+    
+    if (response.error) {
+      showToast(response.error, true);
+      return;
+    }
+    
+    const text = response;
+    if (!text || text.length < 1) {
+      showToast('No text selected on page', true);
+      return;
+    }
+    
+    addContextItem({
+      type: 'selection',
+      title: 'Selected Text',
+      content: text
+    });
+    
+    showToast('Selection captured');
+  } catch (err) {
+    showToast('Failed to capture selection: ' + err.message, true);
+  } finally {
+    captureSelectionBtn.disabled = false;
+  }
+}
+
+async function pasteContext() {
+  try {
+    // Try clipboard API first
+    let text = '';
+    try {
+      text = await navigator.clipboard.readText();
+    } catch (clipboardErr) {
+      // Fallback: prompt user to paste manually
+      text = prompt('Paste your content here:');
+    }
+    
+    if (!text || text.length < 1) {
+      showToast('No content to paste', true);
+      return;
+    }
+    
+    addContextItem({
+      type: 'paste',
+      title: 'Pasted Content',
+      content: text
+    });
+    
+    showToast('Content pasted');
+  } catch (err) {
+    showToast('Failed to paste: ' + err.message, true);
+  }
+}
+
+function addContextItem(item) {
+  const id = crypto.randomUUID();
+  const contextItem = {
+    id,
+    type: item.type,
+    title: item.title,
+    content: item.content,
+    url: item.url,
+    timestamp: Date.now()
+  };
+  
+  contextItems.push(contextItem);
+  renderContextItems();
+  updateContextBadge();
+  
+  // Auto-expand if collapsed
+  if (contextContent.classList.contains('hidden')) {
+    contextContent.classList.remove('hidden');
+    contextToggle.classList.add('expanded');
+  }
+}
+
+function removeContextItem(id) {
+  contextItems = contextItems.filter(item => item.id !== id);
+  renderContextItems();
+  updateContextBadge();
+}
+
+function clearContext() {
+  contextItems = [];
+  renderContextItems();
+  updateContextBadge();
+  showToast('Context cleared');
+}
+
+function updateContextBadge() {
+  if (contextItems.length > 0) {
+    contextBadge.textContent = contextItems.length;
+    contextBadge.classList.remove('hidden');
+  } else {
+    contextBadge.classList.add('hidden');
+  }
+}
+
+function renderContextItems() {
+  if (contextItems.length === 0) {
+    contextItemsEl.innerHTML = '';
+    return;
+  }
+  
+  contextItemsEl.innerHTML = contextItems.map(item => {
+    const preview = item.content.slice(0, 150).replace(/\n/g, ' ');
+    const charCount = item.content.length;
+    const iconClass = item.type === 'page' ? 'page' : item.type === 'selection' ? 'selection' : 'paste';
+    const iconSvg = item.type === 'page' 
+      ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line></svg>'
+      : item.type === 'selection'
+      ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>'
+      : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+    
+    return `
+      <div class="context-item" data-id="${item.id}">
+        <div class="context-item-icon ${iconClass}">${iconSvg}</div>
+        <div class="context-item-body">
+          <div class="context-item-title">${escapeHtml(item.title)}</div>
+          <div class="context-item-preview">${escapeHtml(preview)}${charCount > 150 ? '...' : ''}</div>
+          <div class="context-item-meta">${formatCharCount(charCount)}</div>
+        </div>
+        <button class="context-item-remove" data-id="${item.id}" title="Remove">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    `;
+  }).join('');
+  
+  // Add remove handlers
+  contextItemsEl.querySelectorAll('.context-item-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeContextItem(btn.dataset.id);
+    });
+  });
+}
+
+function formatCharCount(count) {
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1)}k chars`;
+  }
+  return `${count} chars`;
+}
+
+function buildPromptWithContext(query) {
+  if (contextItems.length === 0) {
+    return query;
+  }
+  
+  const contextText = contextItems.map((item, i) => {
+    const header = item.url 
+      ? `[Context ${i + 1}: ${item.title}]\nSource: ${item.url}\n`
+      : `[Context ${i + 1}: ${item.title}]\n`;
+    return header + item.content;
+  }).join('\n\n---\n\n');
+  
+  return `以下是參考資料：
+
+${contextText}
+
+---
+
+問題：${query}`;
+}
+
+function openCanvas() {
+  chrome.runtime.sendMessage({
+    type: 'OPEN_CANVAS',
+    payload: currentConversation ? {
+      content: currentConversation.finalAnswer,
+      title: 'Council Response',
+      query: currentConversation.query
+    } : null
   });
 }
 
@@ -412,6 +683,7 @@ async function loadConversation(id) {
   queryInput.value = conv.query;
   emptyState.classList.add('hidden');
   exportBtn.style.display = 'flex';
+  if (conv.finalAnswer) canvasSection.classList.remove('hidden');
 
   // Show stages
   stage1Section.classList.remove('hidden');
@@ -625,6 +897,7 @@ async function handleSend() {
   emptyState.classList.add('hidden');
   errorBanner.classList.add('hidden');
   exportBtn.style.display = 'none';
+  canvasSection.classList.add('hidden');
 
   stage1Section.classList.remove('hidden');
   stage2Section.classList.remove('hidden', 'stage-skipped');
@@ -654,7 +927,9 @@ async function handleSend() {
     renderResponsePanels();
     if (councilModels.length > 0) setActiveTab(councilModels[0]);
 
-    await Promise.allSettled(councilModels.map(model => queryModel(model, query)));
+    // Build prompt with context if available
+    const promptWithContext = buildPromptWithContext(query);
+    await Promise.allSettled(councilModels.map(model => queryModel(model, promptWithContext)));
     
     const successfulResponses = Array.from(responses.entries())
       .filter(([_, r]) => r.status === 'done')
@@ -719,6 +994,9 @@ async function handleSend() {
     stage3Status.textContent = 'Complete';
     stage3Status.classList.remove('loading');
     stage3Status.classList.add('done');
+
+    // Show canvas section
+    canvasSection.classList.remove('hidden');
 
     // Save conversation
     await saveCurrentConversation({
