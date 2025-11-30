@@ -210,6 +210,8 @@ const clearContextBtn = document.getElementById('clearContextBtn');
 // Canvas elements
 const canvasSection = document.getElementById('canvasSection');
 const canvasBtn = document.getElementById('canvasBtn');
+const canvasDropdownBtn = document.getElementById('canvasDropdownBtn');
+const canvasDropdown = document.getElementById('canvasDropdown');
 
 // Stage elements
 const stage1Section = document.getElementById('stage1Section');
@@ -283,8 +285,21 @@ function setupEventListeners() {
   pasteContextBtn.addEventListener('click', pasteContext);
   clearContextBtn.addEventListener('click', clearContext);
 
-  // Canvas button
-  canvasBtn.addEventListener('click', openCanvas);
+  // Canvas button & dropdown
+  canvasBtn.addEventListener('click', () => openCanvas(false));
+  canvasDropdownBtn.addEventListener('click', toggleCanvasDropdown);
+  canvasDropdown.querySelectorAll('.canvas-dropdown-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const asWindow = item.dataset.mode === 'window';
+      openCanvas(asWindow);
+      canvasDropdown.classList.add('hidden');
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (!canvasDropdownBtn.contains(e.target) && !canvasDropdown.contains(e.target)) {
+      canvasDropdown.classList.add('hidden');
+    }
+  });
 
   // Toggle stage sections
   document.querySelectorAll('.toggle-btn').forEach(btn => {
@@ -541,14 +556,20 @@ ${contextText}
 問題：${query}`;
 }
 
-function openCanvas() {
+function toggleCanvasDropdown(e) {
+  e.stopPropagation();
+  canvasDropdown.classList.toggle('hidden');
+}
+
+function openCanvas(asWindow = false) {
   chrome.runtime.sendMessage({
     type: 'OPEN_CANVAS',
     payload: currentConversation ? {
       content: currentConversation.finalAnswer,
       title: 'Council 回應',
-      query: currentConversation.query
-    } : null
+      query: currentConversation.query,
+      openAsWindow: asWindow
+    } : { openAsWindow: asWindow }
   });
 }
 

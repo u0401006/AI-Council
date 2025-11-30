@@ -11,6 +11,32 @@ chrome.action.onClicked.addListener(async (tab) => {
   await chrome.sidePanel.open({ tabId: tab.id });
 });
 
+// Create context menus on install
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'open-canvas-tab',
+    title: '在畫布中開啟（分頁）',
+    contexts: ['selection']
+  });
+  chrome.contextMenus.create({
+    id: 'open-canvas-window',
+    title: '在畫布中開啟（獨立視窗）',
+    contexts: ['selection']
+  });
+});
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'open-canvas-tab' || info.menuItemId === 'open-canvas-window') {
+    const asWindow = info.menuItemId === 'open-canvas-window';
+    handleOpenCanvas({
+      content: info.selectionText,
+      title: '選取內容',
+      openAsWindow: asWindow
+    });
+  }
+});
+
 // Handle messages from side panel and options
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'QUERY_MODEL') {
@@ -128,17 +154,23 @@ async function handleGetSelection(tabId) {
 // Handle open canvas
 function handleOpenCanvas(payload) {
   const url = chrome.runtime.getURL('canvas/index.html');
-  const params = new URLSearchParams();
   if (payload?.content) {
     // Store content in local storage for canvas to retrieve
     chrome.storage.local.set({ canvasImport: payload });
   }
-  chrome.windows.create({
-    url: url,
-    type: 'popup',
-    width: 800,
-    height: 700
-  });
+  
+  if (payload?.openAsWindow) {
+    // Open as popup window
+    chrome.windows.create({
+      url: url,
+      type: 'popup',
+      width: 900,
+      height: 750
+    });
+  } else {
+    // Open as tab (default)
+    chrome.tabs.create({ url });
+  }
 }
 
 async function handleModelQuery(payload) {

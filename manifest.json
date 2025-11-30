@@ -3,7 +3,7 @@
   "name": "MAV - 多模型 AI 投票",
   "version": "1.0.0",
   "description": "同時查詢多個 LLM，互相評審，產出綜合答案",
-  "permissions": ["storage", "sidePanel", "activeTab", "scripting", "clipboardRead", "clipboardWrite"],
+  "permissions": ["storage", "sidePanel", "activeTab", "scripting", "clipboardRead", "clipboardWrite", "contextMenus"],
   "host_permissions": ["https://openrouter.ai/*", "<all_urls>"],
   "background": {
     "service_worker": "background.js",
