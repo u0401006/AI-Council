@@ -1,37 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MAV Canvas</title>
+  <title>MAV 畫布</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="canvas-app">
     <header class="canvas-header">
       <div class="header-left">
-        <h1>Canvas</h1>
-        <span id="docTitle" class="doc-title">Untitled</span>
+        <h1>畫布</h1>
+        <span id="docTitle" class="doc-title">未命名</span>
       </div>
       <div class="header-right">
-        <span id="saveStatus" class="save-status">Saved</span>
-        <button id="importBtn" class="header-btn" title="Import from Council">
+        <span id="saveStatus" class="save-status">已儲存</span>
+        <button id="importBtn" class="header-btn" title="從 Council 匯入">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="17 8 12 3 7 8"></polyline>
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
-          <span>Import</span>
+          <span>匯入</span>
         </button>
-        <button id="exportBtn" class="header-btn" title="Export">
+        <button id="exportBtn" class="header-btn" title="匯出">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
-          <span>Export</span>
+          <span>匯出</span>
         </button>
-        <button id="newDocBtn" class="header-btn" title="New Document">
+        <button id="newDocBtn" class="header-btn" title="新增文件">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
@@ -45,20 +45,20 @@
     <!-- Toolbar -->
     <div class="toolbar">
       <div class="toolbar-group">
-        <button class="toolbar-btn" data-action="bold" title="Bold (Ctrl+B)">
+        <button class="toolbar-btn" data-action="bold" title="粗體 (Ctrl+B)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path>
             <path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path>
           </svg>
         </button>
-        <button class="toolbar-btn" data-action="italic" title="Italic (Ctrl+I)">
+        <button class="toolbar-btn" data-action="italic" title="斜體 (Ctrl+I)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="19" y1="4" x2="10" y2="4"></line>
             <line x1="14" y1="20" x2="5" y2="20"></line>
             <line x1="15" y1="4" x2="9" y2="20"></line>
           </svg>
         </button>
-        <button class="toolbar-btn" data-action="code" title="Code">
+        <button class="toolbar-btn" data-action="code" title="程式碼">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="16 18 22 12 16 6"></polyline>
             <polyline points="8 6 2 12 8 18"></polyline>
@@ -67,13 +67,13 @@
       </div>
       <div class="toolbar-divider"></div>
       <div class="toolbar-group">
-        <button class="toolbar-btn" data-action="h1" title="Heading 1">H1</button>
-        <button class="toolbar-btn" data-action="h2" title="Heading 2">H2</button>
-        <button class="toolbar-btn" data-action="h3" title="Heading 3">H3</button>
+        <button class="toolbar-btn" data-action="h1" title="標題 1">H1</button>
+        <button class="toolbar-btn" data-action="h2" title="標題 2">H2</button>
+        <button class="toolbar-btn" data-action="h3" title="標題 3">H3</button>
       </div>
       <div class="toolbar-divider"></div>
       <div class="toolbar-group">
-        <button class="toolbar-btn" data-action="ul" title="Bullet List">
+        <button class="toolbar-btn" data-action="ul" title="項目符號清單">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="8" y1="6" x2="21" y2="6"></line>
             <line x1="8" y1="12" x2="21" y2="12"></line>
@@ -83,7 +83,7 @@
             <line x1="3" y1="18" x2="3.01" y2="18"></line>
           </svg>
         </button>
-        <button class="toolbar-btn" data-action="ol" title="Numbered List">
+        <button class="toolbar-btn" data-action="ol" title="編號清單">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="10" y1="6" x2="21" y2="6"></line>
             <line x1="10" y1="12" x2="21" y2="12"></line>
@@ -93,7 +93,7 @@
             <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"></path>
           </svg>
         </button>
-        <button class="toolbar-btn" data-action="quote" title="Quote">
+        <button class="toolbar-btn" data-action="quote" title="引用">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21z"></path>
             <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3z"></path>
@@ -102,13 +102,13 @@
       </div>
       <div class="toolbar-divider"></div>
       <div class="toolbar-group">
-        <button class="toolbar-btn" data-action="link" title="Link">
+        <button class="toolbar-btn" data-action="link" title="連結">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
           </svg>
         </button>
-        <button class="toolbar-btn" data-action="hr" title="Horizontal Rule">
+        <button class="toolbar-btn" data-action="hr" title="分隔線">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
@@ -118,43 +118,43 @@
 
     <!-- Editor Area -->
     <div class="editor-container">
-      <div id="editor" class="editor" contenteditable="true" data-placeholder="Start writing..."></div>
+      <div id="editor" class="editor" contenteditable="true" data-placeholder="開始撰寫..."></div>
     </div>
 
     <!-- AI Floating Toolbar (appears on text selection) -->
     <div id="aiToolbar" class="ai-toolbar hidden">
-      <button class="ai-btn" data-action="rewrite" title="Rewrite">
+      <button class="ai-btn" data-action="rewrite" title="改寫">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
           <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
         </svg>
-        <span>Rewrite</span>
+        <span>改寫</span>
       </button>
-      <button class="ai-btn" data-action="summarize" title="Summarize">
+      <button class="ai-btn" data-action="summarize" title="摘要">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="21" y1="10" x2="3" y2="10"></line>
           <line x1="21" y1="6" x2="3" y2="6"></line>
           <line x1="21" y1="14" x2="3" y2="14"></line>
           <line x1="21" y1="18" x2="3" y2="18"></line>
         </svg>
-        <span>Summarize</span>
+        <span>摘要</span>
       </button>
-      <button class="ai-btn" data-action="expand" title="Expand">
+      <button class="ai-btn" data-action="expand" title="擴充">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="15 3 21 3 21 9"></polyline>
           <polyline points="9 21 3 21 3 15"></polyline>
           <line x1="21" y1="3" x2="14" y2="10"></line>
           <line x1="3" y1="21" x2="10" y2="14"></line>
         </svg>
-        <span>Expand</span>
+        <span>擴充</span>
       </button>
-      <button class="ai-btn" data-action="translate" title="Translate">
+      <button class="ai-btn" data-action="translate" title="翻譯">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"></circle>
           <line x1="2" y1="12" x2="22" y2="12"></line>
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
         </svg>
-        <span>Translate</span>
+        <span>翻譯</span>
       </button>
     </div>
 
@@ -162,7 +162,7 @@
     <div id="aiOverlay" class="ai-overlay hidden">
       <div class="ai-loading">
         <div class="ai-spinner"></div>
-        <span id="aiLoadingText">AI is thinking...</span>
+        <span id="aiLoadingText">AI 處理中...</span>
       </div>
     </div>
 
@@ -170,7 +170,7 @@
     <div id="importModal" class="modal hidden">
       <div class="modal-content">
         <div class="modal-header">
-          <h3>Import Content</h3>
+          <h3>匯入內容</h3>
           <button class="modal-close" data-close="importModal">&times;</button>
         </div>
         <div class="modal-body">
@@ -178,7 +178,7 @@
             <!-- Populated by JS -->
           </div>
           <div class="import-empty hidden" id="importEmpty">
-            <p>No recent Council responses to import.</p>
+            <p>沒有可匯入的 Council 回應。</p>
           </div>
         </div>
       </div>
@@ -188,7 +188,7 @@
     <div id="exportModal" class="modal hidden">
       <div class="modal-content">
         <div class="modal-header">
-          <h3>Export Document</h3>
+          <h3>匯出文件</h3>
           <button class="modal-close" data-close="exportModal">&times;</button>
         </div>
         <div class="modal-body">
@@ -207,14 +207,14 @@
                 <line x1="16" y1="13" x2="8" y2="13"></line>
                 <line x1="16" y1="17" x2="8" y2="17"></line>
               </svg>
-              <span>Plain Text (.txt)</span>
+              <span>純文字 (.txt)</span>
             </button>
             <button class="export-btn" data-format="copy">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
               </svg>
-              <span>Copy to Clipboard</span>
+              <span>複製到剪貼簿</span>
             </button>
           </div>
         </div>
@@ -225,7 +225,7 @@
     <div id="translateModal" class="modal hidden">
       <div class="modal-content modal-sm">
         <div class="modal-header">
-          <h3>Translate To</h3>
+          <h3>翻譯為</h3>
           <button class="modal-close" data-close="translateModal">&times;</button>
         </div>
         <div class="modal-body">

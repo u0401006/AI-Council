@@ -248,7 +248,7 @@ async function loadSettings() {
 }
 
 function updateModelCount() {
-  modelCountEl.textContent = `${councilModels.length} model${councilModels.length !== 1 ? 's' : ''}`;
+  modelCountEl.textContent = `${councilModels.length} 個模型`;
 }
 
 function setupEventListeners() {
@@ -328,7 +328,7 @@ async function capturePageContent() {
     
     const tabId = await getActiveTabId();
     if (!tabId) {
-      showToast('No active tab found', true);
+      showToast('找不到使用中的分頁', true);
       return;
     }
     
@@ -341,7 +341,7 @@ async function capturePageContent() {
     
     const { title, url, content } = response;
     if (!content || content.length < 10) {
-      showToast('No content found on page', true);
+      showToast('頁面沒有內容', true);
       return;
     }
     
@@ -352,12 +352,12 @@ async function capturePageContent() {
       url: url
     });
     
-    showToast('Page content captured');
+    showToast('已擷取頁面內容');
   } catch (err) {
     showToast('Failed to capture page: ' + err.message, true);
   } finally {
     capturePageBtn.disabled = false;
-    capturePageBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span>Capture Page</span>`;
+    capturePageBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span>擷取頁面</span>`;
   }
 }
 
@@ -367,7 +367,7 @@ async function captureSelection() {
     
     const tabId = await getActiveTabId();
     if (!tabId) {
-      showToast('No active tab found', true);
+      showToast('找不到使用中的分頁', true);
       return;
     }
     
@@ -380,19 +380,19 @@ async function captureSelection() {
     
     const text = response;
     if (!text || text.length < 1) {
-      showToast('No text selected on page', true);
+      showToast('頁面上沒有選取文字', true);
       return;
     }
     
     addContextItem({
       type: 'selection',
-      title: 'Selected Text',
+      title: '選取的文字',
       content: text
     });
     
-    showToast('Selection captured');
+    showToast('已擷取選取內容');
   } catch (err) {
-    showToast('Failed to capture selection: ' + err.message, true);
+    showToast('擷取選取內容失敗：' + err.message, true);
   } finally {
     captureSelectionBtn.disabled = false;
   }
@@ -406,23 +406,23 @@ async function pasteContext() {
       text = await navigator.clipboard.readText();
     } catch (clipboardErr) {
       // Fallback: prompt user to paste manually
-      text = prompt('Paste your content here:');
+      text = prompt('請在此貼上內容：');
     }
     
     if (!text || text.length < 1) {
-      showToast('No content to paste', true);
+      showToast('沒有內容可貼上', true);
       return;
     }
     
     addContextItem({
       type: 'paste',
-      title: 'Pasted Content',
+      title: '貼上的內容',
       content: text
     });
     
-    showToast('Content pasted');
+    showToast('已貼上內容');
   } catch (err) {
-    showToast('Failed to paste: ' + err.message, true);
+    showToast('貼上失敗：' + err.message, true);
   }
 }
 
@@ -458,7 +458,7 @@ function clearContext() {
   contextItems = [];
   renderContextItems();
   updateContextBadge();
-  showToast('Context cleared');
+  showToast('已清除參考資料');
 }
 
 function updateContextBadge() {
@@ -515,9 +515,9 @@ function renderContextItems() {
 
 function formatCharCount(count) {
   if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}k chars`;
+    return `${(count / 1000).toFixed(1)}k 字元`;
   }
-  return `${count} chars`;
+  return `${count} 字元`;
 }
 
 function buildPromptWithContext(query) {
@@ -546,7 +546,7 @@ function openCanvas() {
     type: 'OPEN_CANVAS',
     payload: currentConversation ? {
       content: currentConversation.finalAnswer,
-      title: 'Council Response',
+      title: 'Council 回應',
       query: currentConversation.query
     } : null
   });
@@ -610,14 +610,14 @@ async function downloadImage(src, idx) {
     a.download = `mav-image-${Date.now()}-${idx}.png`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('Image downloaded');
+    showToast('已下載圖片');
   } catch (e) {
     // For data URLs, direct download
     const a = document.createElement('a');
     a.href = src;
     a.download = `mav-image-${Date.now()}-${idx}.png`;
     a.click();
-    showToast('Image downloaded');
+    showToast('已下載圖片');
   }
 }
 
@@ -626,9 +626,9 @@ async function copyImageToClipboard(src) {
     const response = await fetch(src);
     const blob = await response.blob();
     await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-    showToast('Image copied');
+    showToast('已複製圖片');
   } catch (e) {
-    showToast('Failed to copy image', true);
+    showToast('複製圖片失敗', true);
   }
 }
 
@@ -650,7 +650,7 @@ async function renderHistory() {
   const conversations = result.conversations || [];
   
   if (conversations.length === 0) {
-    historyList.innerHTML = '<div class="history-empty">No history yet</div>';
+    historyList.innerHTML = '<div class="history-empty">尚無歷史紀錄</div>';
     return;
   }
 
@@ -659,7 +659,7 @@ async function renderHistory() {
       <div class="history-query">${escapeHtml(conv.query)}</div>
       <div class="history-meta">
         <span>${formatDate(conv.timestamp)}</span>
-        <span>${conv.models?.length || 0} models</span>
+        <span>${conv.models?.length || 0} 個模型</span>
       </div>
     </div>
   `).join('');
@@ -692,18 +692,18 @@ async function loadConversation(id) {
 
   // Render Stage 1
   renderSavedResponses(conv.responses || []);
-  stage1Status.textContent = 'Loaded';
+  stage1Status.textContent = '已載入';
   stage1Status.className = 'stage-status done';
 
   // Render Stage 2
   if (conv.ranking && conv.ranking.length > 0) {
     renderReviewResults(conv.ranking);
-    stage2Status.textContent = 'Complete';
+    stage2Status.textContent = '完成';
     stage2Status.className = 'stage-status done';
   } else {
     stage2Section.classList.add('stage-skipped');
-    stage2Status.textContent = 'Skipped';
-    reviewResults.innerHTML = '<div class="skipped-message">No review data</div>';
+    stage2Status.textContent = '已跳過';
+    reviewResults.innerHTML = '<div class="skipped-message">無審查資料</div>';
   }
 
   // Render Stage 3
@@ -717,7 +717,7 @@ async function loadConversation(id) {
       </div>
       <div class="response-content">${parseMarkdown(conv.finalAnswer)}</div>
     `;
-    stage3Status.textContent = 'Complete';
+    stage3Status.textContent = '完成';
     stage3Status.className = 'stage-status done';
   }
 
@@ -780,10 +780,10 @@ async function saveCurrentConversation(data) {
 }
 
 async function clearHistory() {
-  if (!confirm('Clear all history?')) return;
+  if (!confirm('確定要清除所有歷史紀錄？')) return;
   await chrome.storage.local.set({ conversations: [] });
   await renderHistory();
-  showToast('History cleared');
+  showToast('已清除歷史紀錄');
 }
 
 function formatDate(timestamp) {
@@ -791,11 +791,11 @@ function formatDate(timestamp) {
   const now = new Date();
   const diff = now - date;
   
-  if (diff < 60000) return 'Just now';
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
-  return date.toLocaleDateString();
+  if (diff < 60000) return '剛剛';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分鐘前`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小時前`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)} 天前`;
+  return date.toLocaleDateString('zh-TW');
 }
 
 // ============================================
@@ -806,7 +806,7 @@ function exportAsMarkdown() {
   const md = generateMarkdown(currentConversation);
   downloadFile(`mav-${Date.now()}.md`, md, 'text/markdown');
   exportModal.classList.add('hidden');
-  showToast('Exported as Markdown');
+  showToast('已匯出 Markdown');
 }
 
 function exportAsJson() {
@@ -814,7 +814,7 @@ function exportAsJson() {
   const json = JSON.stringify(currentConversation, null, 2);
   downloadFile(`mav-${Date.now()}.json`, json, 'application/json');
   exportModal.classList.add('hidden');
-  showToast('Exported as JSON');
+  showToast('已匯出 JSON');
 }
 
 async function copyToClipboard() {
@@ -823,34 +823,34 @@ async function copyToClipboard() {
   try {
     await navigator.clipboard.writeText(md);
     exportModal.classList.add('hidden');
-    showToast('Copied to clipboard');
+    showToast('已複製到剪貼簿');
   } catch (e) {
-    showToast('Failed to copy', true);
+    showToast('複製失敗', true);
   }
 }
 
 function generateMarkdown(conv) {
-  let md = `# MAV Council Response\n\n`;
-  md += `**Query:** ${conv.query}\n\n`;
-  md += `**Date:** ${new Date(conv.timestamp).toLocaleString()}\n\n`;
+  let md = `# MAV Council 回應\n\n`;
+  md += `**問題：** ${conv.query}\n\n`;
+  md += `**日期：** ${new Date(conv.timestamp).toLocaleString('zh-TW')}\n\n`;
   md += `---\n\n`;
 
-  md += `## Stage 1: Model Responses\n\n`;
+  md += `## 階段 1：模型回應\n\n`;
   (conv.responses || []).forEach(r => {
     md += `### ${getModelName(r.model)}\n\n${r.content}\n\n`;
   });
 
   if (conv.ranking && conv.ranking.length > 0) {
-    md += `## Stage 2: Peer Review Ranking\n\n`;
+    md += `## 階段 2：互評排名\n\n`;
     conv.ranking.forEach((r, i) => {
-      md += `${i + 1}. ${getModelName(r.model)} (avg: ${r.avgRank.toFixed(2)})\n`;
+      md += `${i + 1}. ${getModelName(r.model)}（平均：${r.avgRank.toFixed(2)}）\n`;
     });
     md += `\n`;
   }
 
   if (conv.finalAnswer) {
-    md += `## Stage 3: Final Answer\n\n`;
-    md += `**Chairman:** ${getModelName(conv.chairmanModel || chairmanModel)}\n\n`;
+    md += `## 階段 3：最終答案\n\n`;
+    md += `**主席：** ${getModelName(conv.chairmanModel || chairmanModel)}\n\n`;
     md += conv.finalAnswer;
   }
 
@@ -882,7 +882,7 @@ async function handleSend() {
   const query = queryInput.value.trim();
   if (!query || councilModels.length === 0) {
     if (!query) return;
-    showError('No models selected. Please configure in Settings.');
+    showError('尚未選擇模型，請至設定頁面進行設定。');
     return;
   }
 
@@ -893,7 +893,7 @@ async function handleSend() {
   activeTab = null;
 
   sendBtn.disabled = true;
-  sendBtn.innerHTML = '<span class="spinner"></span><span>Running Council...</span>';
+  sendBtn.innerHTML = '<span class="spinner"></span><span>Council 執行中...</span>';
   emptyState.classList.add('hidden');
   errorBanner.classList.add('hidden');
   exportBtn.style.display = 'none';
@@ -920,7 +920,7 @@ async function handleSend() {
 
   try {
     // === STAGE 1 ===
-    stage1Status.textContent = 'Querying...';
+    stage1Status.textContent = '查詢中...';
     stage1Status.classList.add('loading');
     
     renderTabs();
@@ -936,7 +936,7 @@ async function handleSend() {
       .map(([model, r]) => ({ model, content: r.content, latency: r.latency }));
 
     savedResponses = successfulResponses;
-    stage1Status.textContent = `${successfulResponses.length}/${councilModels.length} completed`;
+    stage1Status.textContent = `${successfulResponses.length}/${councilModels.length} 完成`;
     stage1Status.classList.remove('loading');
     stage1Status.classList.add('done');
 
@@ -944,25 +944,25 @@ async function handleSend() {
     stage1Section.classList.add('collapsed');
 
     if (successfulResponses.length < 2) {
-      showError('Need at least 2 successful responses for council.');
+      showError('Council 需要至少 2 個模型成功回應。');
       resetButton();
       return;
     }
 
     // === STAGE 2 ===
     if (enableReview && successfulResponses.length >= 2) {
-      stage2Status.textContent = 'Reviewing...';
+      stage2Status.textContent = '審查中...';
       stage2Status.classList.add('loading');
       document.getElementById('stage2Content').classList.add('expanded');
 
-      reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">Models are reviewing each other...</span></div>`;
+      reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">模型正在互相審查...</span></div>`;
 
       await Promise.allSettled(councilModels.map(model => runReview(model, query, successfulResponses)));
 
       aggregatedRanking = aggregateRankings(successfulResponses);
       renderReviewResults(aggregatedRanking);
 
-      stage2Status.textContent = 'Complete';
+      stage2Status.textContent = '完成';
       stage2Status.classList.remove('loading');
       stage2Status.classList.add('done');
       
@@ -970,12 +970,12 @@ async function handleSend() {
       stage2Section.classList.add('collapsed');
     } else {
       stage2Section.classList.add('stage-skipped');
-      stage2Status.textContent = 'Skipped';
-      reviewResults.innerHTML = '<div class="skipped-message">Peer review disabled</div>';
+      stage2Status.textContent = '已跳過';
+      reviewResults.innerHTML = '<div class="skipped-message">互評審查已停用</div>';
     }
 
     // === STAGE 3 ===
-    stage3Status.textContent = 'Synthesizing...';
+    stage3Status.textContent = '彙整中...';
     stage3Status.classList.add('loading');
     document.getElementById('stage3Content').classList.add('expanded');
 
@@ -986,12 +986,12 @@ async function handleSend() {
         </svg>
         ${getModelName(chairmanModel)}
       </div>
-      <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">Chairman is synthesizing...</span></div>
+      <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
     `;
 
     finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking);
 
-    stage3Status.textContent = 'Complete';
+    stage3Status.textContent = '完成';
     stage3Status.classList.remove('loading');
     stage3Status.classList.add('done');
 
@@ -1020,7 +1020,7 @@ async function handleSend() {
 
 function resetButton() {
   sendBtn.disabled = false;
-  sendBtn.innerHTML = '<span>Send</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
+  sendBtn.innerHTML = '<span>送出</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
 }
 
 function renderTabs() {
@@ -1036,7 +1036,7 @@ function renderResponsePanels() {
   responseContainer.innerHTML = councilModels.map(model => `
     <div class="response-panel" data-model="${model}">
       <div class="response-content" id="content-${cssEscape(model)}">
-        <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">Waiting...</span></div>
+        <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">等待中...</span></div>
       </div>
       <div class="response-meta" id="meta-${cssEscape(model)}"></div>
     </div>
@@ -1070,12 +1070,12 @@ function finalizeResponse(model, content, latency) {
     <span class="meta-item">${(latency / 1000).toFixed(2)}s</span>
     <span class="meta-item">~${estimateTokens(content)} tokens</span>
     <span class="meta-item">${formatCost(cost.total)}</span>
-    <button class="copy-response-btn" data-content="${escapeAttr(content)}" title="Copy response">
+    <button class="copy-response-btn" data-content="${escapeAttr(content)}" title="複製回應">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
       </svg>
-      <span>Copy</span>
+      <span>複製</span>
     </button>
   `;
   metaEl.classList.add('visible');
@@ -1087,13 +1087,13 @@ function finalizeResponse(model, content, latency) {
     try {
       await navigator.clipboard.writeText(text);
       btn.classList.add('copied');
-      btn.querySelector('span').textContent = 'Copied!';
+      btn.querySelector('span').textContent = '已複製！';
       setTimeout(() => {
         btn.classList.remove('copied');
-        btn.querySelector('span').textContent = 'Copy';
+        btn.querySelector('span').textContent = '複製';
       }, 1500);
     } catch (err) {
-      showToast('Failed to copy', true);
+      showToast('複製失敗', true);
     }
   });
 }
@@ -1112,9 +1112,9 @@ async function queryModel(model, query) {
   const contentEl = document.getElementById(`content-${cssEscape(model)}`);
   
   if (shouldGenerateImage) {
-    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">Generating image with ${getModelName(model)}...</span></div><div class="image-generating"><div class="spinner-large"></div><span>Creating visual content...</span></div>`;
+    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">使用 ${getModelName(model)} 生成圖片中...</span></div><div class="image-generating"><div class="spinner-large"></div><span>建立視覺內容中...</span></div>`;
   } else {
-    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">Connecting to ${getModelName(model)}...</span></div>`;
+    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">連線至 ${getModelName(model)}...</span></div>`;
   }
 
   try {
@@ -1189,11 +1189,11 @@ function aggregateRankings(allResponses) {
 }
 
 function renderReviewResults(ranking) {
-  if (!ranking || ranking.length === 0) { reviewResults.innerHTML = '<div class="skipped-message">No review data</div>'; return; }
-  const rankingHtml = ranking.map((r, i) => `<div class="ranking-item rank-${i + 1}"><span class="rank-badge">${i + 1}</span><span class="ranking-model">${getModelName(r.model)}</span><span class="ranking-score">avg: ${r.avgRank.toFixed(2)}</span></div>`).join('');
+  if (!ranking || ranking.length === 0) { reviewResults.innerHTML = '<div class="skipped-message">無審查資料</div>'; return; }
+  const rankingHtml = ranking.map((r, i) => `<div class="ranking-item rank-${i + 1}"><span class="rank-badge">${i + 1}</span><span class="ranking-model">${getModelName(r.model)}</span><span class="ranking-score">平均：${r.avgRank.toFixed(2)}</span></div>`).join('');
   const reasons = [];
   reviews.forEach((rankings, reviewer) => { rankings.forEach(r => { if (r.reason) reasons.push({ reviewer: getModelName(reviewer), model: getModelName(r.model), reason: r.reason }); }); });
-  const reasonsHtml = reasons.length > 0 ? `<div class="review-detail"><div class="review-detail-title">Review Comments</div><div class="review-reasons">${reasons.slice(0, 6).map(r => `<div class="review-reason"><strong>${r.model}:</strong> ${escapeHtml(r.reason)}</div>`).join('')}</div></div>` : '';
+  const reasonsHtml = reasons.length > 0 ? `<div class="review-detail"><div class="review-detail-title">審查評語</div><div class="review-reasons">${reasons.slice(0, 6).map(r => `<div class="review-reason"><strong>${r.model}:</strong> ${escapeHtml(r.reason)}</div>`).join('')}</div></div>` : '';
   reviewResults.innerHTML = `<div class="review-summary"><div class="ranking-list">${rankingHtml}</div></div>${reasonsHtml}`;
 }
 

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "MAV - Multi-AI Voting",
+  "name": "MAV - 多模型 AI 投票",
   "version": "1.0.0",
-  "description": "Query multiple LLMs in parallel, let them review each other, and get a synthesized answer",
+  "description": "同時查詢多個 LLM，互相評審，產出綜合答案",
   "permissions": ["storage", "sidePanel", "activeTab", "scripting", "clipboardRead", "clipboardWrite"],
   "host_permissions": ["https://openrouter.ai/*", "<all_urls>"],
   "background": {
@@ -19,7 +19,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Open MAV Panel",
+    "default_title": "開啟 MAV 面板",
     "default_icon": {
       "32": "icons/icon32.png",
       "64": "icons/icon64.png",

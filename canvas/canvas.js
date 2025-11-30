@@ -97,9 +97,9 @@ async function checkForImport() {
     const { content, title, query } = result.canvasImport;
     if (content) {
       editor.innerHTML = markdownToHtml(content);
-      docTitle.textContent = title || query?.slice(0, 30) || 'Imported';
+      docTitle.textContent = title || query?.slice(0, 30) || '已匯入';
       await chrome.storage.local.remove('canvasImport');
-      showToast('Content imported');
+      showToast('已匯入內容');
     }
   }
 }
@@ -119,7 +119,7 @@ async function showImportModal() {
       <div class="import-item" data-id="${conv.id}">
         <div class="import-item-title">${escapeHtml(conv.query?.slice(0, 50) || 'Untitled')}${conv.query?.length > 50 ? '...' : ''}</div>
         <div class="import-item-preview">${escapeHtml(conv.finalAnswer?.slice(0, 100) || '')}...</div>
-        <div class="import-item-meta">${formatDate(conv.timestamp)} · ${conv.models?.length || 0} models</div>
+        <div class="import-item-meta">${formatDate(conv.timestamp)} · ${conv.models?.length || 0} 個模型</div>
       </div>
     `).join('');
     
@@ -138,9 +138,9 @@ async function importConversation(id) {
   
   if (conv?.finalAnswer) {
     editor.innerHTML = markdownToHtml(conv.finalAnswer);
-    docTitle.textContent = conv.query?.slice(0, 30) || 'Imported';
+    docTitle.textContent = conv.query?.slice(0, 30) || '已匯入';
     importModal.classList.add('hidden');
-    showToast('Content imported');
+    showToast('已匯入內容');
     scheduleSave();
   }
 }
@@ -180,7 +180,7 @@ function handleToolbarAction(action) {
       document.execCommand('formatBlock', false, 'blockquote');
       break;
     case 'link':
-      const url = prompt('Enter URL:');
+      const url = prompt('請輸入網址：');
       if (url) document.execCommand('createLink', false, url);
       break;
     case 'hr':
@@ -297,7 +297,7 @@ function showAiToolbar(selection) {
 // ============================================
 async function handleAiAction(action) {
   if (!selectedText || !selectedRange) {
-    showToast('Please select text first', true);
+    showToast('請先選取文字', true);
     return;
   }
   
@@ -321,7 +321,7 @@ async function handleTranslate(lang) {
   translateModal.classList.add('hidden');
   
   if (!selectedText || !selectedRange) {
-    showToast('Please select text first', true);
+    showToast('請先選取文字', true);
     return;
   }
   
@@ -338,7 +338,13 @@ async function handleTranslate(lang) {
 }
 
 async function executeAiEdit(prompt, actionName) {
-  showAiLoading(`AI is ${actionName}ing...`);
+  const actionNames = {
+    rewrite: '改寫',
+    summarize: '摘要',
+    expand: '擴充',
+    translate: '翻譯'
+  };
+  showAiLoading(`AI ${actionNames[actionName] || actionName}中...`);
   
   try {
     const result = await chrome.runtime.sendMessage({
@@ -355,7 +361,7 @@ async function executeAiEdit(prompt, actionName) {
     
     const newText = result.choices?.[0]?.message?.content?.trim();
     if (!newText) {
-      throw new Error('No response from AI');
+      throw new Error('AI 沒有回應');
     }
     
     // Replace selected text
@@ -366,12 +372,18 @@ async function executeAiEdit(prompt, actionName) {
     document.execCommand('insertText', false, newText);
     
     hideAiLoading();
-    showToast(`Text ${actionName}d`);
+    const actionDoneNames = {
+      rewrite: '已改寫',
+      summarize: '已摘要',
+      expand: '已擴充',
+      translate: '已翻譯'
+    };
+    showToast(actionDoneNames[actionName] || '完成');
     scheduleSave();
     
   } catch (err) {
     hideAiLoading();
-    showToast(`Failed: ${err.message}`, true);
+    showToast(`失敗：${err.message}`, true);
   }
 }
 
@@ -388,7 +400,7 @@ function hideAiLoading() {
 // Save/Load
 // ============================================
 function scheduleSave() {
-  saveStatus.textContent = 'Saving...';
+  saveStatus.textContent = '儲存中...';
   saveStatus.className = 'save-status saving';
   
   clearTimeout(autoSaveTimeout);
@@ -413,7 +425,7 @@ async function saveDocument() {
   
   await chrome.storage.local.set({ canvasDoc: doc });
   
-  saveStatus.textContent = 'Saved';
+  saveStatus.textContent = '已儲存';
   saveStatus.className = 'save-status saved';
 }
 
@@ -422,21 +434,21 @@ async function loadSavedDoc() {
   if (result.canvasDoc) {
     const doc = result.canvasDoc;
     currentDocId = doc.id;
-    docTitle.textContent = doc.title || 'Untitled';
+    docTitle.textContent = doc.title || '未命名';
     editor.innerHTML = doc.html || markdownToHtml(doc.content || '');
   }
 }
 
 function newDocument() {
-  if (editor.innerHTML.trim() && !confirm('Create new document? Unsaved changes will be lost.')) {
+  if (editor.innerHTML.trim() && !confirm('確定要建立新文件？未儲存的變更將會遺失。')) {
     return;
   }
   
   currentDocId = null;
-  docTitle.textContent = 'Untitled';
+  docTitle.textContent = '未命名';
   editor.innerHTML = '';
   chrome.storage.local.remove('canvasDoc');
-  showToast('New document created');
+  showToast('已建立新文件');
 }
 
 // ============================================
@@ -460,8 +472,8 @@ function handleExport(format) {
       break;
     case 'copy':
       navigator.clipboard.writeText(markdown)
-        .then(() => showToast('Copied to clipboard'))
-        .catch(() => showToast('Failed to copy', true));
+        .then(() => showToast('已複製到剪貼簿'))
+        .catch(() => showToast('複製失敗', true));
       break;
   }
   
@@ -476,7 +488,7 @@ function downloadFile(filename, content, type) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-  showToast('File downloaded');
+  showToast('已下載檔案');
 }
 
 // ============================================
@@ -596,10 +608,10 @@ function formatDate(timestamp) {
   const now = new Date();
   const diff = now - date;
   
-  if (diff < 60000) return 'Just now';
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return date.toLocaleDateString();
+  if (diff < 60000) return '剛剛';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分鐘前`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小時前`;
+  return date.toLocaleDateString('zh-TW');
 }
 
 function showToast(message, isError = false) {

@@ -143,7 +143,7 @@ async function saveSettings() {
   const councilModels = Array.from(checkboxes).map(cb => cb.value);
 
   if (councilModels.length < 2) {
-    showStatus('Select at least 2 models', 'error');
+    showStatus('請選擇至少 2 個模型', 'error');
     return;
   }
 
@@ -156,13 +156,13 @@ async function saveSettings() {
     chairmanPrompt
   });
 
-  showStatus('Settings saved', 'success');
+  showStatus('設定已儲存', 'success');
 }
 
 function resetPrompts() {
   reviewPromptTextarea.value = DEFAULT_REVIEW_PROMPT;
   chairmanPromptTextarea.value = DEFAULT_CHAIRMAN_PROMPT;
-  showStatus('Prompts reset to default', 'success');
+  showStatus('提示詞已重設為預設', 'success');
 }
 
 function showStatus(message, type) {

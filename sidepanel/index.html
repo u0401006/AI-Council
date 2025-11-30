@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,7 +10,7 @@
   <div class="app">
     <header class="header">
       <div class="header-left">
-        <button id="historyBtn" class="icon-btn" title="History">
+        <button id="historyBtn" class="icon-btn" title="歷史紀錄">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="12 6 12 12 16 14"></polyline>
@@ -19,14 +19,14 @@
         <h1>MAV</h1>
       </div>
       <div class="header-right">
-        <button id="exportBtn" class="icon-btn" title="Export" style="display: none;">
+        <button id="exportBtn" class="icon-btn" title="匯出" style="display: none;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
         </button>
-        <button id="settingsBtn" class="icon-btn" title="Settings">
+        <button id="settingsBtn" class="icon-btn" title="設定">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -38,8 +38,8 @@
     <!-- History Panel -->
     <div id="historyPanel" class="history-panel hidden">
       <div class="history-header">
-        <span>History</span>
-        <button id="clearHistoryBtn" class="text-btn">Clear All</button>
+        <span>歷史紀錄</span>
+        <button id="clearHistoryBtn" class="text-btn">全部清除</button>
       </div>
       <div id="historyList" class="history-list">
         <!-- Populated by JS -->
@@ -54,7 +54,7 @@
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
           </svg>
-          <span>Context</span>
+          <span>參考資料</span>
           <span id="contextBadge" class="context-badge hidden">0</span>
           <button id="contextToggle" class="context-toggle">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -64,28 +64,28 @@
         </div>
         <div id="contextContent" class="context-content hidden">
           <div class="context-actions">
-            <button id="capturePageBtn" class="context-action-btn" title="Capture current page content">
+            <button id="capturePageBtn" class="context-action-btn" title="擷取目前頁面內容">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="2" y1="12" x2="22" y2="12"></line>
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
               </svg>
-              <span>Capture Page</span>
+              <span>擷取頁面</span>
             </button>
-            <button id="captureSelectionBtn" class="context-action-btn" title="Capture selected text">
+            <button id="captureSelectionBtn" class="context-action-btn" title="擷取選取文字">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
               </svg>
-              <span>Selection</span>
+              <span>選取文字</span>
             </button>
-            <button id="pasteContextBtn" class="context-action-btn" title="Paste content from clipboard">
+            <button id="pasteContextBtn" class="context-action-btn" title="從剪貼簿貼上">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
               </svg>
-              <span>Paste</span>
+              <span>貼上</span>
             </button>
-            <button id="clearContextBtn" class="context-action-btn danger" title="Clear all context">
+            <button id="clearContextBtn" class="context-action-btn danger" title="清除所有參考資料">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -100,11 +100,11 @@
 
       <textarea 
         id="queryInput" 
-        placeholder="Ask your question..."
+        placeholder="輸入您的問題..."
         rows="3"
       ></textarea>
       <div class="input-actions">
-        <label class="image-toggle" title="Enable image generation for supported models">
+        <label class="image-toggle" title="啟用圖片生成（支援特定模型）">
           <input type="checkbox" id="imageToggle">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -112,9 +112,9 @@
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
         </label>
-        <span id="modelCount" class="model-count">0 models</span>
+        <span id="modelCount" class="model-count">0 個模型</span>
         <button id="sendBtn" class="btn-send">
-          <span>Send</span>
+          <span>送出</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path>
           </svg>
@@ -125,8 +125,8 @@
     <!-- Stage 1: Model Responses -->
     <div id="stage1Section" class="stage-section hidden">
       <div class="stage-header" data-stage="1">
-        <span class="stage-label">Stage 1</span>
-        <span class="stage-title">Model Responses</span>
+        <span class="stage-label">階段 1</span>
+        <span class="stage-title">模型回應</span>
         <span class="stage-status" id="stage1Status"></span>
         <button class="toggle-btn" data-target="stage1Content">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -143,8 +143,8 @@
     <!-- Stage 2: Peer Review -->
     <div id="stage2Section" class="stage-section hidden">
       <div class="stage-header" data-stage="2">
-        <span class="stage-label stage-label-secondary">Stage 2</span>
-        <span class="stage-title">Peer Review</span>
+        <span class="stage-label stage-label-secondary">階段 2</span>
+        <span class="stage-title">互評審查</span>
         <span class="stage-status" id="stage2Status"></span>
         <button class="toggle-btn" data-target="stage2Content">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -160,8 +160,8 @@
     <!-- Stage 3: Final Answer -->
     <div id="stage3Section" class="stage-section hidden">
       <div class="stage-header" data-stage="3">
-        <span class="stage-label stage-label-accent">Stage 3</span>
-        <span class="stage-title">Final Answer</span>
+        <span class="stage-label stage-label-accent">階段 3</span>
+        <span class="stage-title">最終答案</span>
         <span class="stage-status" id="stage3Status"></span>
         <button class="toggle-btn" data-target="stage3Content">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -185,8 +185,8 @@
           </svg>
         </div>
         <div class="canvas-action-text">
-          <span class="canvas-action-title">Open in Canvas</span>
-          <span class="canvas-action-desc">Edit and refine the response</span>
+          <span class="canvas-action-title">在畫布中開啟</span>
+          <span class="canvas-action-desc">編輯與調整回應內容</span>
         </div>
         <svg class="canvas-action-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="9 18 15 12 9 6"></polyline>
@@ -201,7 +201,7 @@
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
       </div>
-      <p>Ask a question to query multiple AI models</p>
+      <p>輸入問題，同時查詢多個 AI 模型</p>
     </div>
 
     <!-- Error Banner -->
@@ -213,14 +213,14 @@
     <!-- Image Lightbox -->
     <div id="lightbox" class="lightbox hidden">
       <button class="lightbox-close">&times;</button>
-      <img id="lightboxImg" src="" alt="Generated image">
+      <img id="lightboxImg" src="" alt="生成的圖片">
     </div>
 
     <!-- Export Modal -->
     <div id="exportModal" class="modal hidden">
       <div class="modal-content">
         <div class="modal-header">
-          <h3>Export Conversation</h3>
+          <h3>匯出對話</h3>
           <button id="closeExportModal" class="dismiss-btn">&times;</button>
         </div>
         <div class="modal-body">
@@ -244,7 +244,7 @@
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
               </svg>
-              <span>Copy to Clipboard</span>
+              <span>複製到剪貼簿</span>
             </button>
           </div>
         </div>

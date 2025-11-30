@@ -1,39 +1,39 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MAV Settings</title>
+  <title>MAV 設定</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>MAV Settings</h1>
-      <p class="subtitle">Multi-AI Voting Configuration</p>
+      <h1>MAV 設定</h1>
+      <p class="subtitle">多模型 AI 投票系統設定</p>
     </header>
 
     <section class="card">
-      <h2>API Configuration</h2>
+      <h2>API 設定</h2>
       <div class="field">
-        <label for="apiKey">OpenRouter API Key</label>
+        <label for="apiKey">OpenRouter API 金鑰</label>
         <input type="password" id="apiKey" placeholder="sk-or-v1-..." autocomplete="off">
-        <p class="hint">Get your key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
+        <p class="hint">前往 <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> 取得金鑰</p>
       </div>
     </section>
 
     <section class="card">
-      <h2>Council Models</h2>
-      <p class="hint">Select models to participate in the council</p>
+      <h2>參與模型</h2>
+      <p class="hint">選擇要參與討論的模型</p>
       <div class="model-list" id="modelList">
         <!-- Populated by JS -->
       </div>
     </section>
 
     <section class="card">
-      <h2>Chairman Model</h2>
+      <h2>主席模型</h2>
       <div class="field">
-        <label for="chairmanModel">Select the model to synthesize final answer</label>
+        <label for="chairmanModel">選擇負責彙整最終答案的模型</label>
         <select id="chairmanModel">
           <!-- Populated by JS -->
         </select>
@@ -41,36 +41,36 @@
     </section>
 
     <section class="card">
-      <h2>Options</h2>
+      <h2>選項</h2>
       <div class="field checkbox-field">
         <input type="checkbox" id="enableReview" checked>
-        <label for="enableReview">Enable peer review stage (Stage 2)</label>
+        <label for="enableReview">啟用互評審查（階段 2）</label>
       </div>
-      <p class="hint">Disabling saves API costs but skips model ranking</p>
+      <p class="hint">停用可節省 API 費用，但會跳過模型排名</p>
     </section>
 
     <section class="card">
       <div class="section-header">
-        <h2>Prompt Templates</h2>
-        <button type="button" id="resetPromptsBtn" class="btn-secondary">Reset to Default</button>
+        <h2>提示詞範本</h2>
+        <button type="button" id="resetPromptsBtn" class="btn-secondary">重設為預設</button>
       </div>
-      <p class="hint">Customize the instructions given to AI models. Use placeholders: <code>{query}</code> for user question, <code>{responses}</code> for model responses, <code>{ranking}</code> for review ranking.</p>
+      <p class="hint">自訂給 AI 模型的指令。可用變數：<code>{query}</code> 使用者問題、<code>{responses}</code> 模型回應、<code>{ranking}</code> 審查排名。</p>
       
       <div class="field">
-        <label for="reviewPrompt">Review Prompt (Stage 2)</label>
-        <p class="hint">Instructions for models to evaluate each other's responses</p>
-        <textarea id="reviewPrompt" rows="10" placeholder="Enter review instructions..."></textarea>
+        <label for="reviewPrompt">審查提示詞（階段 2）</label>
+        <p class="hint">模型互相評估回應的指令</p>
+        <textarea id="reviewPrompt" rows="10" placeholder="輸入審查指令..."></textarea>
       </div>
 
       <div class="field">
-        <label for="chairmanPrompt">Chairman Prompt (Stage 3)</label>
-        <p class="hint">Instructions for the chairman to synthesize the final answer</p>
-        <textarea id="chairmanPrompt" rows="10" placeholder="Enter chairman instructions..."></textarea>
+        <label for="chairmanPrompt">主席提示詞（階段 3）</label>
+        <p class="hint">主席彙整最終答案的指令</p>
+        <textarea id="chairmanPrompt" rows="10" placeholder="輸入主席指令..."></textarea>
       </div>
     </section>
 
     <div class="actions">
-      <button id="saveBtn" class="btn-primary">Save Settings</button>
+      <button id="saveBtn" class="btn-primary">儲存設定</button>
       <span id="status" class="status"></span>
     </div>
   </div>
