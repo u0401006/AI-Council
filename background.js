@@ -14,6 +14,11 @@ chrome.action.onClicked.addListener(async (tab) => {
 // Create context menus on install
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
+    id: 'add-to-context',
+    title: '加入 MAV Context',
+    contexts: ['selection']
+  });
+  chrome.contextMenus.create({
     id: 'open-canvas-tab',
     title: '在畫布中開啟（分頁）',
     contexts: ['selection']
@@ -23,11 +28,16 @@ chrome.runtime.onInstalled.addListener(() => {
     title: '在畫布中開啟（獨立視窗）',
     contexts: ['selection']
   });
+  
+  // Initialize badge
+  updateContextBadge();
 });
 
 // Handle context menu clicks
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'open-canvas-tab' || info.menuItemId === 'open-canvas-window') {
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === 'add-to-context') {
+    await handleAddToContext(info.selectionText, tab);
+  } else if (info.menuItemId === 'open-canvas-tab' || info.menuItemId === 'open-canvas-window') {
     const asWindow = info.menuItemId === 'open-canvas-window';
     handleOpenCanvas({
       content: info.selectionText,
@@ -80,7 +90,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  if (message.type === 'UPDATE_CONTEXT_BADGE') {
+    updateContextBadge()
+      .then(() => sendResponse({ success: true }))
+      .catch(err => sendResponse({ error: err.message }));
+    return true;
+  }
+  
   return false;
+});
+
+// Listen for storage changes to update badge
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && changes.contextItems) {
+    updateContextBadge();
+  }
 });
 
 // Handle streaming via port connection
@@ -217,6 +241,75 @@ function handleOpenCanvas(payload) {
   } else {
     // Open as tab (default)
     chrome.tabs.create({ url });
+  }
+}
+
+// Handle add to context from context menu
+async function handleAddToContext(selectionText, tab) {
+  if (!selectionText || selectionText.trim().length === 0) {
+    return;
+  }
+  
+  // Create context item
+  const contextItem = {
+    id: crypto.randomUUID(),
+    type: 'selection',
+    title: tab?.title ? `來自：${tab.title.slice(0, 50)}` : '選取的文字',
+    content: selectionText.trim(),
+    url: tab?.url || '',
+    timestamp: Date.now()
+  };
+  
+  // Get existing context items
+  const result = await chrome.storage.local.get('contextItems');
+  const contextItems = result.contextItems || [];
+  
+  // Add new item
+  contextItems.push(contextItem);
+  
+  // Save back to storage
+  await chrome.storage.local.set({ contextItems });
+  
+  // Update badge
+  await updateContextBadge();
+  
+  // Show toast in the tab
+  await showToastInTab(tab.id, '已加入 MAV Context');
+}
+
+// Update extension badge with context count
+async function updateContextBadge() {
+  const result = await chrome.storage.local.get('contextItems');
+  const contextItems = result.contextItems || [];
+  const count = contextItems.length;
+  
+  if (count > 0) {
+    await chrome.action.setBadgeText({ text: String(count) });
+    await chrome.action.setBadgeBackgroundColor({ color: '#6366f1' });
+  } else {
+    await chrome.action.setBadgeText({ text: '' });
+  }
+}
+
+// Show toast notification in a tab
+async function showToastInTab(tabId, message) {
+  try {
+    // Check if we can access this tab
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
+      return; // Can't inject into browser internal pages
+    }
+    
+    // Inject content script if needed
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content/content.js']
+    });
+    
+    // Send toast message
+    await chrome.tabs.sendMessage(tabId, { type: 'SHOW_TOAST', message });
+  } catch (err) {
+    console.error('Failed to show toast:', err);
   }
 }
 

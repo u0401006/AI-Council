@@ -365,7 +365,34 @@ function autoGrowTextarea() {
 // ============================================
 async function init() {
   await loadSettings();
+  await loadContextItems();
   setupEventListeners();
+  setupStorageListener();
+}
+
+// Load context items from storage
+async function loadContextItems() {
+  const result = await chrome.storage.local.get('contextItems');
+  contextItems = result.contextItems || [];
+  renderContextItems();
+  updateContextBadge();
+}
+
+// Listen for storage changes (from context menu additions)
+function setupStorageListener() {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.contextItems) {
+      contextItems = changes.contextItems.newValue || [];
+      renderContextItems();
+      updateContextBadge();
+      
+      // Auto-expand if items were added
+      if (contextItems.length > 0 && contextContent.classList.contains('hidden')) {
+        contextContent.classList.remove('hidden');
+        contextToggle.classList.add('expanded');
+      }
+    }
+  });
 }
 
 async function loadSettings() {
@@ -661,7 +688,7 @@ async function webSearch() {
   }
 }
 
-function addContextItem(item) {
+async function addContextItem(item) {
   const id = crypto.randomUUID();
   const contextItem = {
     id,
@@ -673,6 +700,7 @@ function addContextItem(item) {
   };
   
   contextItems.push(contextItem);
+  await saveContextItems();
   renderContextItems();
   updateContextBadge();
   
@@ -683,17 +711,26 @@ function addContextItem(item) {
   }
 }
 
-function removeContextItem(id) {
+async function removeContextItem(id) {
   contextItems = contextItems.filter(item => item.id !== id);
+  await saveContextItems();
   renderContextItems();
   updateContextBadge();
 }
 
-function clearContext() {
+async function clearContext() {
   contextItems = [];
+  await saveContextItems();
   renderContextItems();
   updateContextBadge();
   showToast('已清除參考資料');
+}
+
+// Save context items to storage
+async function saveContextItems() {
+  await chrome.storage.local.set({ contextItems });
+  // Notify background to update badge
+  chrome.runtime.sendMessage({ type: 'UPDATE_CONTEXT_BADGE' });
 }
 
 const contextCharCount = document.getElementById('contextCharCount');
