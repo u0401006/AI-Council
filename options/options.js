@@ -10,7 +10,9 @@ const AVAILABLE_MODELS = [
   { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic' },
   // Google
   { id: 'google/gemini-3-pro-preview', name: 'Gemini 3 Pro', provider: 'Google' },
+  { id: 'google/gemini-3-pro-image-preview', name: 'Gemini 3 Pro Image', provider: 'Google', canImage: true },
   { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Google' },
+  { id: 'google/gemini-2.5-flash-image-preview', name: 'Gemini 2.5 Flash Image', provider: 'Google', canImage: true },
   { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', provider: 'Google' },
   { id: 'google/gemini-1.5-pro', name: 'Gemini 1.5 Pro', provider: 'Google' },
   // Others
@@ -18,12 +20,6 @@ const AVAILABLE_MODELS = [
   { id: 'meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B', provider: 'Meta' },
   { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', provider: 'DeepSeek' },
   { id: 'mistralai/mistral-large-2411', name: 'Mistral Large', provider: 'Mistral' }
-];
-
-// Image generation models (separate from council models)
-const IMAGE_MODELS = [
-  { id: 'google/gemini-3-pro-image-preview', name: 'Gemini 3 Pro Image', provider: 'Google' },
-  { id: 'google/gemini-2.5-flash-image-preview', name: 'Gemini 2.5 Flash Image', provider: 'Google' }
 ];
 
 const DEFAULT_MODELS = [
@@ -85,7 +81,6 @@ const braveApiKeyInput = document.getElementById('braveApiKey');
 const modelListEl = document.getElementById('modelList');
 const chairmanSelect = document.getElementById('chairmanModel');
 const enableReviewCheckbox = document.getElementById('enableReview');
-const maxSearchIterationsSelect = document.getElementById('maxSearchIterations');
 const reviewPromptTextarea = document.getElementById('reviewPrompt');
 const chairmanPromptTextarea = document.getElementById('chairmanPrompt');
 const resetPromptsBtn = document.getElementById('resetPromptsBtn');
@@ -106,7 +101,7 @@ function renderModelList() {
   modelListEl.innerHTML = AVAILABLE_MODELS.map(model => `
     <label class="model-item">
       <input type="checkbox" value="${model.id}" data-model>
-      <span class="model-name">${model.name}</span>
+      <span class="model-name">${model.name}${model.canImage ? '<span class="image-badge">IMG</span>' : ''}</span>
       <span class="model-provider">${model.provider}</span>
     </label>
   `).join('');
@@ -125,7 +120,6 @@ async function loadSettings() {
     councilModels: DEFAULT_MODELS,
     chairmanModel: DEFAULT_CHAIRMAN,
     enableReview: true,
-    maxSearchIterations: 5,
     reviewPrompt: DEFAULT_REVIEW_PROMPT,
     chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT
   });
@@ -133,7 +127,6 @@ async function loadSettings() {
   apiKeyInput.value = result.apiKey;
   braveApiKeyInput.value = result.braveApiKey;
   enableReviewCheckbox.checked = result.enableReview;
-  maxSearchIterationsSelect.value = result.maxSearchIterations;
   chairmanSelect.value = result.chairmanModel;
   reviewPromptTextarea.value = result.reviewPrompt;
   chairmanPromptTextarea.value = result.chairmanPrompt;
@@ -149,7 +142,6 @@ async function saveSettings() {
   const apiKey = apiKeyInput.value.trim();
   const braveApiKey = braveApiKeyInput.value.trim();
   const enableReview = enableReviewCheckbox.checked;
-  const maxSearchIterations = parseInt(maxSearchIterationsSelect.value, 10);
   const chairmanModel = chairmanSelect.value;
   const reviewPrompt = reviewPromptTextarea.value.trim() || DEFAULT_REVIEW_PROMPT;
   const chairmanPrompt = chairmanPromptTextarea.value.trim() || DEFAULT_CHAIRMAN_PROMPT;
@@ -169,7 +161,6 @@ async function saveSettings() {
     councilModels,
     chairmanModel,
     enableReview,
-    maxSearchIterations,
     reviewPrompt,
     chairmanPrompt
   });

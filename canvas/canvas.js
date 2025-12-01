@@ -27,10 +27,8 @@ const toastContainer = document.getElementById('toastContainer');
 // ============================================
 async function init() {
   setupEventListeners();
-  const imported = await checkForImport();
-  if (!imported) {
-    await loadSavedDoc();
-  }
+  await checkForImport();
+  await loadSavedDoc();
 }
 
 function setupEventListeners() {
@@ -100,14 +98,10 @@ async function checkForImport() {
     if (content) {
       editor.innerHTML = markdownToHtml(content);
       docTitle.textContent = title || query?.slice(0, 30) || '已匯入';
-      currentDocId = crypto.randomUUID(); // 建立新文件 ID
       await chrome.storage.local.remove('canvasImport');
       showToast('已匯入內容');
-      scheduleSave(); // 自動儲存匯入的內容
-      return true; // 有匯入
     }
   }
-  return false; // 沒有匯入
 }
 
 async function showImportModal() {
@@ -234,11 +228,6 @@ function handleEditorKeydown(e) {
 }
 
 function handleGlobalKeydown(e) {
-  // 明確允許系統快捷鍵通過，不攔截
-  if ((e.ctrlKey || e.metaKey) && ['c', 'v', 'x', 'a', 'z'].includes(e.key.toLowerCase())) {
-    return; // 讓瀏覽器處理複製、貼上、剪下、全選、復原
-  }
-  
   // Ctrl/Cmd + B = Bold
   if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
     e.preventDefault();

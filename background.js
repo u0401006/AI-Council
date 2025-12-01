@@ -223,14 +223,11 @@ async function handleGetSelection(tabId) {
 }
 
 // Handle open canvas
-async function handleOpenCanvas(payload) {
-  // 加上時間戳確保每次都是新的載入
-  const timestamp = Date.now();
-  const url = `${chrome.runtime.getURL('canvas/index.html')}?t=${timestamp}`;
-  
+function handleOpenCanvas(payload) {
+  const url = chrome.runtime.getURL('canvas/index.html');
   if (payload?.content) {
     // Store content in local storage for canvas to retrieve
-    await chrome.storage.local.set({ canvasImport: payload });
+    chrome.storage.local.set({ canvasImport: payload });
   }
   
   if (payload?.openAsWindow) {
