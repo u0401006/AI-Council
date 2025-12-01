@@ -313,6 +313,12 @@ async function showToastInTab(tabId, message) {
   }
 }
 
+// System prompt to enforce Traditional Chinese output
+const LANGUAGE_SYSTEM_PROMPT = {
+  role: 'system',
+  content: '你必須使用繁體中文（Traditional Chinese）回答。絕對禁止使用簡體中文。若需要使用中文，一律使用繁體中文。英文和日文可以保留原文。'
+};
+
 async function handleModelQuery(payload) {
   const { model, messages } = payload;
   const apiKey = await getApiKey();
@@ -320,6 +326,9 @@ async function handleModelQuery(payload) {
   if (!apiKey) {
     throw new Error('API Key not configured. Please set it in Options.');
   }
+
+  // Prepend language system prompt
+  const messagesWithSystem = [LANGUAGE_SYSTEM_PROMPT, ...messages];
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -331,7 +340,7 @@ async function handleModelQuery(payload) {
     },
     body: JSON.stringify({
       model,
-      messages,
+      messages: messagesWithSystem,
       stream: false
     })
   });
@@ -366,7 +375,10 @@ async function handleImageQuery(payload) {
     },
     body: JSON.stringify({
       model,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [
+        LANGUAGE_SYSTEM_PROMPT,
+        { role: 'user', content: prompt }
+      ],
       // Request image output
       modalities: ['text', 'image'],
       // Image configuration
@@ -447,6 +459,9 @@ async function handleStreamingQuery(port, payload) {
     return;
   }
 
+  // Prepend language system prompt
+  const messagesWithSystem = [LANGUAGE_SYSTEM_PROMPT, ...messages];
+
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -458,7 +473,7 @@ async function handleStreamingQuery(port, payload) {
       },
       body: JSON.stringify({
         model,
-        messages,
+        messages: messagesWithSystem,
         stream: true
       })
     });

@@ -34,6 +34,8 @@ const DEFAULT_CHAIRMAN = 'anthropic/claude-sonnet-4.5';
 // Default prompts
 const DEFAULT_REVIEW_PROMPT = `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
 
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文). Simplified Chinese is strictly prohibited.**
+
 ## User's Question
 {query}
 
@@ -45,15 +47,17 @@ Rank these responses from best to worst. Output in this exact JSON format:
 \`\`\`json
 {
   "rankings": [
-    {"response": "A", "rank": 1, "reason": "Brief reason"},
-    {"response": "B", "rank": 2, "reason": "Brief reason"}
+    {"response": "A", "rank": 1, "reason": "簡短理由（繁體中文）"},
+    {"response": "B", "rank": 2, "reason": "簡短理由（繁體中文）"}
   ]
 }
 \`\`\`
 
-Be objective. Focus on factual accuracy and helpfulness.`;
+Be objective. Focus on factual accuracy and helpfulness. Write all reasons in Traditional Chinese.`;
 
 const DEFAULT_CHAIRMAN_PROMPT = `You are the Chairman of an AI Council. Synthesize the expert responses into a single, comprehensive final answer.
+
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文). Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
 
 ## User's Question
 {query}
@@ -69,7 +73,7 @@ Create a single authoritative answer that:
 2. Resolves contradictions by favoring accurate information
 3. Is well-organized and comprehensive
 
-Provide your answer directly, without meta-commentary.`;
+Provide your answer directly in Traditional Chinese (繁體中文), without meta-commentary.`;
 
 // DOM Elements
 const apiKeyInput = document.getElementById('apiKey');
