@@ -118,6 +118,7 @@ function parseReviewResponse(content) {
 // Main App State
 // ============================================
 const IMAGE_MODELS = ['google/gemini-3-pro-image-preview', 'google/gemini-2.5-flash-image-preview'];
+const DEFAULT_IMAGE_MODEL = 'google/gemini-3-pro-image-preview';
 
 // Default prompts (same as options.js)
 const DEFAULT_REVIEW_PROMPT = `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
@@ -1013,6 +1014,16 @@ async function loadConversation(id) {
       </div>
       <div class="response-content">${parseMarkdown(conv.finalAnswer)}</div>
     `;
+    
+    // Render saved images if any
+    if (conv.generatedImages && conv.generatedImages.length > 0) {
+      const imageSection = document.createElement('div');
+      imageSection.className = 'final-image-section';
+      imageSection.innerHTML = `<div class="image-section-title">生成的圖像</div>`;
+      renderImages(conv.generatedImages, imageSection);
+      finalAnswer.appendChild(imageSection);
+    }
+    
     stage3Status.textContent = '完成';
     stage3Status.className = 'stage-status done';
   }
@@ -1328,6 +1339,47 @@ async function handleSend() {
     // Show canvas section
     canvasSection.classList.remove('hidden');
 
+    // === IMAGE GENERATION (if enabled) ===
+    let generatedImages = [];
+    if (enableImage && finalAnswerContent) {
+      try {
+        // Show loading state for image generation
+        const imageLoadingEl = document.createElement('div');
+        imageLoadingEl.className = 'image-generating-section';
+        imageLoadingEl.innerHTML = `
+          <div class="image-generating">
+            <div class="spinner-large"></div>
+            <span>正在根據結論生成圖像...</span>
+          </div>
+        `;
+        finalAnswer.appendChild(imageLoadingEl);
+
+        generatedImages = await runImageGeneration(finalAnswerContent, query);
+        
+        // Remove loading and render images
+        imageLoadingEl.remove();
+        
+        if (generatedImages.length > 0) {
+          const imageSection = document.createElement('div');
+          imageSection.className = 'final-image-section';
+          imageSection.innerHTML = `<div class="image-section-title">生成的圖像</div>`;
+          renderImages(generatedImages, imageSection);
+          finalAnswer.appendChild(imageSection);
+        }
+      } catch (imgErr) {
+        console.error('Image generation failed:', imgErr);
+        // Remove loading if exists
+        const loadingEl = finalAnswer.querySelector('.image-generating-section');
+        if (loadingEl) loadingEl.remove();
+        
+        // Show error but don't fail the whole process
+        const errorEl = document.createElement('div');
+        errorEl.className = 'image-error';
+        errorEl.innerHTML = `<span>圖像生成失敗：${escapeHtml(imgErr.message)}</span>`;
+        finalAnswer.appendChild(errorEl);
+      }
+    }
+
     // Save conversation
     await saveCurrentConversation({
       query,
@@ -1335,7 +1387,8 @@ async function handleSend() {
       chairmanModel,
       responses: savedResponses,
       ranking: aggregatedRanking,
-      finalAnswer: finalAnswerContent
+      finalAnswer: finalAnswerContent,
+      generatedImages
     });
 
     exportBtn.style.display = 'flex';
@@ -1664,6 +1717,31 @@ async function queryModelNonStreaming(model, prompt) {
     chrome.runtime.sendMessage({ type: 'QUERY_MODEL', payload: { model, messages: [{ role: 'user', content: prompt }] } }, (response) => {
       if (response?.error) reject(new Error(response.error));
       else resolve(response?.choices?.[0]?.message?.content || '');
+    });
+  });
+}
+
+async function runImageGeneration(finalContent, query) {
+  const imagePrompt = `根據以下內容，創作一張精美的插圖來視覺化呈現主題或概念。
+
+## 原始問題
+${query}
+
+## 內容摘要
+${finalContent.slice(0, 2000)}
+
+請創作一張能夠傳達以上內容核心概念的圖像。`;
+
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ 
+      type: 'QUERY_IMAGE', 
+      payload: { 
+        model: DEFAULT_IMAGE_MODEL, 
+        prompt: imagePrompt 
+      } 
+    }, (response) => {
+      if (response?.error) reject(new Error(response.error));
+      else resolve(response?.images || []);
     });
   });
 }
