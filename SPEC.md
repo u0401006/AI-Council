@@ -293,3 +293,5 @@ const DEFAULT_CHAIRMAN = "anthropic/claude-sonnet-4";
 - [OpenRouter API Docs](https://openrouter.ai/docs)
 - [Chrome Extension Manifest V3](https://developer.chrome.com/docs/extensions/mv3/)
 
+
+

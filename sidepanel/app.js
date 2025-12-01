@@ -92,7 +92,7 @@ function generateReviewPrompt(query, responses, currentModel) {
     .replace('{responses}', responsesText);
 }
 
-function generateChairmanPrompt(query, responses, aggregatedRanking = null) {
+function generateChairmanPrompt(query, responses, aggregatedRanking = null, includeSearchStrategy = false) {
   const responsesText = responses.map((r, i) => `### Expert ${i + 1} (${getModelName(r.model)})\n${r.content}`).join('\n\n---\n\n');
   let rankingInfo = '';
   if (aggregatedRanking && aggregatedRanking.length > 0) {
@@ -100,10 +100,17 @@ function generateChairmanPrompt(query, responses, aggregatedRanking = null) {
   }
   
   // Use custom prompt with placeholders replaced
-  return customChairmanPrompt
+  let prompt = customChairmanPrompt
     .replace('{query}', query)
     .replace('{responses}', responsesText)
     .replace('{ranking}', rankingInfo);
+  
+  // Append search strategy suffix if search mode is enabled and under iteration limit
+  if (includeSearchStrategy && searchIteration < maxSearchIterations) {
+    prompt += SEARCH_STRATEGY_SUFFIX;
+  }
+  
+  return prompt;
 }
 
 function parseReviewResponse(content) {
@@ -168,6 +175,10 @@ let councilModels = [];
 let chairmanModel = '';
 let enableReview = true;
 let enableImage = false;
+let enableSearchMode = false;
+let maxSearchIterations = 5;
+let searchIteration = 0;
+let currentSearchQueries = [];
 let customReviewPrompt = DEFAULT_REVIEW_PROMPT;
 let customChairmanPrompt = DEFAULT_CHAIRMAN_PROMPT;
 let responses = new Map();
@@ -177,6 +188,20 @@ let currentQuery = '';
 let currentConversation = null;
 let historyVisible = false;
 let contextItems = []; // Array of { id, type, title, content, timestamp }
+
+// Search strategy prompt suffix (appended when search mode is enabled)
+const SEARCH_STRATEGY_SUFFIX = `
+
+## 搜尋策略
+如果你認為需要更多網路資訊來完善答案，請在回答最後提供 2-3 個搜尋關鍵詞建議。使用以下 JSON 格式：
+\`\`\`json
+{"search_queries": ["關鍵詞1", "關鍵詞2", "關鍵詞3"]}
+\`\`\`
+如果你認為目前資訊已足夠回答問題，請輸出空陣列：
+\`\`\`json
+{"search_queries": []}
+\`\`\`
+搜尋關鍵詞應該是具體、有針對性的，能夠幫助找到補充資訊。`;
 
 // DOM Elements
 const queryInput = document.getElementById('queryInput');
@@ -209,9 +234,14 @@ const contextBadge = document.getElementById('contextBadge');
 const contextItemsEl = document.getElementById('contextItems');
 const capturePageBtn = document.getElementById('capturePageBtn');
 const captureSelectionBtn = document.getElementById('captureSelectionBtn');
-const webSearchBtn = document.getElementById('webSearchBtn');
 const pasteContextBtn = document.getElementById('pasteContextBtn');
 const clearContextBtn = document.getElementById('clearContextBtn');
+
+// Search mode elements
+const searchModeToggle = document.getElementById('searchModeToggle');
+const searchStrategySection = document.getElementById('searchStrategySection');
+const searchStrategies = document.getElementById('searchStrategies');
+const searchIterationCounter = document.getElementById('searchIterationCounter');
 
 // Canvas elements
 const canvasSection = document.getElementById('canvasSection');
@@ -405,12 +435,14 @@ async function loadSettings() {
     councilModels: [], 
     chairmanModel: 'anthropic/claude-sonnet-4.5', 
     enableReview: true,
+    maxSearchIterations: 5,
     reviewPrompt: DEFAULT_REVIEW_PROMPT,
     chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT
   });
   councilModels = result.councilModels;
   chairmanModel = result.chairmanModel;
   enableReview = result.enableReview;
+  maxSearchIterations = result.maxSearchIterations || 5;
   customReviewPrompt = result.reviewPrompt || DEFAULT_REVIEW_PROMPT;
   customChairmanPrompt = result.chairmanPrompt || DEFAULT_CHAIRMAN_PROMPT;
   updateModelCount();
@@ -453,9 +485,16 @@ function setupEventListeners() {
   contextHeader.addEventListener('click', toggleContextPanel);
   capturePageBtn.addEventListener('click', capturePageContent);
   captureSelectionBtn.addEventListener('click', captureSelection);
-  webSearchBtn.addEventListener('click', webSearch);
   pasteContextBtn.addEventListener('click', pasteContext);
   clearContextBtn.addEventListener('click', clearContext);
+
+  // Search mode toggle
+  searchModeToggle.addEventListener('change', () => { 
+    enableSearchMode = searchModeToggle.checked;
+    if (!enableSearchMode) {
+      searchStrategySection.classList.add('hidden');
+    }
+  });
 
   // Canvas button & dropdown
   canvasBtn.addEventListener('click', () => openCanvas(false));
@@ -517,6 +556,7 @@ function setupEventListeners() {
     if (changes.councilModels) councilModels = changes.councilModels.newValue || [];
     if (changes.chairmanModel) chairmanModel = changes.chairmanModel.newValue;
     if (changes.enableReview) enableReview = changes.enableReview.newValue;
+    if (changes.maxSearchIterations) maxSearchIterations = changes.maxSearchIterations.newValue || 5;
     if (changes.reviewPrompt) customReviewPrompt = changes.reviewPrompt.newValue || DEFAULT_REVIEW_PROMPT;
     if (changes.chairmanPrompt) customChairmanPrompt = changes.chairmanPrompt.newValue || DEFAULT_CHAIRMAN_PROMPT;
     updateModelCount();
@@ -642,26 +682,85 @@ async function pasteContext() {
   }
 }
 
-async function webSearch() {
+// ============================================
+// Search Strategy Functions
+// ============================================
+
+function parseSearchQueries(content) {
   try {
-    // Use queryInput value or prompt for search query
-    let searchQuery = queryInput.value.trim();
-    if (!searchQuery) {
-      searchQuery = prompt('輸入搜尋關鍵字：');
+    // Look for JSON block with search_queries
+    const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?"search_queries"[\s\S]*?\})\s*```/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[1]);
+      return parsed.search_queries || [];
     }
+    return [];
+  } catch (e) {
+    console.error('Failed to parse search queries:', e);
+    return [];
+  }
+}
+
+function extractFinalAnswer(content) {
+  // Remove the search_queries JSON block from the content
+  return content.replace(/```(?:json)?\s*\{[\s\S]*?"search_queries"[\s\S]*?\}\s*```/g, '').trim();
+}
+
+function updateSearchIterationCounter() {
+  if (searchIterationCounter) {
+    searchIterationCounter.textContent = `${searchIteration}/${maxSearchIterations} 次`;
+  }
+}
+
+function renderSearchStrategies(queries) {
+  currentSearchQueries = queries;
+  
+  if (!queries || queries.length === 0 || searchIteration >= maxSearchIterations) {
+    searchStrategySection.classList.add('hidden');
+    return;
+  }
+  
+  searchStrategySection.classList.remove('hidden');
+  updateSearchIterationCounter();
+  
+  searchStrategies.innerHTML = queries.map((query, i) => `
+    <button class="search-query-btn" data-query="${escapeAttr(query)}" ${searchIteration >= maxSearchIterations ? 'disabled' : ''}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <span>${escapeHtml(query)}</span>
+    </button>
+  `).join('');
+  
+  // Add click handlers
+  searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+    btn.addEventListener('click', () => executeSearchAndIterate(btn.dataset.query));
+  });
+}
+
+async function executeSearchAndIterate(searchQuery) {
+  if (searchIteration >= maxSearchIterations) {
+    showToast('已達搜尋次數上限', true);
+    return;
+  }
+  
+  try {
+    // Disable all search buttons
+    searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+      btn.disabled = true;
+    });
     
-    if (!searchQuery || searchQuery.length < 1) {
-      showToast('請輸入搜尋關鍵字', true);
-      return;
-    }
-    
-    webSearchBtn.disabled = true;
-    webSearchBtn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span>';
+    showToast(`正在搜尋「${searchQuery}」...`);
     
     const response = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: searchQuery });
     
     if (response.error) {
       showToast(response.error, true);
+      // Re-enable buttons
+      searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+        btn.disabled = false;
+      });
       return;
     }
     
@@ -669,6 +768,9 @@ async function webSearch() {
     
     if (!results || results.length === 0) {
       showToast('找不到相關結果', true);
+      searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+        btn.disabled = false;
+      });
       return;
     }
     
@@ -677,6 +779,7 @@ async function webSearch() {
       `[${i + 1}] ${r.title}\n${r.url}\n${r.description}`
     ).join('\n\n');
     
+    // Add to context
     addContextItem({
       type: 'search',
       title: `搜尋: ${query}`,
@@ -684,12 +787,155 @@ async function webSearch() {
       results: results
     });
     
-    showToast(`已加入 ${results.length} 筆搜尋結果`);
+    // Increment search iteration
+    searchIteration++;
+    updateSearchIterationCounter();
+    
+    showToast(`已加入搜尋結果，正在重新執行 Council...`);
+    
+    // Hide search strategy section during re-execution
+    searchStrategySection.classList.add('hidden');
+    
+    // Re-run Council with the same query but updated context
+    await runCouncilIteration();
+    
   } catch (err) {
     showToast('搜尋失敗：' + err.message, true);
-  } finally {
-    webSearchBtn.disabled = false;
-    webSearchBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><span>網搜</span>`;
+    searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+      btn.disabled = false;
+    });
+  }
+}
+
+async function runCouncilIteration() {
+  // Clear previous responses but keep context
+  responses.clear();
+  reviews.clear();
+  
+  // Reset stages UI
+  stage1Section.classList.remove('collapsed');
+  stage2Section.classList.remove('collapsed', 'stage-skipped');
+  stage3Section.classList.remove('collapsed');
+  
+  document.getElementById('stage1Content').classList.add('expanded');
+  document.getElementById('stage2Content').classList.remove('expanded');
+  document.getElementById('stage3Content').classList.remove('expanded');
+  
+  stage1Status.textContent = '';
+  stage1Status.className = 'stage-status';
+  stage2Status.textContent = '';
+  stage2Status.className = 'stage-status';
+  stage3Status.textContent = '';
+  stage3Status.className = 'stage-status';
+  
+  // Reset stepper
+  showStepper();
+  setStepActive(1);
+  
+  let savedResponses = [];
+  let aggregatedRanking = null;
+  let finalAnswerContent = '';
+  
+  try {
+    // === STAGE 1 ===
+    stage1Status.textContent = `迭代 ${searchIteration}: 查詢中...`;
+    stage1Status.classList.add('loading');
+    
+    renderTabs();
+    renderResponsePanels();
+    if (councilModels.length > 0) setActiveTab(councilModels[0]);
+    
+    // Build prompt with updated context
+    const promptWithContext = buildPromptWithContext(currentQuery);
+    await Promise.allSettled(councilModels.map(model => queryModel(model, promptWithContext)));
+    
+    const successfulResponses = Array.from(responses.entries())
+      .filter(([_, r]) => r.status === 'done')
+      .map(([model, r]) => ({ model, content: r.content, latency: r.latency }));
+    
+    savedResponses = successfulResponses;
+    stage1Status.textContent = `${successfulResponses.length}/${councilModels.length} 完成`;
+    stage1Status.classList.remove('loading');
+    stage1Status.classList.add('done');
+    
+    setStepDone(1);
+    updateStage1Summary(successfulResponses.map(r => ({ ...r, status: 'done' })));
+    
+    document.getElementById('stage1Content').classList.remove('expanded');
+    stage1Section.classList.add('collapsed');
+    
+    if (successfulResponses.length < 2) {
+      showToast('Council 需要至少 2 個模型成功回應', true);
+      return;
+    }
+    
+    // === STAGE 2 ===
+    if (enableReview && successfulResponses.length >= 2) {
+      setStepActive(2);
+      stage2Status.textContent = '審查中...';
+      stage2Status.classList.add('loading');
+      document.getElementById('stage2Content').classList.add('expanded');
+      
+      reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">模型正在互相審查...</span></div>`;
+      
+      await Promise.allSettled(councilModels.map(model => runReview(model, currentQuery, successfulResponses)));
+      
+      aggregatedRanking = aggregateRankings(successfulResponses);
+      renderReviewResults(aggregatedRanking);
+      
+      stage2Status.textContent = '完成';
+      stage2Status.classList.remove('loading');
+      stage2Status.classList.add('done');
+      
+      setStepDone(2);
+      updateStage2Summary(aggregatedRanking);
+      
+      document.getElementById('stage2Content').classList.remove('expanded');
+      stage2Section.classList.add('collapsed');
+    } else {
+      stage2Section.classList.add('stage-skipped');
+      stage2Status.textContent = '已跳過';
+      reviewResults.innerHTML = '<div class="skipped-message">互評審查已停用</div>';
+      setStepSkipped(2);
+    }
+    
+    // === STAGE 3 ===
+    setStepActive(3);
+    updateStage3Summary(chairmanModel);
+    
+    stage3Status.textContent = '彙整中...';
+    stage3Status.classList.add('loading');
+    document.getElementById('stage3Content').classList.add('expanded');
+    
+    finalAnswer.innerHTML = `
+      <div class="chairman-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+        ${getModelName(chairmanModel)}
+      </div>
+      <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
+    `;
+    
+    finalAnswerContent = await runChairman(currentQuery, successfulResponses, aggregatedRanking, enableSearchMode);
+    
+    stage3Status.textContent = '完成';
+    stage3Status.classList.remove('loading');
+    stage3Status.classList.add('done');
+    
+    setAllStepsDone();
+    
+    // Update conversation
+    if (currentConversation) {
+      currentConversation.responses = savedResponses;
+      currentConversation.ranking = aggregatedRanking;
+      currentConversation.finalAnswer = finalAnswerContent;
+      currentConversation.searchIteration = searchIteration;
+    }
+    
+  } catch (err) {
+    console.error('Council iteration error:', err);
+    showToast('執行失敗：' + err.message, true);
   }
 }
 
@@ -1198,6 +1444,11 @@ async function handleSend() {
   responses.clear();
   reviews.clear();
   activeTab = null;
+  
+  // Reset search iteration for new query
+  searchIteration = 0;
+  currentSearchQueries = [];
+  searchStrategySection.classList.add('hidden');
 
   sendBtn.disabled = true;
   sendBtn.innerHTML = '<span class="spinner"></span><span>Council 執行中...</span>';
@@ -1327,7 +1578,7 @@ async function handleSend() {
       <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
     `;
 
-    finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking);
+    finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking, enableSearchMode);
 
     stage3Status.textContent = '完成';
     stage3Status.classList.remove('loading');
@@ -1705,8 +1956,8 @@ function renderReviewResults(ranking) {
   reviewResults.innerHTML = `<div class="review-summary"><div class="ranking-list">${rankingHtml}</div></div>${reasonsHtml}`;
 }
 
-async function runChairman(query, allResponses, aggregatedRanking) {
-  const prompt = generateChairmanPrompt(query, allResponses, aggregatedRanking);
+async function runChairman(query, allResponses, aggregatedRanking, includeSearchStrategy = false) {
+  const prompt = generateChairmanPrompt(query, allResponses, aggregatedRanking, includeSearchStrategy);
   const parser = createStreamingParser();
   let finalContent = '';
 
@@ -1723,7 +1974,18 @@ async function runChairman(query, allResponses, aggregatedRanking) {
         } else if (msg.type === 'DONE') {
           finalContent = content;
           const el = finalAnswer.querySelector('.response-content');
-          if (el) el.innerHTML = parseMarkdown(content);
+          if (el) {
+            // If search mode enabled, extract and display search queries separately
+            if (includeSearchStrategy) {
+              const cleanAnswer = extractFinalAnswer(content);
+              const searchQueries = parseSearchQueries(content);
+              el.innerHTML = parseMarkdown(cleanAnswer);
+              // Render search strategies after stage 3 completes
+              renderSearchStrategies(searchQueries);
+            } else {
+              el.innerHTML = parseMarkdown(content);
+            }
+          }
           port.disconnect();
           resolve();
         } else if (msg.type === 'ERROR') {
@@ -1736,7 +1998,8 @@ async function runChairman(query, allResponses, aggregatedRanking) {
     });
   } catch (err) { console.error('Chairman error:', err); }
 
-  return finalContent;
+  // Return clean answer (without search queries JSON) for saving
+  return includeSearchStrategy ? extractFinalAnswer(finalContent) : finalContent;
 }
 
 async function queryModelNonStreaming(model, prompt) {
@@ -1775,25 +2038,37 @@ function extractImageHints(content) {
 }
 
 function generateImagePromptDraft(finalContent, query, hints) {
-  let draft = `根據以下內容，創作一張精美的插圖：
+  // 從內容中提取核心概念
+  const summary = finalContent.slice(0, 1200).replace(/\n{3,}/g, '\n\n');
+  
+  let draft = `${summary}
 
-【主題】
-${query}
-
-【內容摘要】
-${finalContent.slice(0, 1500)}`;
+---
+【繪圖指令】
+場景：{場景/背景描述}
+主體：{主要人物或物件}，{性別}，{服裝顏色}
+氛圍：{光線/天氣/情緒}
+構圖：{視角/構圖方式}
+畫風：{寫實/油畫/水彩/動畫風/電影感}`;
 
   if (hints.length > 0) {
-    draft += `\n\n【風格建議】\n${hints.join('、')}`;
+    draft += `\n\n參考風格建議：${hints.join('、')}`;
   }
-
-  draft += `\n\n【繪圖指令】
-請創作一張能夠傳達以上內容核心概念的圖像。`;
 
   return draft;
 }
 
 function showImagePromptEditor(draft, hints, onConfirm, onCancel) {
+  // 預設的可自訂項目
+  const defaultHints = [
+    { label: '性別', examples: '男/女/中性' },
+    { label: '服裝顏色', examples: '紅/藍/黑/白' },
+    { label: '畫風', examples: '寫實/油畫/水彩/動畫/電影感' },
+    { label: '光線', examples: '自然光/暖調/冷調/耶穌光' },
+    { label: '視角', examples: '正面/側面/俯視/仰視' },
+    { label: '氛圍', examples: '溫暖/冷峻/希望/神秘' }
+  ];
+
   const editorHtml = `
     <div class="image-prompt-editor">
       <div class="prompt-editor-header">
@@ -1805,24 +2080,28 @@ function showImagePromptEditor(draft, hints, onConfirm, onCancel) {
           </svg>
           圖像生成 Prompt
         </div>
-        <span class="prompt-editor-hint">可編輯後再生成</span>
+        <span class="prompt-editor-hint">可編輯 {placeholder} 後再生成</span>
+      </div>
+      <div class="prompt-hints">
+        <div class="prompt-hints-label">可自訂項目（替換 {placeholder}）：</div>
+        <div class="prompt-hints-tags">
+          ${defaultHints.map(h => `<span class="hint-tag">{${h.label}}: ${h.examples}</span>`).join('')}
+        </div>
       </div>
       ${hints.length > 0 ? `
-        <div class="prompt-hints">
-          <div class="prompt-hints-label">偵測到的風格建議：</div>
+        <div class="prompt-hints" style="margin-top: 0.5rem; background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3);">
+          <div class="prompt-hints-label" style="color: #10b981;">AI 建議的風格：</div>
           <div class="prompt-hints-tags">
-            ${hints.map(h => `<span class="hint-tag">${escapeHtml(h)}</span>`).join('')}
+            ${hints.map(h => `<span class="hint-tag" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: #059669;">${escapeHtml(h)}</span>`).join('')}
           </div>
         </div>
       ` : ''}
-      <textarea class="prompt-editor-textarea" id="imagePromptTextarea" rows="8">${escapeHtml(draft)}</textarea>
+      <textarea class="prompt-editor-textarea" id="imagePromptTextarea">${escapeHtml(draft)}</textarea>
       <div class="prompt-editor-actions">
-        <button class="prompt-editor-btn secondary" id="cancelImageGen">取消</button>
+        <button class="prompt-editor-btn secondary" id="cancelImageGen">跳過</button>
         <button class="prompt-editor-btn primary" id="confirmImageGen">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
           </svg>
           生成圖像
         </button>

@@ -79,13 +79,6 @@
               </svg>
               <span>選取文字</span>
             </button>
-            <button id="webSearchBtn" class="context-action-btn" title="網路搜尋">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
-              <span>網搜</span>
-            </button>
             <button id="pasteContextBtn" class="context-action-btn" title="從剪貼簿貼上">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -118,6 +111,13 @@
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
             <circle cx="8.5" cy="8.5" r="1.5"></circle>
             <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+        </label>
+        <label class="search-toggle" title="啟用 AI 網搜迭代模式">
+          <input type="checkbox" id="searchModeToggle">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
         </label>
         <span id="modelCount" class="model-count">0 個模型</span>
@@ -216,6 +216,24 @@
       <div id="stage3Content" class="stage-content expanded">
         <div id="finalAnswer" class="final-answer"></div>
       </div>
+    </div>
+
+    <!-- Search Strategy Section -->
+    <div id="searchStrategySection" class="search-strategy-section hidden">
+      <div class="search-strategy-header">
+        <div class="search-strategy-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span>AI 建議搜尋</span>
+        </div>
+        <span id="searchIterationCounter" class="search-iteration-counter">0/5 次</span>
+      </div>
+      <div id="searchStrategies" class="search-strategies">
+        <!-- Search query buttons will be added here -->
+      </div>
+      <p class="search-strategy-hint">點擊關鍵詞執行搜尋，結果將加入參考資料並重新執行 Council</p>
     </div>
 
     <!-- Canvas Action -->
