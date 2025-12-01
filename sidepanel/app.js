@@ -1339,48 +1339,7 @@ async function handleSend() {
     // Show canvas section
     canvasSection.classList.remove('hidden');
 
-    // === IMAGE GENERATION (if enabled) ===
-    let generatedImages = [];
-    if (enableImage && finalAnswerContent) {
-      try {
-        // Show loading state for image generation
-        const imageLoadingEl = document.createElement('div');
-        imageLoadingEl.className = 'image-generating-section';
-        imageLoadingEl.innerHTML = `
-          <div class="image-generating">
-            <div class="spinner-large"></div>
-            <span>正在根據結論生成圖像...</span>
-          </div>
-        `;
-        finalAnswer.appendChild(imageLoadingEl);
-
-        generatedImages = await runImageGeneration(finalAnswerContent, query);
-        
-        // Remove loading and render images
-        imageLoadingEl.remove();
-        
-        if (generatedImages.length > 0) {
-          const imageSection = document.createElement('div');
-          imageSection.className = 'final-image-section';
-          imageSection.innerHTML = `<div class="image-section-title">生成的圖像</div>`;
-          renderImages(generatedImages, imageSection);
-          finalAnswer.appendChild(imageSection);
-        }
-      } catch (imgErr) {
-        console.error('Image generation failed:', imgErr);
-        // Remove loading if exists
-        const loadingEl = finalAnswer.querySelector('.image-generating-section');
-        if (loadingEl) loadingEl.remove();
-        
-        // Show error but don't fail the whole process
-        const errorEl = document.createElement('div');
-        errorEl.className = 'image-error';
-        errorEl.innerHTML = `<span>圖像生成失敗：${escapeHtml(imgErr.message)}</span>`;
-        finalAnswer.appendChild(errorEl);
-      }
-    }
-
-    // Save conversation
+    // Save conversation first (without images)
     await saveCurrentConversation({
       query,
       models: councilModels,
@@ -1388,10 +1347,78 @@ async function handleSend() {
       responses: savedResponses,
       ranking: aggregatedRanking,
       finalAnswer: finalAnswerContent,
-      generatedImages
+      generatedImages: []
     });
 
     exportBtn.style.display = 'flex';
+
+    // === IMAGE GENERATION (if enabled) ===
+    if (enableImage && finalAnswerContent) {
+      // Extract hints from all responses and final answer
+      const allContent = savedResponses.map(r => r.content).join('\n') + '\n' + finalAnswerContent;
+      const hints = extractImageHints(allContent);
+      const promptDraft = generateImagePromptDraft(finalAnswerContent, query, hints);
+      
+      // Show prompt editor
+      showImagePromptEditor(
+        promptDraft,
+        hints,
+        // onConfirm
+        async (editedPrompt) => {
+          try {
+            // Show loading state
+            const imageLoadingEl = document.createElement('div');
+            imageLoadingEl.className = 'image-generating-section';
+            imageLoadingEl.innerHTML = `
+              <div class="image-generating">
+                <div class="spinner-large"></div>
+                <span>正在生成圖像...</span>
+              </div>
+            `;
+            finalAnswer.appendChild(imageLoadingEl);
+
+            const generatedImages = await runImageGeneration(editedPrompt);
+            
+            // Remove loading
+            imageLoadingEl.remove();
+            
+            if (generatedImages.length > 0) {
+              const imageSection = document.createElement('div');
+              imageSection.className = 'final-image-section';
+              imageSection.innerHTML = `<div class="image-section-title">生成的圖像</div>`;
+              renderImages(generatedImages, imageSection);
+              finalAnswer.appendChild(imageSection);
+              
+              // Update saved conversation with images
+              if (currentConversation) {
+                currentConversation.generatedImages = generatedImages;
+                currentConversation.imagePrompt = editedPrompt;
+                const result = await chrome.storage.local.get('conversations');
+                const conversations = result.conversations || [];
+                const idx = conversations.findIndex(c => c.id === currentConversation.id);
+                if (idx >= 0) {
+                  conversations[idx] = currentConversation;
+                  await chrome.storage.local.set({ conversations });
+                }
+              }
+            }
+          } catch (imgErr) {
+            console.error('Image generation failed:', imgErr);
+            const loadingEl = finalAnswer.querySelector('.image-generating-section');
+            if (loadingEl) loadingEl.remove();
+            
+            const errorEl = document.createElement('div');
+            errorEl.className = 'image-error';
+            errorEl.innerHTML = `<span>圖像生成失敗：${escapeHtml(imgErr.message)}</span>`;
+            finalAnswer.appendChild(errorEl);
+          }
+        },
+        // onCancel
+        () => {
+          showToast('已取消圖像生成');
+        }
+      );
+    }
 
   } catch (err) {
     console.error('Council error:', err);
@@ -1721,23 +1748,116 @@ async function queryModelNonStreaming(model, prompt) {
   });
 }
 
-async function runImageGeneration(finalContent, query) {
-  const imagePrompt = `根據以下內容，創作一張精美的插圖來視覺化呈現主題或概念。
+function extractImageHints(content) {
+  // 尋找關於圖像生成的建議/提示
+  const hints = [];
+  
+  // 常見的圖像建議模式
+  const patterns = [
+    /(?:畫風|風格)[：:]\s*([^\n。，]+)/gi,
+    /(?:建議|推薦)(?:使用)?(?:的)?(?:畫風|風格)[：:]?\s*([^\n。，]+)/gi,
+    /(?:如果|若)(?:你)?(?:想|要|希望)(?:指定)?[：:]?\s*([^\n。]+(?:畫風|風格|顏色|色調)[^\n。]*)/gi,
+    /(?:可以|能夠)(?:調整|設定|指定)[：:]?\s*([^\n。]+)/gi,
+    /(?:寫實|油畫|水彩|動畫風|卡通|插畫|漫畫|賽博龐克|未來感|復古|懷舊|極簡|抽象)/gi
+  ];
+  
+  patterns.forEach(pattern => {
+    let match;
+    while ((match = pattern.exec(content)) !== null) {
+      const hint = match[1] || match[0];
+      if (hint && hint.length < 100 && !hints.includes(hint.trim())) {
+        hints.push(hint.trim());
+      }
+    }
+  });
+  
+  return hints;
+}
 
-## 原始問題
+function generateImagePromptDraft(finalContent, query, hints) {
+  let draft = `根據以下內容，創作一張精美的插圖：
+
+【主題】
 ${query}
 
-## 內容摘要
-${finalContent.slice(0, 2000)}
+【內容摘要】
+${finalContent.slice(0, 1500)}`;
 
+  if (hints.length > 0) {
+    draft += `\n\n【風格建議】\n${hints.join('、')}`;
+  }
+
+  draft += `\n\n【繪圖指令】
 請創作一張能夠傳達以上內容核心概念的圖像。`;
 
+  return draft;
+}
+
+function showImagePromptEditor(draft, hints, onConfirm, onCancel) {
+  const editorHtml = `
+    <div class="image-prompt-editor">
+      <div class="prompt-editor-header">
+        <div class="prompt-editor-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+          圖像生成 Prompt
+        </div>
+        <span class="prompt-editor-hint">可編輯後再生成</span>
+      </div>
+      ${hints.length > 0 ? `
+        <div class="prompt-hints">
+          <div class="prompt-hints-label">偵測到的風格建議：</div>
+          <div class="prompt-hints-tags">
+            ${hints.map(h => `<span class="hint-tag">${escapeHtml(h)}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+      <textarea class="prompt-editor-textarea" id="imagePromptTextarea" rows="8">${escapeHtml(draft)}</textarea>
+      <div class="prompt-editor-actions">
+        <button class="prompt-editor-btn secondary" id="cancelImageGen">取消</button>
+        <button class="prompt-editor-btn primary" id="confirmImageGen">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+          生成圖像
+        </button>
+      </div>
+    </div>
+  `;
+
+  const container = document.createElement('div');
+  container.className = 'image-prompt-editor-section';
+  container.innerHTML = editorHtml;
+  finalAnswer.appendChild(container);
+
+  // Scroll to editor
+  container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  // Event handlers
+  document.getElementById('confirmImageGen').addEventListener('click', () => {
+    const editedPrompt = document.getElementById('imagePromptTextarea').value.trim();
+    container.remove();
+    onConfirm(editedPrompt);
+  });
+
+  document.getElementById('cancelImageGen').addEventListener('click', () => {
+    container.remove();
+    onCancel();
+  });
+}
+
+async function runImageGeneration(prompt) {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage({ 
       type: 'QUERY_IMAGE', 
       payload: { 
         model: DEFAULT_IMAGE_MODEL, 
-        prompt: imagePrompt 
+        prompt: prompt 
       } 
     }, (response) => {
       if (response?.error) reject(new Error(response.error));
