@@ -1693,7 +1693,7 @@ async function handleSend() {
 
     // === IMAGE GENERATION (if enabled) ===
     if (enableImage && finalAnswerContent) {
-      // Show loading while AI generates prompt
+      // Show loading while AI generates prompts
       const promptLoadingEl = document.createElement('div');
       promptLoadingEl.className = 'image-prompt-loading';
       promptLoadingEl.innerHTML = `
@@ -1704,157 +1704,42 @@ async function handleSend() {
       `;
       finalAnswer.appendChild(promptLoadingEl);
       
-      // Generate prompt with AI
+      // Generate prompts with AI (now supports multiple images)
       const aiResult = await generateImagePromptWithAI(query, finalAnswerContent, savedResponses);
       promptLoadingEl.remove();
       
       if (!aiResult.success) {
         showToast('AI Prompt 生成失敗，使用預設模式', true);
+      } else if (aiResult.imageCount > 1) {
+        showToast(`AI 識別到 ${aiResult.imageCount} 張圖片規劃`);
       }
       
-      // Show prompt editor with AI result
-      showImagePromptEditor(
+      // Show multi-image editor
+      showMultiImageEditor(
         aiResult,
-        // onConfirm
-        async (editedPrompt) => {
-          try {
-            // Show loading state
-            const imageLoadingEl = document.createElement('div');
-            imageLoadingEl.className = 'image-generating-section';
-            imageLoadingEl.innerHTML = `
-              <div class="image-generating">
-                <div class="spinner-large"></div>
-                <span>正在生成圖像...</span>
-              </div>
-            `;
-            finalAnswer.appendChild(imageLoadingEl);
-
-            const generatedImages = await runImageGeneration(editedPrompt);
+        // onImageGenerated callback - called each time an image is generated
+        async (generatedImages) => {
+          // Update saved conversation with latest images
+          if (currentConversation && generatedImages.length > 0) {
+            currentConversation.generatedImages = generatedImages.map(g => g.image);
+            currentConversation.imagePrompts = generatedImages.map(g => ({
+              title: g.title,
+              prompt: g.prompt,
+              image: g.image
+            }));
             
-            // Remove loading
-            imageLoadingEl.remove();
-            
-            if (generatedImages.length > 0) {
-              const imageSection = document.createElement('div');
-              imageSection.className = 'final-image-section';
-              imageSection.innerHTML = `<div class="image-section-title">生成的圖像</div>`;
-              renderImages(generatedImages, imageSection);
-              finalAnswer.appendChild(imageSection);
-              
-              // Update saved conversation with images
-              if (currentConversation) {
-                currentConversation.generatedImages = generatedImages;
-                currentConversation.imagePrompt = editedPrompt;
-                const result = await chrome.storage.local.get('conversations');
-                const conversations = result.conversations || [];
-                const idx = conversations.findIndex(c => c.id === currentConversation.id);
-                if (idx >= 0) {
-                  conversations[idx] = currentConversation;
-                  await chrome.storage.local.set({ conversations });
-                }
-              }
+            const result = await chrome.storage.local.get('conversations');
+            const conversations = result.conversations || [];
+            const idx = conversations.findIndex(c => c.id === currentConversation.id);
+            if (idx >= 0) {
+              conversations[idx] = currentConversation;
+              await chrome.storage.local.set({ conversations });
             }
-          } catch (imgErr) {
-            console.error('Image generation failed:', imgErr);
-            showToast('圖像生成失敗', true);
-            const loadingEl = finalAnswer.querySelector('.image-generating-section');
-            if (loadingEl) loadingEl.remove();
-            
-            // Remove any existing error elements
-            const existingError = finalAnswer.querySelector('.image-error');
-            if (existingError) existingError.remove();
-            
-            const errorEl = document.createElement('div');
-            errorEl.className = 'image-error';
-            errorEl.innerHTML = `
-              <div class="image-error-message">圖像生成失敗</div>
-              <div class="image-error-details">${escapeHtml(imgErr.message)}</div>
-              <button class="retry-image-btn" id="retryImageBtn">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M23 4v6h-6M1 20v-6h6"/>
-                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                </svg>
-                重試圖像生成
-              </button>
-            `;
-            finalAnswer.appendChild(errorEl);
-            
-            // Store prompt for retry
-            errorEl.dataset.prompt = editedPrompt;
-            
-            // Add retry handler
-            errorEl.querySelector('#retryImageBtn').addEventListener('click', async function() {
-              const btn = this;
-              const storedPrompt = errorEl.dataset.prompt;
-              
-              btn.disabled = true;
-              btn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span> 重試中...';
-              
-              try {
-                errorEl.remove();
-                
-                const imageLoadingEl = document.createElement('div');
-                imageLoadingEl.className = 'image-generating-section';
-                imageLoadingEl.innerHTML = `
-                  <div class="image-generating">
-                    <div class="spinner-large"></div>
-                    <span>正在重新生成圖像...</span>
-                  </div>
-                `;
-                finalAnswer.appendChild(imageLoadingEl);
-                
-                const generatedImages = await runImageGeneration(storedPrompt);
-                imageLoadingEl.remove();
-                
-                if (generatedImages.length > 0) {
-                  const imageSection = document.createElement('div');
-                  imageSection.className = 'final-image-section';
-                  imageSection.innerHTML = `<div class="image-section-title">生成的圖像</div>`;
-                  renderImages(generatedImages, imageSection);
-                  finalAnswer.appendChild(imageSection);
-                  
-                  if (currentConversation) {
-                    currentConversation.generatedImages = generatedImages;
-                    currentConversation.imagePrompt = storedPrompt;
-                    const result = await chrome.storage.local.get('conversations');
-                    const conversations = result.conversations || [];
-                    const idx = conversations.findIndex(c => c.id === currentConversation.id);
-                    if (idx >= 0) {
-                      conversations[idx] = currentConversation;
-                      await chrome.storage.local.set({ conversations });
-                    }
-                  }
-                  showToast('圖像生成成功');
-                }
-              } catch (retryErr) {
-                console.error('Image retry failed:', retryErr);
-                showToast('圖像重試失敗', true);
-                
-                const newErrorEl = document.createElement('div');
-                newErrorEl.className = 'image-error';
-                newErrorEl.innerHTML = `
-                  <div class="image-error-message">圖像生成失敗</div>
-                  <div class="image-error-details">${escapeHtml(retryErr.message)}</div>
-                  <button class="retry-image-btn">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M23 4v6h-6M1 20v-6h6"/>
-                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                    </svg>
-                    重試圖像生成
-                  </button>
-                `;
-                newErrorEl.dataset.prompt = storedPrompt;
-                finalAnswer.appendChild(newErrorEl);
-                
-                // Re-attach handler recursively
-                newErrorEl.querySelector('.retry-image-btn').addEventListener('click', arguments.callee);
-              }
-            });
           }
         },
         // onCancel
         () => {
-          showToast('已取消圖像生成');
+          showToast('已關閉圖像編輯器');
         }
       );
     }
@@ -2276,30 +2161,37 @@ async function queryModelNonStreaming(model, prompt) {
   });
 }
 
-// AI-based image prompt generation
+// AI-based multi-image prompt generation
 const IMAGE_PROMPT_SYSTEM = `你是視覺設計專家和圖像生成 Prompt 工程師。根據提供的內容，分析主題並生成適合的圖像描述。
 
 重要規則：
-1. 根據內容主題決定適當的視覺元素（不要用不相關的通用選項）
-2. 如果內容是抽象概念（法律、政治、哲學等），設計象徵性的視覺表達
-3. 如果內容是具體場景，提取關鍵視覺元素
-4. 選項應該與主題高度相關，而非通用的「性別/服裝」
+1. 仔細分析內容是否規劃了多張圖片/圖卡/資訊圖表（如「三張圖卡」、「圖卡一/二/三」等）
+2. 如果內容明確規劃了多張圖，為每張圖生成獨立的 prompt
+3. 如果沒有明確規劃，根據內容複雜度決定是否需要多張圖（1-5張）
+4. 每張圖的選項應與該圖主題高度相關，而非通用選項
+5. 抽象概念（法律、政治、哲學等）應設計象徵性的視覺表達
 
 你必須輸出 JSON 格式：
 \`\`\`json
 {
+  "image_count": 3,
   "theme_type": "abstract|concrete|narrative|data",
-  "scene_description": "詳細的場景描述，包含主體、環境、光線、氛圍",
-  "option_groups": [
+  "images": [
     {
-      "name": "選項組名稱（如：符號類型、視角、時代感等）",
-      "options": ["選項1", "選項2", "選項3"]
+      "title": "圖卡標題（如：圖卡一：條約鏈時間軸）",
+      "description": "這張圖的目的和內容說明",
+      "scene_description": "詳細的場景描述，包含主體、環境、光線、氛圍",
+      "option_groups": [
+        {
+          "name": "選項組名稱（如：符號類型、視角等）",
+          "options": ["選項1", "選項2", "選項3"]
+        }
+      ],
+      "style_options": ["風格1", "風格2", "風格3"],
+      "color_palette": ["色調1", "色調2", "色調3"],
+      "final_prompt": "直接可用的完整圖像生成 prompt（約100-200字）"
     }
-  ],
-  "style_options": ["風格1", "風格2", "風格3"],
-  "color_palette": ["色調1", "色調2", "色調3"],
-  "composition_suggestions": ["構圖建議1", "構圖建議2"],
-  "final_prompt": "直接可用的完整圖像生成 prompt（約100-200字）"
+  ]
 }
 \`\`\``;
 
@@ -2309,7 +2201,7 @@ async function generateImagePromptWithAI(query, finalContent, allResponses) {
     .map(r => `【${getModelName(r.model)}】\n${r.content.slice(0, 500)}...`)
     .join('\n\n');
   
-  const analysisPrompt = `請分析以下 Council 討論內容，並生成適合的圖像 Prompt。
+  const analysisPrompt = `請分析以下 Council 討論內容，識別是否規劃了多張圖片，並為每張圖生成獨立的 Prompt。
 
 ## 原始問題
 ${query}
@@ -2318,11 +2210,14 @@ ${query}
 ${responseSummary}
 
 ## 最終彙整答案
-${finalContent.slice(0, 1500)}
+${finalContent.slice(0, 2500)}
 
 ---
-請根據以上內容，設計一個能夠視覺化呈現主題核心概念的圖像。
-注意：選項組應該與主題相關，不要使用通用的「性別/服裝」等選項，除非內容確實涉及人物描寫。`;
+請根據以上內容：
+1. 識別內容是否規劃了多張圖卡/資訊圖表（注意看是否有「圖卡一」「圖卡二」等標記）
+2. 如果有多張圖的規劃，為每張圖生成獨立的 prompt 和選項
+3. 如果沒有明確規劃，根據內容決定需要幾張圖來完整呈現
+4. 每張圖的選項應與該圖主題相關，不要使用通用的「性別/服裝」等選項`;
 
   try {
     // Use chairman model for consistency
@@ -2333,56 +2228,78 @@ ${finalContent.slice(0, 1500)}
     const jsonStr = jsonMatch ? jsonMatch[1] : result;
     const parsed = JSON.parse(jsonStr.trim());
     
+    // Normalize to multi-image structure
+    const imageCount = parsed.image_count || 1;
+    const images = parsed.images || [];
+    
+    // If old single-image format, convert to array
+    if (images.length === 0 && parsed.final_prompt) {
+      images.push({
+        title: '圖像',
+        description: parsed.scene_description || '',
+        scene_description: parsed.scene_description || '',
+        option_groups: parsed.option_groups || [],
+        style_options: parsed.style_options || [],
+        color_palette: parsed.color_palette || [],
+        final_prompt: parsed.final_prompt
+      });
+    }
+    
     return {
       success: true,
+      imageCount: images.length || imageCount,
       themeType: parsed.theme_type || 'concrete',
-      sceneDescription: parsed.scene_description || '',
-      optionGroups: parsed.option_groups || [],
-      styleOptions: parsed.style_options || [],
-      colorPalette: parsed.color_palette || [],
-      compositionSuggestions: parsed.composition_suggestions || [],
-      finalPrompt: parsed.final_prompt || ''
+      images: images.map((img, idx) => ({
+        id: `img-${idx}`,
+        title: img.title || `圖像 ${idx + 1}`,
+        description: img.description || '',
+        sceneDescription: img.scene_description || '',
+        optionGroups: img.option_groups || [],
+        styleOptions: img.style_options || [],
+        colorPalette: img.color_palette || [],
+        finalPrompt: img.final_prompt || '',
+        status: 'pending', // pending | generating | done | error
+        generatedImage: null,
+        error: null
+      }))
     };
   } catch (err) {
     console.error('AI prompt generation failed:', err);
     return {
       success: false,
-      error: err.message
+      error: err.message,
+      imageCount: 1,
+      images: [{
+        id: 'img-0',
+        title: '圖像',
+        description: '',
+        sceneDescription: '',
+        optionGroups: [],
+        styleOptions: ['寫實攝影風格', '油畫風', '水彩', '動畫風', '電影感'],
+        colorPalette: ['暖色調', '冷色調', '高對比', '柔和'],
+        finalPrompt: '',
+        status: 'pending',
+        generatedImage: null,
+        error: null
+      }]
     };
   }
 }
 
-function showImagePromptEditor(aiResult, onConfirm, onCancel) {
-  // Use AI-generated options or fallback to defaults
+// Multi-image editor state
+let multiImageState = null;
+
+function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
   const hasAIResult = aiResult && aiResult.success;
+  const images = aiResult?.images || [];
+  const imageCount = images.length;
   
-  // Build dynamic option groups from AI result
-  let optionGroupsHtml = '';
-  if (hasAIResult && aiResult.optionGroups && aiResult.optionGroups.length > 0) {
-    optionGroupsHtml = aiResult.optionGroups.map(group => `
-      <div class="quick-option-group">
-        <label class="quick-option-label">${escapeHtml(group.name)}</label>
-        <div class="quick-option-chips" data-category="${escapeAttr(group.name)}">
-          ${group.options.map(opt => `<button class="option-chip" data-value="${escapeAttr(opt)}">${escapeHtml(opt)}</button>`).join('')}
-        </div>
-      </div>
-    `).join('');
-  }
-  
-  // Style options
-  const styleOptions = hasAIResult && aiResult.styleOptions?.length > 0 
-    ? aiResult.styleOptions 
-    : ['寫實攝影風格', '油畫風', '水彩', '動畫風', '電影感', '賽博龐克', '極簡風格', '插畫風'];
-  
-  // Color palette
-  const colorOptions = hasAIResult && aiResult.colorPalette?.length > 0
-    ? aiResult.colorPalette
-    : ['暖色調', '冷色調', '高對比', '柔和', '復古色調'];
-  
-  // Get the prompt text
-  const promptText = hasAIResult && aiResult.finalPrompt 
-    ? aiResult.finalPrompt 
-    : (aiResult?.sceneDescription || '');
+  // Initialize state for tracking each image
+  multiImageState = {
+    images: images.map(img => ({ ...img })),
+    completedCount: 0,
+    generatedImages: []
+  };
   
   // Theme type badge
   const themeTypeBadge = hasAIResult && aiResult.themeType 
@@ -2393,147 +2310,265 @@ function showImagePromptEditor(aiResult, onConfirm, onCancel) {
       }</span>` 
     : '';
   
+  // Build image cards HTML
+  const imageCardsHtml = images.map((img, idx) => {
+    const optionGroupsHtml = (img.optionGroups || []).map(group => `
+      <div class="quick-option-group">
+        <label class="quick-option-label">${escapeHtml(group.name)}</label>
+        <div class="quick-option-chips" data-category="${escapeAttr(group.name)}" data-image-idx="${idx}">
+          ${group.options.map(opt => `<button class="option-chip" data-value="${escapeAttr(opt)}">${escapeHtml(opt)}</button>`).join('')}
+        </div>
+      </div>
+    `).join('');
+    
+    const styleOptions = img.styleOptions?.length > 0 
+      ? img.styleOptions 
+      : ['寫實攝影風格', '油畫風', '水彩', '動畫風', '電影感'];
+    
+    const colorOptions = img.colorPalette?.length > 0
+      ? img.colorPalette
+      : ['暖色調', '冷色調', '高對比', '柔和'];
+    
+    return `
+      <div class="image-card" data-image-idx="${idx}" data-status="pending">
+        <div class="image-card-header">
+          <div class="image-card-number">${idx + 1}</div>
+          <div class="image-card-title-area">
+            <h4 class="image-card-title">${escapeHtml(img.title)}</h4>
+            ${img.description ? `<p class="image-card-desc">${escapeHtml(img.description)}</p>` : ''}
+          </div>
+          <div class="image-card-status">
+            <span class="status-badge pending">待編輯</span>
+          </div>
+        </div>
+        
+        <div class="image-card-content">
+          <div class="prompt-quick-options compact">
+            ${optionGroupsHtml}
+            
+            <div class="quick-option-group">
+              <label class="quick-option-label">畫風</label>
+              <div class="quick-option-chips" data-category="style" data-image-idx="${idx}">
+                ${styleOptions.map(s => `<button class="option-chip" data-value="${escapeAttr(s)}">${escapeHtml(s)}</button>`).join('')}
+              </div>
+            </div>
+            
+            <div class="quick-option-group">
+              <label class="quick-option-label">色調</label>
+              <div class="quick-option-chips" data-category="color" data-image-idx="${idx}">
+                ${colorOptions.map(c => `<button class="option-chip" data-value="${escapeAttr(c)}">${escapeHtml(c)}</button>`).join('')}
+              </div>
+            </div>
+          </div>
+          
+          <div class="prompt-editor-textarea-wrapper">
+            <textarea class="prompt-editor-textarea image-prompt-textarea" data-image-idx="${idx}" rows="6">${escapeHtml(img.finalPrompt || '')}</textarea>
+          </div>
+          
+          <div class="image-card-actions">
+            <button class="generate-single-btn" data-image-idx="${idx}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              生成此圖
+            </button>
+          </div>
+        </div>
+        
+        <div class="image-card-result hidden">
+          <!-- Generated image will appear here -->
+        </div>
+      </div>
+    `;
+  }).join('');
+  
   const editorHtml = `
-    <div class="image-prompt-editor">
-      <div class="prompt-editor-header">
-        <div class="prompt-editor-title">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <div class="multi-image-editor">
+      <div class="multi-image-header">
+        <div class="multi-image-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="18" height="18" rx="2"/>
             <circle cx="8.5" cy="8.5" r="1.5"/>
             <polyline points="21 15 16 10 5 21"/>
           </svg>
-          圖像生成 Prompt 編輯器
+          圖像生成編輯器
           ${themeTypeBadge}
+          <span class="image-count-badge">${imageCount} 張圖</span>
         </div>
-        <span class="prompt-editor-hint">${hasAIResult ? 'AI 已分析內容並生成建議' : '使用預設選項'}</span>
-      </div>
-      
-      <div class="prompt-quick-options">
-        ${optionGroupsHtml}
-        
-        <div class="quick-option-group">
-          <label class="quick-option-label">畫風</label>
-          <div class="quick-option-chips" data-category="style">
-            ${styleOptions.map(s => `<button class="option-chip" data-value="${escapeAttr(s)}">${escapeHtml(s)}</button>`).join('')}
-          </div>
-        </div>
-        
-        <div class="quick-option-group">
-          <label class="quick-option-label">色調</label>
-          <div class="quick-option-chips" data-category="color">
-            ${colorOptions.map(c => `<button class="option-chip" data-value="${escapeAttr(c)}">${escapeHtml(c)}</button>`).join('')}
-          </div>
+        <div class="multi-image-progress">
+          <span class="progress-text"><span id="completedCount">0</span> / ${imageCount} 完成</span>
         </div>
       </div>
       
-      ${hasAIResult && aiResult.compositionSuggestions?.length > 0 ? `
-        <div class="prompt-hints">
-          <div class="prompt-hints-label">AI 構圖建議：</div>
-          <div class="prompt-hints-tags">
-            ${aiResult.compositionSuggestions.map(h => `<span class="hint-tag comp clickable" data-value="${escapeAttr(h)}">${escapeHtml(h)}</span>`).join('')}
-          </div>
-        </div>
-      ` : ''}
-      
-      <div class="prompt-editor-textarea-wrapper">
-        <label class="textarea-label">最終生圖 Prompt</label>
-        <textarea class="prompt-editor-textarea" id="imagePromptTextarea" rows="10">${escapeHtml(promptText)}</textarea>
-        <div class="textarea-hint">此 prompt 將直接送入圖像生成模型，可自由編輯</div>
+      <div class="image-cards-container">
+        ${imageCardsHtml}
       </div>
       
-      <div class="prompt-editor-actions">
-        <button class="prompt-editor-btn secondary" id="cancelImageGen">取消</button>
-        <button class="prompt-editor-btn primary" id="confirmImageGen">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
-          </svg>
-          生成圖像
-        </button>
+      <div class="multi-image-footer">
+        <button class="prompt-editor-btn secondary" id="cancelAllImageGen">關閉</button>
       </div>
     </div>
   `;
 
   const container = document.createElement('div');
-  container.className = 'image-prompt-editor-section';
+  container.className = 'multi-image-editor-section';
   container.innerHTML = editorHtml;
   finalAnswer.appendChild(container);
 
-  const textarea = document.getElementById('imagePromptTextarea');
-  
-  // Track selected options per category
-  const selectedOptions = new Map();
-  
-  // Quick option chip click handler
-  container.querySelectorAll('.option-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      const value = chip.dataset.value;
-      const category = chip.closest('.quick-option-chips').dataset.category;
-      const currentText = textarea.value;
-      
-      // Get previously selected value for this category
-      const prevValue = selectedOptions.get(category);
-      
-      // Update selection
-      if (prevValue === value) {
-        // Deselect if clicking same option
-        selectedOptions.delete(category);
-        chip.classList.remove('selected');
+  // Setup event handlers for each image card
+  container.querySelectorAll('.image-card').forEach(card => {
+    const idx = parseInt(card.dataset.imageIdx);
+    const textarea = card.querySelector('.image-prompt-textarea');
+    const selectedOptions = new Map();
+    
+    // Option chip click handler
+    card.querySelectorAll('.option-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const value = chip.dataset.value;
+        const category = chip.closest('.quick-option-chips').dataset.category;
+        const currentText = textarea.value;
+        const prevValue = selectedOptions.get(category);
         
-        // Remove from text
-        const removePattern = new RegExp(`，?${escapeRegex(value)}|${escapeRegex(value)}，?`, 'g');
-        textarea.value = currentText.replace(removePattern, '').trim();
+        if (prevValue === value) {
+          selectedOptions.delete(category);
+          chip.classList.remove('selected');
+          const removePattern = new RegExp(`，?${escapeRegex(value)}|${escapeRegex(value)}，?`, 'g');
+          textarea.value = currentText.replace(removePattern, '').trim();
+          return;
+        }
+        
+        if (prevValue) {
+          textarea.value = currentText.replace(prevValue, value);
+        } else {
+          const separator = currentText.endsWith('。') || currentText.endsWith('\n') || currentText === '' ? '' : '，';
+          textarea.value = currentText + separator + value;
+        }
+        
+        selectedOptions.set(category, value);
+        chip.closest('.quick-option-chips').querySelectorAll('.option-chip').forEach(c => c.classList.remove('selected'));
+        chip.classList.add('selected');
+      });
+    });
+    
+    // Generate button handler
+    card.querySelector('.generate-single-btn').addEventListener('click', async function() {
+      const btn = this;
+      const prompt = textarea.value.trim();
+      
+      if (!prompt) {
+        showToast('請先輸入或編輯 Prompt', true);
         return;
       }
       
-      // Replace previous value if exists
-      if (prevValue) {
-        textarea.value = currentText.replace(prevValue, value);
-      } else {
-        // Append to prompt with appropriate separator
-        const separator = currentText.endsWith('。') || currentText.endsWith('\n') || currentText === '' ? '' : '，';
-        textarea.value = currentText + separator + value;
+      // Update UI to generating state
+      card.dataset.status = 'generating';
+      card.querySelector('.status-badge').className = 'status-badge generating';
+      card.querySelector('.status-badge').textContent = '生成中...';
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner" style="width:14px;height:14px"></span> 生成中...';
+      
+      try {
+        const generatedImages = await runImageGeneration(prompt);
+        
+        if (generatedImages.length > 0) {
+          // Update state
+          multiImageState.images[idx].status = 'done';
+          multiImageState.images[idx].generatedImage = generatedImages[0];
+          multiImageState.images[idx].finalPrompt = prompt;
+          multiImageState.completedCount++;
+          multiImageState.generatedImages.push({
+            index: idx,
+            title: multiImageState.images[idx].title,
+            prompt: prompt,
+            image: generatedImages[0]
+          });
+          
+          // Update UI
+          card.dataset.status = 'done';
+          card.querySelector('.status-badge').className = 'status-badge done';
+          card.querySelector('.status-badge').textContent = '完成';
+          btn.innerHTML = '✓ 已生成';
+          btn.classList.add('completed');
+          
+          // Show generated image
+          const resultArea = card.querySelector('.image-card-result');
+          resultArea.classList.remove('hidden');
+          resultArea.innerHTML = `
+            <div class="generated-image-preview">
+              <img src="${generatedImages[0]}" alt="${escapeAttr(multiImageState.images[idx].title)}" />
+              <div class="image-preview-actions">
+                <button class="preview-action-btn download-btn" data-src="${generatedImages[0]}" data-idx="${idx}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  下載
+                </button>
+              </div>
+            </div>
+          `;
+          
+          // Add download handler
+          resultArea.querySelector('.download-btn').addEventListener('click', function() {
+            downloadImage(this.dataset.src, this.dataset.idx);
+          });
+          
+          // Collapse the options area
+          card.querySelector('.image-card-content').classList.add('collapsed');
+          
+          // Update progress counter
+          document.getElementById('completedCount').textContent = multiImageState.completedCount;
+          
+          showToast(`圖像 ${idx + 1} 生成成功`);
+          
+          // Call onAllComplete callback with current results
+          if (onAllComplete) {
+            onAllComplete(multiImageState.generatedImages);
+          }
+        }
+      } catch (err) {
+        console.error('Image generation failed:', err);
+        showToast(`圖像 ${idx + 1} 生成失敗: ${err.message}`, true);
+        
+        card.dataset.status = 'error';
+        card.querySelector('.status-badge').className = 'status-badge error';
+        card.querySelector('.status-badge').textContent = '失敗';
+        btn.disabled = false;
+        btn.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          重試
+        `;
+        
+        multiImageState.images[idx].status = 'error';
+        multiImageState.images[idx].error = err.message;
       }
-      
-      selectedOptions.set(category, value);
-      
-      // Update chip highlighting
-      chip.closest('.quick-option-chips').querySelectorAll('.option-chip').forEach(c => c.classList.remove('selected'));
-      chip.classList.add('selected');
     });
   });
-
-  // Clickable composition hints
-  container.querySelectorAll('.hint-tag.clickable').forEach(tag => {
-    tag.addEventListener('click', () => {
-      const value = tag.dataset.value;
-      const currentText = textarea.value;
-      const separator = currentText.endsWith('。') || currentText.endsWith('\n') || currentText === '' ? '' : '，';
-      textarea.value = currentText + separator + value;
-      tag.classList.add('applied');
+  
+  // Toggle card content on header click
+  container.querySelectorAll('.image-card-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('.generate-single-btn')) return;
+      const card = header.closest('.image-card');
+      const content = card.querySelector('.image-card-content');
+      content.classList.toggle('collapsed');
     });
   });
 
   // Scroll to editor
-  container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  container.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Event handlers
-  document.getElementById('confirmImageGen').addEventListener('click', () => {
-    let editedPrompt = textarea.value.trim();
-    
-    // Clean up the prompt
-    editedPrompt = editedPrompt
-      .replace(/\n{3,}/g, '\n\n') // Clean up excess newlines
-      .trim();
-    
+  // Cancel button
+  document.getElementById('cancelAllImageGen').addEventListener('click', () => {
     container.remove();
-    onConfirm(editedPrompt);
-  });
-
-  document.getElementById('cancelImageGen').addEventListener('click', () => {
-    container.remove();
-    onCancel();
+    multiImageState = null;
+    if (onCancel) onCancel();
   });
 }
 
