@@ -1757,67 +1757,14 @@ function resetButton() {
   sendBtn.innerHTML = '<span>送出</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
 }
 
-const MODEL_TAB_THRESHOLD = 3; // Switch to dropdown when more than this
-
 function renderTabs() {
-  const useDropdown = councilModels.length > MODEL_TAB_THRESHOLD;
-  
-  if (useDropdown) {
-    // Render dropdown mode for many models
-    modelTabs.innerHTML = `
-      <div class="model-dropdown-wrapper">
-        <button class="model-dropdown-trigger" id="modelDropdownTrigger">
-          <span class="dropdown-selected-name">選擇模型</span>
-          <span class="dropdown-status-dot"></span>
-          <svg class="dropdown-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
-        <div class="model-dropdown-menu hidden" id="modelDropdownMenu">
-          ${councilModels.map(model => {
-            const info = getModelInfo(model);
-            const imgBadge = isImageModel(model) && enableImage ? '<span class="model-badge-image">IMG</span>' : '';
-            return `<button class="model-dropdown-item" data-model="${model}">
-              <span class="dropdown-item-name">${info.name}${imgBadge}</span>
-              <span class="dropdown-item-provider">${info.provider}</span>
-              <span class="status-dot"></span>
-            </button>`;
-          }).join('')}
-        </div>
-      </div>
-      <span class="model-count-badge">${councilModels.length} 個模型</span>
-    `;
-    
-    // Setup dropdown event listeners
-    const trigger = document.getElementById('modelDropdownTrigger');
-    const menu = document.getElementById('modelDropdownMenu');
-    
-    trigger.addEventListener('click', (e) => {
-      e.stopPropagation();
-      menu.classList.toggle('hidden');
-    });
-    
-    document.addEventListener('click', (e) => {
-      if (!trigger.contains(e.target) && !menu.contains(e.target)) {
-        menu.classList.add('hidden');
-      }
-    });
-    
-    menu.querySelectorAll('.model-dropdown-item').forEach(item => {
-      item.addEventListener('click', () => {
-        setActiveTab(item.dataset.model);
-        menu.classList.add('hidden');
-      });
-    });
-  } else {
-    // Render regular tabs for few models
-    modelTabs.innerHTML = councilModels.map(model => {
-      const info = getModelInfo(model);
-      const imgBadge = isImageModel(model) && enableImage ? '<span class="model-badge-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>IMG</span>' : '';
-      return `<button class="tab" data-model="${model}" title="${info.provider}">${info.name}${imgBadge}<span class="status-dot"></span></button>`;
-    }).join('');
-    modelTabs.querySelectorAll('.tab').forEach(tab => { tab.addEventListener('click', () => setActiveTab(tab.dataset.model)); });
-  }
+  // Always use scrollable tabs
+  modelTabs.innerHTML = councilModels.map(model => {
+    const info = getModelInfo(model);
+    const imgBadge = isImageModel(model) && enableImage ? '<span class="model-badge-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>IMG</span>' : '';
+    return `<button class="tab" data-model="${model}" title="${info.provider}">${info.name}${imgBadge}<span class="status-dot"></span></button>`;
+  }).join('');
+  modelTabs.querySelectorAll('.tab').forEach(tab => { tab.addEventListener('click', () => setActiveTab(tab.dataset.model)); });
 }
 
 function renderResponsePanels() {
@@ -1833,56 +1780,21 @@ function renderResponsePanels() {
 
 function setActiveTab(model) {
   activeTab = model;
-  const info = getModelInfo(model);
-  
-  // Handle regular tabs mode
   modelTabs.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.model === model));
-  
-  // Handle dropdown mode
-  const trigger = document.getElementById('modelDropdownTrigger');
-  if (trigger) {
-    const selectedName = trigger.querySelector('.dropdown-selected-name');
-    const statusDot = trigger.querySelector('.dropdown-status-dot');
-    if (selectedName) selectedName.textContent = info.name;
-    
-    // Copy status from the item
-    const item = modelTabs.querySelector(`.model-dropdown-item[data-model="${model}"]`);
-    if (item && statusDot) {
-      const itemStatus = item.querySelector('.status-dot');
-      statusDot.className = itemStatus ? itemStatus.className : 'dropdown-status-dot';
-    }
-    
-    // Update active state in dropdown menu
-    modelTabs.querySelectorAll('.model-dropdown-item').forEach(item => {
-      item.classList.toggle('active', item.dataset.model === model);
-    });
-  }
-  
   responseContainer.querySelectorAll('.response-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.model === model));
+  
+  // Scroll active tab into view
+  const activeTabEl = modelTabs.querySelector('.tab.active');
+  if (activeTabEl) {
+    activeTabEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }
 }
 
 function updateTabStatus(model, status) {
-  // Update regular tab status
   const tab = modelTabs.querySelector(`.tab[data-model="${model}"]`);
   if (tab) {
     const dot = tab.querySelector('.status-dot');
     if (dot) dot.className = `status-dot ${status}`;
-  }
-  
-  // Update dropdown item status
-  const dropdownItem = modelTabs.querySelector(`.model-dropdown-item[data-model="${model}"]`);
-  if (dropdownItem) {
-    const dot = dropdownItem.querySelector('.status-dot');
-    if (dot) dot.className = `status-dot ${status}`;
-    
-    // Also update trigger if this is the active model
-    if (model === activeTab) {
-      const trigger = document.getElementById('modelDropdownTrigger');
-      if (trigger) {
-        const triggerDot = trigger.querySelector('.dropdown-status-dot');
-        if (triggerDot) triggerDot.className = `dropdown-status-dot status-dot ${status}`;
-      }
-    }
   }
 }
 
@@ -2049,10 +1961,13 @@ function aggregateRankings(allResponses) {
 
 function renderReviewResults(ranking) {
   if (!ranking || ranking.length === 0) { reviewResults.innerHTML = '<div class="skipped-message">無審查資料</div>'; return; }
-  const rankingHtml = ranking.map((r, i) => `<div class="ranking-item rank-${i + 1}"><span class="rank-badge">${i + 1}</span><span class="ranking-model">${getModelName(r.model)}</span><span class="ranking-score">平均：${r.avgRank.toFixed(2)}</span></div>`).join('');
+  const rankingHtml = ranking.map((r, i) => `<div class="ranking-item rank-${i + 1}"><span class="rank-badge">${i + 1}</span><span class="ranking-model">${getModelName(r.model)}</span><span class="ranking-score">${r.avgRank.toFixed(1)}</span></div>`).join('');
   const reasons = [];
   reviews.forEach((rankings, reviewer) => { rankings.forEach(r => { if (r.reason) reasons.push({ reviewer: getModelName(reviewer), model: getModelName(r.model), reason: r.reason }); }); });
-  const reasonsHtml = reasons.length > 0 ? `<div class="review-detail"><div class="review-detail-title">審查評語</div><div class="review-reasons">${reasons.slice(0, 6).map(r => `<div class="review-reason"><strong>${r.model}:</strong> ${escapeHtml(r.reason)}</div>`).join('')}</div></div>` : '';
+  const reasonsHtml = reasons.length > 0 ? `<div class="review-detail collapsed"><div class="review-detail-header"><div class="review-detail-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>審查評語 (${reasons.length})</div><div class="review-detail-toggle"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></div></div><div class="review-reasons">${reasons.slice(0, 6).map(r => `<div class="review-reason"><strong>${r.model}:</strong> ${escapeHtml(r.reason)}</div>`).join('')}</div></div>` : '';
+  
+  // Hint explaining average score
+  const hintHtml = `<div class="review-hint"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>分數 = 各模型互評排名的平均值，越低越優（作為主席彙整的參考）</div>`;
   
   // Show failures if any
   let failuresHtml = '';
@@ -2075,7 +1990,16 @@ function renderReviewResults(ranking) {
     failuresHtml = `<div class="review-failures"><div class="review-failures-title">審查失敗 (${reviewFailures.size})</div>${failureItems}</div>`;
   }
   
-  reviewResults.innerHTML = `<div class="review-summary"><div class="ranking-list">${rankingHtml}</div></div>${reasonsHtml}${failuresHtml}`;
+  reviewResults.innerHTML = `<div class="review-summary"><div class="ranking-list">${rankingHtml}</div>${hintHtml}</div>${reasonsHtml}${failuresHtml}`;
+  
+  // Add toggle handler for review detail
+  const reviewDetail = reviewResults.querySelector('.review-detail');
+  if (reviewDetail) {
+    const detailHeader = reviewDetail.querySelector('.review-detail-header');
+    detailHeader?.addEventListener('click', () => {
+      reviewDetail.classList.toggle('collapsed');
+    });
+  }
   
   // Add retry handlers
   reviewResults.querySelectorAll('.retry-review-btn').forEach(btn => {
@@ -2473,17 +2397,35 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
         const generatedImages = await runImageGeneration(prompt);
         
         if (generatedImages.length > 0) {
+          // Check if this is a re-generation
+          const isRegeneration = multiImageState.images[idx].status === 'done' || card.dataset.status === 'editing';
+          
           // Update state
           multiImageState.images[idx].status = 'done';
           multiImageState.images[idx].generatedImage = generatedImages[0];
           multiImageState.images[idx].finalPrompt = prompt;
-          multiImageState.completedCount++;
-          multiImageState.generatedImages.push({
-            index: idx,
-            title: multiImageState.images[idx].title,
-            prompt: prompt,
-            image: generatedImages[0]
-          });
+          
+          if (isRegeneration) {
+            // Replace existing entry in generatedImages
+            const existingIdx = multiImageState.generatedImages.findIndex(g => g.index === idx);
+            if (existingIdx >= 0) {
+              multiImageState.generatedImages[existingIdx] = {
+                index: idx,
+                title: multiImageState.images[idx].title,
+                prompt: prompt,
+                image: generatedImages[0]
+              };
+            }
+          } else {
+            // First generation - increment count and add to array
+            multiImageState.completedCount++;
+            multiImageState.generatedImages.push({
+              index: idx,
+              title: multiImageState.images[idx].title,
+              prompt: prompt,
+              image: generatedImages[0]
+            });
+          }
           
           // Update UI
           card.dataset.status = 'done';
@@ -2499,6 +2441,13 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
             <div class="generated-image-preview">
               <img src="${generatedImages[0]}" alt="${escapeAttr(multiImageState.images[idx].title)}" />
               <div class="image-preview-actions">
+                <button class="preview-action-btn reedit-btn" data-idx="${idx}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                  重新編輯
+                </button>
                 <button class="preview-action-btn download-btn" data-src="${generatedImages[0]}" data-idx="${idx}">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -2514,6 +2463,31 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
           // Add download handler
           resultArea.querySelector('.download-btn').addEventListener('click', function() {
             downloadImage(this.dataset.src, this.dataset.idx);
+          });
+          
+          // Add re-edit handler
+          resultArea.querySelector('.reedit-btn').addEventListener('click', function() {
+            // Expand the options area
+            card.querySelector('.image-card-content').classList.remove('collapsed');
+            
+            // Reset button to allow regeneration
+            btn.disabled = false;
+            btn.classList.remove('completed');
+            btn.innerHTML = `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 4v6h-6M1 20v-6h6"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              重新生成
+            `;
+            
+            // Update status
+            card.dataset.status = 'editing';
+            card.querySelector('.status-badge').className = 'status-badge editing';
+            card.querySelector('.status-badge').textContent = '編輯中';
+            
+            // Scroll to make the editing area visible
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
           });
           
           // Collapse the options area
