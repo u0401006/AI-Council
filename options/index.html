@@ -52,6 +52,18 @@
         <label for="enableReview">啟用互評審查（階段 2）</label>
       </div>
       <p class="hint">停用可節省 API 費用，但會跳過模型排名</p>
+      
+      <div class="field" style="margin-top: 1rem;">
+        <label for="maxSearchIterations">網搜迭代上限</label>
+        <select id="maxSearchIterations">
+          <option value="1">1 次</option>
+          <option value="2">2 次</option>
+          <option value="3">3 次</option>
+          <option value="4">4 次</option>
+          <option value="5" selected>5 次</option>
+        </select>
+        <p class="hint">單次對話中 AI 可建議網搜的最大次數</p>
+      </div>
     </section>
 
     <section class="card">

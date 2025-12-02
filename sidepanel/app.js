@@ -168,6 +168,10 @@ let councilModels = [];
 let chairmanModel = '';
 let enableReview = true;
 let enableImage = false;
+let enableSearchMode = false;
+let maxSearchIterations = 5;
+let searchIteration = 0;
+let currentSearchQueries = [];
 let customReviewPrompt = DEFAULT_REVIEW_PROMPT;
 let customChairmanPrompt = DEFAULT_CHAIRMAN_PROMPT;
 let responses = new Map();
@@ -177,6 +181,20 @@ let currentQuery = '';
 let currentConversation = null;
 let historyVisible = false;
 let contextItems = []; // Array of { id, type, title, content, timestamp }
+
+// Search strategy prompt suffix (appended when search mode is enabled)
+const SEARCH_STRATEGY_SUFFIX = `
+
+## 搜尋策略
+如果你認為需要更多網路資訊來完善答案，請在回答最後提供 2-3 個搜尋關鍵詞建議。使用以下 JSON 格式：
+\`\`\`json
+{"search_queries": ["關鍵詞1", "關鍵詞2", "關鍵詞3"]}
+\`\`\`
+如果你認為目前資訊已足夠回答問題，請輸出空陣列：
+\`\`\`json
+{"search_queries": []}
+\`\`\`
+搜尋關鍵詞應該是具體、有針對性的，能夠幫助找到補充資訊。`;
 
 // DOM Elements
 const queryInput = document.getElementById('queryInput');
@@ -212,6 +230,12 @@ const captureSelectionBtn = document.getElementById('captureSelectionBtn');
 const webSearchBtn = document.getElementById('webSearchBtn');
 const pasteContextBtn = document.getElementById('pasteContextBtn');
 const clearContextBtn = document.getElementById('clearContextBtn');
+
+// Search mode elements
+const searchModeToggle = document.getElementById('searchModeToggle');
+const searchStrategySection = document.getElementById('searchStrategySection');
+const searchStrategies = document.getElementById('searchStrategies');
+const searchIterationCounter = document.getElementById('searchIterationCounter');
 
 // Canvas elements
 const canvasSection = document.getElementById('canvasSection');
@@ -405,12 +429,14 @@ async function loadSettings() {
     councilModels: [], 
     chairmanModel: 'anthropic/claude-sonnet-4.5', 
     enableReview: true,
+    maxSearchIterations: 5,
     reviewPrompt: DEFAULT_REVIEW_PROMPT,
     chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT
   });
   councilModels = result.councilModels;
   chairmanModel = result.chairmanModel;
   enableReview = result.enableReview;
+  maxSearchIterations = result.maxSearchIterations || 5;
   customReviewPrompt = result.reviewPrompt || DEFAULT_REVIEW_PROMPT;
   customChairmanPrompt = result.chairmanPrompt || DEFAULT_CHAIRMAN_PROMPT;
   updateModelCount();
@@ -456,6 +482,14 @@ function setupEventListeners() {
   webSearchBtn.addEventListener('click', webSearch);
   pasteContextBtn.addEventListener('click', pasteContext);
   clearContextBtn.addEventListener('click', clearContext);
+
+  // Search mode toggle
+  searchModeToggle.addEventListener('change', () => { 
+    enableSearchMode = searchModeToggle.checked;
+    if (!enableSearchMode) {
+      searchStrategySection.classList.add('hidden');
+    }
+  });
 
   // Canvas button & dropdown
   canvasBtn.addEventListener('click', () => openCanvas(false));
@@ -517,6 +551,7 @@ function setupEventListeners() {
     if (changes.councilModels) councilModels = changes.councilModels.newValue || [];
     if (changes.chairmanModel) chairmanModel = changes.chairmanModel.newValue;
     if (changes.enableReview) enableReview = changes.enableReview.newValue;
+    if (changes.maxSearchIterations) maxSearchIterations = changes.maxSearchIterations.newValue || 5;
     if (changes.reviewPrompt) customReviewPrompt = changes.reviewPrompt.newValue || DEFAULT_REVIEW_PROMPT;
     if (changes.chairmanPrompt) customChairmanPrompt = changes.chairmanPrompt.newValue || DEFAULT_CHAIRMAN_PROMPT;
     updateModelCount();
@@ -690,6 +725,262 @@ async function webSearch() {
   } finally {
     webSearchBtn.disabled = false;
     webSearchBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><span>網搜</span>`;
+  }
+}
+
+// ============================================
+// Search Strategy Functions
+// ============================================
+
+function parseSearchQueries(content) {
+  try {
+    // Look for JSON block with search_queries
+    const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?"search_queries"[\s\S]*?\})\s*```/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[1]);
+      return parsed.search_queries || [];
+    }
+    return [];
+  } catch (e) {
+    console.error('Failed to parse search queries:', e);
+    return [];
+  }
+}
+
+function extractFinalAnswer(content) {
+  // Remove the search_queries JSON block from the content
+  return content.replace(/```(?:json)?\s*\{[\s\S]*?"search_queries"[\s\S]*?\}\s*```/g, '').trim();
+}
+
+function updateSearchIterationCounter() {
+  if (searchIterationCounter) {
+    searchIterationCounter.textContent = `${searchIteration}/${maxSearchIterations} 次`;
+  }
+}
+
+function renderSearchStrategies(queries) {
+  currentSearchQueries = queries;
+  
+  if (!queries || queries.length === 0 || searchIteration >= maxSearchIterations) {
+    searchStrategySection.classList.add('hidden');
+    return;
+  }
+  
+  searchStrategySection.classList.remove('hidden');
+  updateSearchIterationCounter();
+  
+  searchStrategies.innerHTML = queries.map((query, i) => `
+    <button class="search-query-btn" data-query="${escapeAttr(query)}" ${searchIteration >= maxSearchIterations ? 'disabled' : ''}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <span>${escapeHtml(query)}</span>
+    </button>
+  `).join('');
+  
+  // Add click handlers
+  searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+    btn.addEventListener('click', () => executeSearchAndIterate(btn.dataset.query));
+  });
+}
+
+async function executeSearchAndIterate(searchQuery) {
+  if (searchIteration >= maxSearchIterations) {
+    showToast('已達搜尋次數上限', true);
+    return;
+  }
+  
+  try {
+    // Disable all search buttons
+    searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+      btn.disabled = true;
+    });
+    
+    showToast(`正在搜尋「${searchQuery}」...`);
+    
+    const response = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: searchQuery });
+    
+    if (response.error) {
+      showToast(response.error, true);
+      searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+        btn.disabled = false;
+      });
+      return;
+    }
+    
+    const { results, query } = response;
+    
+    if (!results || results.length === 0) {
+      showToast('找不到相關結果', true);
+      searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+        btn.disabled = false;
+      });
+      return;
+    }
+    
+    // Format search results as context content
+    const content = results.map((r, i) => 
+      `[${i + 1}] ${r.title}\n${r.url}\n${r.description}`
+    ).join('\n\n');
+    
+    // Add to context
+    await addContextItem({
+      type: 'search',
+      title: `搜尋: ${query}`,
+      content: content,
+      results: results
+    });
+    
+    // Increment search iteration
+    searchIteration++;
+    updateSearchIterationCounter();
+    
+    showToast(`已加入搜尋結果，正在重新執行 Council...`);
+    
+    // Hide search strategy section during re-execution
+    searchStrategySection.classList.add('hidden');
+    
+    // Re-run Council with the same query but updated context
+    await runCouncilIteration();
+    
+  } catch (err) {
+    showToast('搜尋失敗：' + err.message, true);
+    searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+      btn.disabled = false;
+    });
+  }
+}
+
+async function runCouncilIteration() {
+  // Clear previous responses but keep context
+  responses.clear();
+  reviews.clear();
+  
+  // Reset stages UI
+  stage1Section.classList.remove('collapsed');
+  stage2Section.classList.remove('collapsed', 'stage-skipped');
+  stage3Section.classList.remove('collapsed');
+  
+  document.getElementById('stage1Content').classList.add('expanded');
+  document.getElementById('stage2Content').classList.remove('expanded');
+  document.getElementById('stage3Content').classList.remove('expanded');
+  
+  stage1Status.textContent = '';
+  stage1Status.className = 'stage-status';
+  stage2Status.textContent = '';
+  stage2Status.className = 'stage-status';
+  stage3Status.textContent = '';
+  stage3Status.className = 'stage-status';
+  
+  // Reset stepper
+  showStepper();
+  setStepActive(1);
+  
+  let savedResponses = [];
+  let aggregatedRanking = null;
+  let finalAnswerContent = '';
+  
+  try {
+    // === STAGE 1 ===
+    stage1Status.textContent = `迭代 ${searchIteration}: 查詢中...`;
+    stage1Status.classList.add('loading');
+    
+    renderTabs();
+    renderResponsePanels();
+    if (councilModels.length > 0) setActiveTab(councilModels[0]);
+    
+    // Build prompt with updated context
+    const promptWithContext = buildPromptWithContext(currentQuery);
+    await Promise.allSettled(councilModels.map(model => queryModel(model, promptWithContext)));
+    
+    const successfulResponses = Array.from(responses.entries())
+      .filter(([_, r]) => r.status === 'done')
+      .map(([model, r]) => ({ model, content: r.content, latency: r.latency }));
+    
+    savedResponses = successfulResponses;
+    stage1Status.textContent = `${successfulResponses.length}/${councilModels.length} 完成`;
+    stage1Status.classList.remove('loading');
+    stage1Status.classList.add('done');
+    
+    setStepDone(1);
+    updateStage1Summary(successfulResponses.map(r => ({ ...r, status: 'done' })));
+    
+    document.getElementById('stage1Content').classList.remove('expanded');
+    stage1Section.classList.add('collapsed');
+    
+    if (successfulResponses.length < 2) {
+      showToast('Council 需要至少 2 個模型成功回應', true);
+      return;
+    }
+    
+    // === STAGE 2 ===
+    if (enableReview && successfulResponses.length >= 2) {
+      setStepActive(2);
+      stage2Status.textContent = '審查中...';
+      stage2Status.classList.add('loading');
+      document.getElementById('stage2Content').classList.add('expanded');
+      
+      reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">模型正在互相審查...</span></div>`;
+      
+      await Promise.allSettled(councilModels.map(model => runReview(model, currentQuery, successfulResponses)));
+      
+      aggregatedRanking = aggregateRankings(successfulResponses);
+      renderReviewResults(aggregatedRanking);
+      
+      stage2Status.textContent = '完成';
+      stage2Status.classList.remove('loading');
+      stage2Status.classList.add('done');
+      
+      setStepDone(2);
+      updateStage2Summary(aggregatedRanking);
+      
+      document.getElementById('stage2Content').classList.remove('expanded');
+      stage2Section.classList.add('collapsed');
+    } else {
+      stage2Section.classList.add('stage-skipped');
+      stage2Status.textContent = '已跳過';
+      reviewResults.innerHTML = '<div class="skipped-message">互評審查已停用</div>';
+      setStepSkipped(2);
+    }
+    
+    // === STAGE 3 ===
+    setStepActive(3);
+    updateStage3Summary(chairmanModel);
+    
+    stage3Status.textContent = '彙整中...';
+    stage3Status.classList.add('loading');
+    document.getElementById('stage3Content').classList.add('expanded');
+    
+    finalAnswer.innerHTML = `
+      <div class="chairman-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+        ${getModelName(chairmanModel)}
+      </div>
+      <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
+    `;
+    
+    finalAnswerContent = await runChairman(currentQuery, successfulResponses, aggregatedRanking, enableSearchMode);
+    
+    stage3Status.textContent = '完成';
+    stage3Status.classList.remove('loading');
+    stage3Status.classList.add('done');
+    
+    setAllStepsDone();
+    
+    // Update conversation
+    if (currentConversation) {
+      currentConversation.responses = savedResponses;
+      currentConversation.ranking = aggregatedRanking;
+      currentConversation.finalAnswer = finalAnswerContent;
+      currentConversation.searchIteration = searchIteration;
+    }
+    
+  } catch (err) {
+    console.error('Council iteration error:', err);
+    showToast('執行失敗：' + err.message, true);
   }
 }
 
@@ -1198,6 +1489,12 @@ async function handleSend() {
   responses.clear();
   reviews.clear();
   activeTab = null;
+  
+  // Reset search iteration for new query
+  searchIteration = 0;
+  currentSearchQueries = [];
+  searchStrategySection.classList.add('hidden');
+  updateSearchIterationCounter();
 
   sendBtn.disabled = true;
   sendBtn.innerHTML = '<span class="spinner"></span><span>Council 執行中...</span>';
@@ -1327,7 +1624,7 @@ async function handleSend() {
       <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
     `;
 
-    finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking);
+    finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking, enableSearchMode);
 
     stage3Status.textContent = '完成';
     stage3Status.classList.remove('loading');
@@ -1705,8 +2002,14 @@ function renderReviewResults(ranking) {
   reviewResults.innerHTML = `<div class="review-summary"><div class="ranking-list">${rankingHtml}</div></div>${reasonsHtml}`;
 }
 
-async function runChairman(query, allResponses, aggregatedRanking) {
-  const prompt = generateChairmanPrompt(query, allResponses, aggregatedRanking);
+async function runChairman(query, allResponses, aggregatedRanking, withSearchMode = false) {
+  let prompt = generateChairmanPrompt(query, allResponses, aggregatedRanking);
+  
+  // Append search strategy suffix if search mode is enabled and not at max iterations
+  if (withSearchMode && searchIteration < maxSearchIterations) {
+    prompt += SEARCH_STRATEGY_SUFFIX;
+  }
+  
   const parser = createStreamingParser();
   let finalContent = '';
 
@@ -1723,7 +2026,21 @@ async function runChairman(query, allResponses, aggregatedRanking) {
         } else if (msg.type === 'DONE') {
           finalContent = content;
           const el = finalAnswer.querySelector('.response-content');
-          if (el) el.innerHTML = parseMarkdown(content);
+          
+          // If search mode is enabled, extract and display search strategies
+          if (withSearchMode) {
+            const searchQueries = parseSearchQueries(content);
+            const cleanContent = extractFinalAnswer(content);
+            if (el) el.innerHTML = parseMarkdown(cleanContent);
+            
+            // Render search strategies if there are any and not at max iterations
+            if (searchQueries.length > 0 && searchIteration < maxSearchIterations) {
+              renderSearchStrategies(searchQueries);
+            }
+          } else {
+            if (el) el.innerHTML = parseMarkdown(content);
+          }
+          
           port.disconnect();
           resolve();
         } else if (msg.type === 'ERROR') {
@@ -1750,50 +2067,119 @@ async function queryModelNonStreaming(model, prompt) {
 
 function extractImageHints(content) {
   // 尋找關於圖像生成的建議/提示
-  const hints = [];
+  const hints = {
+    styles: [],      // 畫風建議
+    colors: [],      // 顏色建議
+    subjects: [],    // 主體/人物建議
+    compositions: [] // 構圖建議
+  };
   
-  // 常見的圖像建議模式
-  const patterns = [
+  // 畫風
+  const stylePatterns = [
     /(?:畫風|風格)[：:]\s*([^\n。，]+)/gi,
     /(?:建議|推薦)(?:使用)?(?:的)?(?:畫風|風格)[：:]?\s*([^\n。，]+)/gi,
-    /(?:如果|若)(?:你)?(?:想|要|希望)(?:指定)?[：:]?\s*([^\n。]+(?:畫風|風格|顏色|色調)[^\n。]*)/gi,
-    /(?:可以|能夠)(?:調整|設定|指定)[：:]?\s*([^\n。]+)/gi,
-    /(?:寫實|油畫|水彩|動畫風|卡通|插畫|漫畫|賽博龐克|未來感|復古|懷舊|極簡|抽象)/gi
+    /(寫實|油畫|水彩|動畫風|卡通|插畫|漫畫|賽博龐克|未來感|復古|懷舊|極簡|抽象|電影感|攝影|照片風格|3D渲染|像素風|浮世繪|印象派)/gi
   ];
   
-  patterns.forEach(pattern => {
-    let match;
-    while ((match = pattern.exec(content)) !== null) {
-      const hint = match[1] || match[0];
-      if (hint && hint.length < 100 && !hints.includes(hint.trim())) {
-        hints.push(hint.trim());
+  // 顏色
+  const colorPatterns = [
+    /(?:顏色|色彩|色調|配色)[：:]\s*([^\n。，]+)/gi,
+    /(冷色調|暖色調|鮮豔|柔和|單色|黑白|霓虹|金色|銀色|紅色|藍色|綠色|黃色|紫色|橙色)/gi
+  ];
+  
+  // 主體/人物
+  const subjectPatterns = [
+    /(?:性別|人物)[：:]\s*([^\n。，]+)/gi,
+    /(男性|女性|男|女|男孩|女孩|老人|年輕人|運動員|跑者)/gi,
+    /(?:服裝|衣服|穿著)[：:]\s*([^\n。，]+)/gi
+  ];
+  
+  // 構圖
+  const compositionPatterns = [
+    /(?:構圖|視角|角度)[：:]\s*([^\n。，]+)/gi,
+    /(俯視|仰視|側面|正面|背面|特寫|遠景|中景|近景|全景|側後方視角)/gi
+  ];
+  
+  const extractFromPatterns = (patterns, arr) => {
+    patterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        const hint = (match[1] || match[0]).trim();
+        if (hint && hint.length < 50 && !arr.includes(hint)) {
+          arr.push(hint);
+        }
       }
-    }
-  });
+    });
+  };
+  
+  extractFromPatterns(stylePatterns, hints.styles);
+  extractFromPatterns(colorPatterns, hints.colors);
+  extractFromPatterns(subjectPatterns, hints.subjects);
+  extractFromPatterns(compositionPatterns, hints.compositions);
   
   return hints;
 }
 
 function generateImagePromptDraft(finalContent, query, hints) {
-  let draft = `根據以下內容，創作一張精美的插圖：
-
-【主題】
-${query}
-
-【內容摘要】
-${finalContent.slice(0, 1500)}`;
-
-  if (hints.length > 0) {
-    draft += `\n\n【風格建議】\n${hints.join('、')}`;
+  // 從最終內容中提取關鍵場景描述
+  const extractKeyScene = (content) => {
+    // 尋找描述性段落（通常包含場景、地點、動作等）
+    const sentences = content.split(/[。！？\n]+/).filter(s => s.trim().length > 20);
+    const descriptiveSentences = sentences.filter(s => 
+      /[地方場景環境天氣光線色彩氛圍]|在[^，]+[上下中裡]|[跑走站坐]/.test(s)
+    );
+    return descriptiveSentences.slice(0, 3).join('。') || sentences.slice(0, 3).join('。');
+  };
+  
+  const keyScene = extractKeyScene(finalContent);
+  
+  // 建立帶有 placeholders 的草稿
+  let draft = keyScene;
+  
+  // 如果內容中沒有明確指定，加入 placeholders
+  if (!/男|女|性別/.test(draft)) {
+    draft = draft.replace(/(?:一名|一位|某位)?跑者/, '一名{性別:男性/女性}跑者');
+    draft = draft.replace(/(?:一名|一位|某位)?人/, '一名{性別:男性/女性}人');
   }
-
-  draft += `\n\n【繪圖指令】
-請創作一張能夠傳達以上內容核心概念的圖像。`;
-
+  
+  // 服裝顏色 placeholder
+  if (!/[紅藍綠黃白黑]色/.test(draft) && /跑者|運動/.test(draft)) {
+    draft += '\n\n服裝：{衣服顏色:藍色/紅色/黑色/白色}運動服';
+  }
+  
+  // 畫風 placeholder
+  draft += '\n\n畫風：{指定畫風:寫實攝影風格/油畫風/水彩/動畫風/電影感}';
+  
+  // 加入從 hints 中提取的建議
+  const allHints = [];
+  if (hints.styles?.length > 0) allHints.push(`風格參考：${hints.styles.join('、')}`);
+  if (hints.colors?.length > 0) allHints.push(`色調參考：${hints.colors.join('、')}`);
+  if (hints.compositions?.length > 0) allHints.push(`構圖參考：${hints.compositions.join('、')}`);
+  
+  if (allHints.length > 0) {
+    draft += `\n\n【AI 建議的選項】\n${allHints.join('\n')}`;
+  }
+  
+  // 加入說明
+  draft += `\n\n---
+提示：請將 {選項} 替換為您想要的具體值，或直接編輯文字。
+範例：{性別:男性/女性} → 男性`;
+  
   return draft;
 }
 
 function showImagePromptEditor(draft, hints, onConfirm, onCancel) {
+  // 預設選項
+  const defaultOptions = {
+    gender: ['男性', '女性', '中性'],
+    clothing: ['藍色', '紅色', '黑色', '白色', '綠色', '橙色'],
+    style: ['寫實攝影風格', '油畫風', '水彩', '動畫風', '電影感', '賽博龐克', '極簡風格', '插畫風']
+  };
+  
+  // 合併從 hints 提取的選項
+  const mergedStyles = [...new Set([...defaultOptions.style, ...(hints.styles || [])])];
+  const mergedColors = [...new Set([...defaultOptions.clothing, ...(hints.colors || [])])];
+  
   const editorHtml = `
     <div class="image-prompt-editor">
       <div class="prompt-editor-header">
@@ -1803,19 +2189,50 @@ function showImagePromptEditor(draft, hints, onConfirm, onCancel) {
             <circle cx="8.5" cy="8.5" r="1.5"/>
             <polyline points="21 15 16 10 5 21"/>
           </svg>
-          圖像生成 Prompt
+          圖像生成 Prompt 編輯器
         </div>
-        <span class="prompt-editor-hint">可編輯後再生成</span>
+        <span class="prompt-editor-hint">編輯完成後點擊生成</span>
       </div>
-      ${hints.length > 0 ? `
+      
+      <div class="prompt-quick-options">
+        <div class="quick-option-group">
+          <label class="quick-option-label">性別</label>
+          <div class="quick-option-chips" data-placeholder="{性別:男性/女性}">
+            ${defaultOptions.gender.map(g => `<button class="option-chip" data-value="${g}">${g}</button>`).join('')}
+          </div>
+        </div>
+        
+        <div class="quick-option-group">
+          <label class="quick-option-label">服裝顏色</label>
+          <div class="quick-option-chips" data-placeholder="{衣服顏色:藍色/紅色/黑色/白色}">
+            ${mergedColors.map(c => `<button class="option-chip" data-value="${c}">${c}</button>`).join('')}
+          </div>
+        </div>
+        
+        <div class="quick-option-group">
+          <label class="quick-option-label">畫風</label>
+          <div class="quick-option-chips" data-placeholder="{指定畫風:寫實攝影風格/油畫風/水彩/動畫風/電影感}">
+            ${mergedStyles.map(s => `<button class="option-chip" data-value="${s}">${s}</button>`).join('')}
+          </div>
+        </div>
+      </div>
+      
+      ${(hints.styles?.length > 0 || hints.compositions?.length > 0) ? `
         <div class="prompt-hints">
-          <div class="prompt-hints-label">偵測到的風格建議：</div>
+          <div class="prompt-hints-label">AI 偵測到的建議：</div>
           <div class="prompt-hints-tags">
-            ${hints.map(h => `<span class="hint-tag">${escapeHtml(h)}</span>`).join('')}
+            ${(hints.styles || []).map(h => `<span class="hint-tag style">${escapeHtml(h)}</span>`).join('')}
+            ${(hints.compositions || []).map(h => `<span class="hint-tag comp">${escapeHtml(h)}</span>`).join('')}
           </div>
         </div>
       ` : ''}
-      <textarea class="prompt-editor-textarea" id="imagePromptTextarea" rows="8">${escapeHtml(draft)}</textarea>
+      
+      <div class="prompt-editor-textarea-wrapper">
+        <label class="textarea-label">最終生圖 Prompt</label>
+        <textarea class="prompt-editor-textarea" id="imagePromptTextarea" rows="10">${escapeHtml(draft)}</textarea>
+        <div class="textarea-hint">此 prompt 將直接送入圖像生成模型</div>
+      </div>
+      
       <div class="prompt-editor-actions">
         <button class="prompt-editor-btn secondary" id="cancelImageGen">取消</button>
         <button class="prompt-editor-btn primary" id="confirmImageGen">
@@ -1835,12 +2252,61 @@ function showImagePromptEditor(draft, hints, onConfirm, onCancel) {
   container.innerHTML = editorHtml;
   finalAnswer.appendChild(container);
 
+  const textarea = document.getElementById('imagePromptTextarea');
+  
+  // 快速選項點擊處理
+  container.querySelectorAll('.option-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const value = chip.dataset.value;
+      const placeholder = chip.closest('.quick-option-chips').dataset.placeholder;
+      
+      // 嘗試替換 placeholder
+      const placeholderRegex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\{[^}]+\\\}/g, '\\{[^}]+\\}'), 'g');
+      let newText = textarea.value;
+      
+      // 嘗試多種 placeholder 格式
+      const patterns = [
+        new RegExp(`\\{[^}]*${placeholder.split(':')[0].replace('{', '')}[^}]*\\}`, 'g'),
+        placeholderRegex
+      ];
+      
+      let replaced = false;
+      for (const pattern of patterns) {
+        if (pattern.test(newText)) {
+          newText = newText.replace(pattern, value);
+          replaced = true;
+          break;
+        }
+      }
+      
+      if (!replaced) {
+        // 如果沒有找到 placeholder，直接附加
+        newText += `\n${value}`;
+      }
+      
+      textarea.value = newText;
+      
+      // 高亮選中的 chip
+      chip.closest('.quick-option-chips').querySelectorAll('.option-chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.add('selected');
+    });
+  });
+
   // Scroll to editor
   container.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
   // Event handlers
   document.getElementById('confirmImageGen').addEventListener('click', () => {
-    const editedPrompt = document.getElementById('imagePromptTextarea').value.trim();
+    let editedPrompt = textarea.value.trim();
+    
+    // 清理未替換的 placeholder 和說明文字
+    editedPrompt = editedPrompt
+      .replace(/\{[^}]+\}/g, '') // 移除未填的 placeholders
+      .replace(/---[\s\S]*提示：[\s\S]*範例：[\s\S]*/g, '') // 移除說明
+      .replace(/【AI 建議的選項】[\s\S]*?(?=\n\n|$)/g, '') // 移除 AI 建議區塊
+      .replace(/\n{3,}/g, '\n\n') // 清理多餘空行
+      .trim();
+    
     container.remove();
     onConfirm(editedPrompt);
   });

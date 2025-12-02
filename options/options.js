@@ -81,6 +81,7 @@ const braveApiKeyInput = document.getElementById('braveApiKey');
 const modelListEl = document.getElementById('modelList');
 const chairmanSelect = document.getElementById('chairmanModel');
 const enableReviewCheckbox = document.getElementById('enableReview');
+const maxSearchIterationsSelect = document.getElementById('maxSearchIterations');
 const reviewPromptTextarea = document.getElementById('reviewPrompt');
 const chairmanPromptTextarea = document.getElementById('chairmanPrompt');
 const resetPromptsBtn = document.getElementById('resetPromptsBtn');
@@ -120,6 +121,7 @@ async function loadSettings() {
     councilModels: DEFAULT_MODELS,
     chairmanModel: DEFAULT_CHAIRMAN,
     enableReview: true,
+    maxSearchIterations: 5,
     reviewPrompt: DEFAULT_REVIEW_PROMPT,
     chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT
   });
@@ -127,6 +129,7 @@ async function loadSettings() {
   apiKeyInput.value = result.apiKey;
   braveApiKeyInput.value = result.braveApiKey;
   enableReviewCheckbox.checked = result.enableReview;
+  maxSearchIterationsSelect.value = result.maxSearchIterations;
   chairmanSelect.value = result.chairmanModel;
   reviewPromptTextarea.value = result.reviewPrompt;
   chairmanPromptTextarea.value = result.chairmanPrompt;
@@ -142,6 +145,7 @@ async function saveSettings() {
   const apiKey = apiKeyInput.value.trim();
   const braveApiKey = braveApiKeyInput.value.trim();
   const enableReview = enableReviewCheckbox.checked;
+  const maxSearchIterations = parseInt(maxSearchIterationsSelect.value, 10) || 5;
   const chairmanModel = chairmanSelect.value;
   const reviewPrompt = reviewPromptTextarea.value.trim() || DEFAULT_REVIEW_PROMPT;
   const chairmanPrompt = chairmanPromptTextarea.value.trim() || DEFAULT_CHAIRMAN_PROMPT;
@@ -161,6 +165,7 @@ async function saveSettings() {
     councilModels,
     chairmanModel,
     enableReview,
+    maxSearchIterations,
     reviewPrompt,
     chairmanPrompt
   });
