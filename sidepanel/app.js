@@ -458,6 +458,15 @@ function updateModelCount() {
 }
 
 function setupEventListeners() {
+  // 全域鍵盤事件：明確允許系統快捷鍵通過，避免擴展干擾複製/貼上等功能
+  document.addEventListener('keydown', (e) => {
+    // 允許 Ctrl/Cmd + C, V, X, A, Z 等系統快捷鍵通過
+    if ((e.ctrlKey || e.metaKey) && ['c', 'v', 'x', 'a', 'z'].includes(e.key.toLowerCase())) {
+      // 不攔截，讓瀏覽器處理
+      return;
+    }
+  }, true); // 使用捕獲階段，確保優先處理
+  
   sendBtn.addEventListener('click', handleSend);
   queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend(); });
   settingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
