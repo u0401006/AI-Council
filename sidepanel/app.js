@@ -110,9 +110,20 @@ function parseReviewResponse(content) {
   try {
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
     const jsonStr = jsonMatch ? jsonMatch[1] : content;
-    return JSON.parse(jsonStr.trim()).rankings || JSON.parse(jsonStr.trim());
-  } catch (e) { console.error('Failed to parse review:', e); return null; }
+    const parsed = JSON.parse(jsonStr.trim());
+    const rankings = parsed.rankings || parsed;
+    if (!Array.isArray(rankings)) {
+      return { error: '回應格式錯誤：rankings 不是陣列', raw: content };
+    }
+    return { success: true, rankings };
+  } catch (e) {
+    console.error('Failed to parse review:', e);
+    return { error: `JSON 解析失敗: ${e.message}`, raw: content };
+  }
 }
+
+// Track review failures for retry functionality
+let reviewFailures = new Map(); // model -> { error, raw, query, allResponses }
 
 // ============================================
 // Main App State
@@ -883,6 +894,7 @@ async function runCouncilIteration() {
   // Clear previous responses but keep context
   responses.clear();
   reviews.clear();
+  reviewFailures.clear();
   
   // Reset stages UI
   stage1Section.classList.remove('collapsed');
@@ -1517,6 +1529,7 @@ async function handleSend() {
   currentConversation = null;
   responses.clear();
   reviews.clear();
+  reviewFailures.clear();
   activeTab = null;
   
   // Reset search iteration for new query
@@ -1680,15 +1693,28 @@ async function handleSend() {
 
     // === IMAGE GENERATION (if enabled) ===
     if (enableImage && finalAnswerContent) {
-      // Extract hints from all responses and final answer
-      const allContent = savedResponses.map(r => r.content).join('\n') + '\n' + finalAnswerContent;
-      const hints = extractImageHints(allContent);
-      const promptDraft = generateImagePromptDraft(finalAnswerContent, query, hints);
+      // Show loading while AI generates prompt
+      const promptLoadingEl = document.createElement('div');
+      promptLoadingEl.className = 'image-prompt-loading';
+      promptLoadingEl.innerHTML = `
+        <div class="loading-indicator">
+          <div class="loading-dots"><span></span><span></span><span></span></div>
+          <span class="loading-text">AI 正在分析內容並設計圖像 prompt...</span>
+        </div>
+      `;
+      finalAnswer.appendChild(promptLoadingEl);
       
-      // Show prompt editor
+      // Generate prompt with AI
+      const aiResult = await generateImagePromptWithAI(query, finalAnswerContent, savedResponses);
+      promptLoadingEl.remove();
+      
+      if (!aiResult.success) {
+        showToast('AI Prompt 生成失敗，使用預設模式', true);
+      }
+      
+      // Show prompt editor with AI result
       showImagePromptEditor(
-        promptDraft,
-        hints,
+        aiResult,
         // onConfirm
         async (editedPrompt) => {
           try {
@@ -1730,13 +1756,100 @@ async function handleSend() {
             }
           } catch (imgErr) {
             console.error('Image generation failed:', imgErr);
+            showToast('圖像生成失敗', true);
             const loadingEl = finalAnswer.querySelector('.image-generating-section');
             if (loadingEl) loadingEl.remove();
             
+            // Remove any existing error elements
+            const existingError = finalAnswer.querySelector('.image-error');
+            if (existingError) existingError.remove();
+            
             const errorEl = document.createElement('div');
             errorEl.className = 'image-error';
-            errorEl.innerHTML = `<span>圖像生成失敗：${escapeHtml(imgErr.message)}</span>`;
+            errorEl.innerHTML = `
+              <div class="image-error-message">圖像生成失敗</div>
+              <div class="image-error-details">${escapeHtml(imgErr.message)}</div>
+              <button class="retry-image-btn" id="retryImageBtn">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M23 4v6h-6M1 20v-6h6"/>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+                重試圖像生成
+              </button>
+            `;
             finalAnswer.appendChild(errorEl);
+            
+            // Store prompt for retry
+            errorEl.dataset.prompt = editedPrompt;
+            
+            // Add retry handler
+            errorEl.querySelector('#retryImageBtn').addEventListener('click', async function() {
+              const btn = this;
+              const storedPrompt = errorEl.dataset.prompt;
+              
+              btn.disabled = true;
+              btn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span> 重試中...';
+              
+              try {
+                errorEl.remove();
+                
+                const imageLoadingEl = document.createElement('div');
+                imageLoadingEl.className = 'image-generating-section';
+                imageLoadingEl.innerHTML = `
+                  <div class="image-generating">
+                    <div class="spinner-large"></div>
+                    <span>正在重新生成圖像...</span>
+                  </div>
+                `;
+                finalAnswer.appendChild(imageLoadingEl);
+                
+                const generatedImages = await runImageGeneration(storedPrompt);
+                imageLoadingEl.remove();
+                
+                if (generatedImages.length > 0) {
+                  const imageSection = document.createElement('div');
+                  imageSection.className = 'final-image-section';
+                  imageSection.innerHTML = `<div class="image-section-title">生成的圖像</div>`;
+                  renderImages(generatedImages, imageSection);
+                  finalAnswer.appendChild(imageSection);
+                  
+                  if (currentConversation) {
+                    currentConversation.generatedImages = generatedImages;
+                    currentConversation.imagePrompt = storedPrompt;
+                    const result = await chrome.storage.local.get('conversations');
+                    const conversations = result.conversations || [];
+                    const idx = conversations.findIndex(c => c.id === currentConversation.id);
+                    if (idx >= 0) {
+                      conversations[idx] = currentConversation;
+                      await chrome.storage.local.set({ conversations });
+                    }
+                  }
+                  showToast('圖像生成成功');
+                }
+              } catch (retryErr) {
+                console.error('Image retry failed:', retryErr);
+                showToast('圖像重試失敗', true);
+                
+                const newErrorEl = document.createElement('div');
+                newErrorEl.className = 'image-error';
+                newErrorEl.innerHTML = `
+                  <div class="image-error-message">圖像生成失敗</div>
+                  <div class="image-error-details">${escapeHtml(retryErr.message)}</div>
+                  <button class="retry-image-btn">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M23 4v6h-6M1 20v-6h6"/>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                    重試圖像生成
+                  </button>
+                `;
+                newErrorEl.dataset.prompt = storedPrompt;
+                finalAnswer.appendChild(newErrorEl);
+                
+                // Re-attach handler recursively
+                newErrorEl.querySelector('.retry-image-btn').addEventListener('click', arguments.callee);
+              }
+            });
           }
         },
         // onCancel
@@ -2007,12 +2120,39 @@ async function runReview(reviewerModel, query, allResponses) {
   if (!prompt) return;
   try {
     const result = await queryModelNonStreaming(reviewerModel, prompt);
-    const rankings = parseReviewResponse(result);
-    if (rankings) {
-      const otherModels = allResponses.filter(r => r.model !== reviewerModel).map(r => r.model);
-      reviews.set(reviewerModel, rankings.map(r => ({ model: otherModels[r.response.charCodeAt(0) - 65], rank: r.rank, reason: r.reason })));
+    const parseResult = parseReviewResponse(result);
+    
+    if (parseResult.error) {
+      // Track failure for potential retry
+      reviewFailures.set(reviewerModel, { 
+        error: parseResult.error, 
+        raw: parseResult.raw,
+        query,
+        allResponses
+      });
+      console.error(`Review parsing failed for ${reviewerModel}:`, parseResult.error);
+      showToast(`${getModelName(reviewerModel)} 審查解析失敗`, true);
+      return;
     }
-  } catch (err) { console.error(`Review by ${reviewerModel} failed:`, err); }
+    
+    // Success - clear any previous failure
+    reviewFailures.delete(reviewerModel);
+    const otherModels = allResponses.filter(r => r.model !== reviewerModel).map(r => r.model);
+    reviews.set(reviewerModel, parseResult.rankings.map(r => ({ 
+      model: otherModels[r.response.charCodeAt(0) - 65], 
+      rank: r.rank, 
+      reason: r.reason 
+    })));
+  } catch (err) { 
+    console.error(`Review by ${reviewerModel} failed:`, err);
+    reviewFailures.set(reviewerModel, {
+      error: `API 呼叫失敗: ${err.message}`,
+      raw: '',
+      query,
+      allResponses
+    });
+    showToast(`${getModelName(reviewerModel)} 審查失敗: ${err.message}`, true);
+  }
 }
 
 function aggregateRankings(allResponses) {
@@ -2028,7 +2168,49 @@ function renderReviewResults(ranking) {
   const reasons = [];
   reviews.forEach((rankings, reviewer) => { rankings.forEach(r => { if (r.reason) reasons.push({ reviewer: getModelName(reviewer), model: getModelName(r.model), reason: r.reason }); }); });
   const reasonsHtml = reasons.length > 0 ? `<div class="review-detail"><div class="review-detail-title">審查評語</div><div class="review-reasons">${reasons.slice(0, 6).map(r => `<div class="review-reason"><strong>${r.model}:</strong> ${escapeHtml(r.reason)}</div>`).join('')}</div></div>` : '';
-  reviewResults.innerHTML = `<div class="review-summary"><div class="ranking-list">${rankingHtml}</div></div>${reasonsHtml}`;
+  
+  // Show failures if any
+  let failuresHtml = '';
+  if (reviewFailures.size > 0) {
+    const failureItems = Array.from(reviewFailures.entries()).map(([model, info]) => `
+      <div class="review-failure-item">
+        <div class="failure-header">
+          <span class="failure-model">${getModelName(model)}</span>
+          <span class="failure-error">${escapeHtml(info.error)}</span>
+        </div>
+        <button class="retry-review-btn" data-model="${model}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          重試
+        </button>
+      </div>
+    `).join('');
+    failuresHtml = `<div class="review-failures"><div class="review-failures-title">審查失敗 (${reviewFailures.size})</div>${failureItems}</div>`;
+  }
+  
+  reviewResults.innerHTML = `<div class="review-summary"><div class="ranking-list">${rankingHtml}</div></div>${reasonsHtml}${failuresHtml}`;
+  
+  // Add retry handlers
+  reviewResults.querySelectorAll('.retry-review-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const model = btn.dataset.model;
+      const failureInfo = reviewFailures.get(model);
+      if (!failureInfo) return;
+      
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span> 重試中...';
+      
+      await runReview(model, failureInfo.query, failureInfo.allResponses);
+      
+      // Re-aggregate and re-render
+      const successfulResponses = failureInfo.allResponses;
+      const newRanking = aggregateRankings(successfulResponses);
+      renderReviewResults(newRanking);
+      updateStage2Summary(newRanking);
+    });
+  });
 }
 
 async function runChairman(query, allResponses, aggregatedRanking, withSearchMode = false) {
@@ -2094,120 +2276,122 @@ async function queryModelNonStreaming(model, prompt) {
   });
 }
 
-function extractImageHints(content) {
-  // 尋找關於圖像生成的建議/提示
-  const hints = {
-    styles: [],      // 畫風建議
-    colors: [],      // 顏色建議
-    subjects: [],    // 主體/人物建議
-    compositions: [] // 構圖建議
-  };
+// AI-based image prompt generation
+const IMAGE_PROMPT_SYSTEM = `你是視覺設計專家和圖像生成 Prompt 工程師。根據提供的內容，分析主題並生成適合的圖像描述。
+
+重要規則：
+1. 根據內容主題決定適當的視覺元素（不要用不相關的通用選項）
+2. 如果內容是抽象概念（法律、政治、哲學等），設計象徵性的視覺表達
+3. 如果內容是具體場景，提取關鍵視覺元素
+4. 選項應該與主題高度相關，而非通用的「性別/服裝」
+
+你必須輸出 JSON 格式：
+\`\`\`json
+{
+  "theme_type": "abstract|concrete|narrative|data",
+  "scene_description": "詳細的場景描述，包含主體、環境、光線、氛圍",
+  "option_groups": [
+    {
+      "name": "選項組名稱（如：符號類型、視角、時代感等）",
+      "options": ["選項1", "選項2", "選項3"]
+    }
+  ],
+  "style_options": ["風格1", "風格2", "風格3"],
+  "color_palette": ["色調1", "色調2", "色調3"],
+  "composition_suggestions": ["構圖建議1", "構圖建議2"],
+  "final_prompt": "直接可用的完整圖像生成 prompt（約100-200字）"
+}
+\`\`\``;
+
+async function generateImagePromptWithAI(query, finalContent, allResponses) {
+  // Compile all content for analysis
+  const responseSummary = allResponses
+    .map(r => `【${getModelName(r.model)}】\n${r.content.slice(0, 500)}...`)
+    .join('\n\n');
   
-  // 畫風
-  const stylePatterns = [
-    /(?:畫風|風格)[：:]\s*([^\n。，]+)/gi,
-    /(?:建議|推薦)(?:使用)?(?:的)?(?:畫風|風格)[：:]?\s*([^\n。，]+)/gi,
-    /(寫實|油畫|水彩|動畫風|卡通|插畫|漫畫|賽博龐克|未來感|復古|懷舊|極簡|抽象|電影感|攝影|照片風格|3D渲染|像素風|浮世繪|印象派)/gi
-  ];
-  
-  // 顏色
-  const colorPatterns = [
-    /(?:顏色|色彩|色調|配色)[：:]\s*([^\n。，]+)/gi,
-    /(冷色調|暖色調|鮮豔|柔和|單色|黑白|霓虹|金色|銀色|紅色|藍色|綠色|黃色|紫色|橙色)/gi
-  ];
-  
-  // 主體/人物
-  const subjectPatterns = [
-    /(?:性別|人物)[：:]\s*([^\n。，]+)/gi,
-    /(男性|女性|男|女|男孩|女孩|老人|年輕人|運動員|跑者)/gi,
-    /(?:服裝|衣服|穿著)[：:]\s*([^\n。，]+)/gi
-  ];
-  
-  // 構圖
-  const compositionPatterns = [
-    /(?:構圖|視角|角度)[：:]\s*([^\n。，]+)/gi,
-    /(俯視|仰視|側面|正面|背面|特寫|遠景|中景|近景|全景|側後方視角)/gi
-  ];
-  
-  const extractFromPatterns = (patterns, arr) => {
-    patterns.forEach(pattern => {
-      let match;
-      while ((match = pattern.exec(content)) !== null) {
-        const hint = (match[1] || match[0]).trim();
-        if (hint && hint.length < 50 && !arr.includes(hint)) {
-          arr.push(hint);
-        }
-      }
-    });
-  };
-  
-  extractFromPatterns(stylePatterns, hints.styles);
-  extractFromPatterns(colorPatterns, hints.colors);
-  extractFromPatterns(subjectPatterns, hints.subjects);
-  extractFromPatterns(compositionPatterns, hints.compositions);
-  
-  return hints;
+  const analysisPrompt = `請分析以下 Council 討論內容，並生成適合的圖像 Prompt。
+
+## 原始問題
+${query}
+
+## 各模型回應摘要
+${responseSummary}
+
+## 最終彙整答案
+${finalContent.slice(0, 1500)}
+
+---
+請根據以上內容，設計一個能夠視覺化呈現主題核心概念的圖像。
+注意：選項組應該與主題相關，不要使用通用的「性別/服裝」等選項，除非內容確實涉及人物描寫。`;
+
+  try {
+    // Use chairman model for consistency
+    const result = await queryModelNonStreaming(chairmanModel, IMAGE_PROMPT_SYSTEM + '\n\n' + analysisPrompt);
+    
+    // Parse JSON from response
+    const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = jsonMatch ? jsonMatch[1] : result;
+    const parsed = JSON.parse(jsonStr.trim());
+    
+    return {
+      success: true,
+      themeType: parsed.theme_type || 'concrete',
+      sceneDescription: parsed.scene_description || '',
+      optionGroups: parsed.option_groups || [],
+      styleOptions: parsed.style_options || [],
+      colorPalette: parsed.color_palette || [],
+      compositionSuggestions: parsed.composition_suggestions || [],
+      finalPrompt: parsed.final_prompt || ''
+    };
+  } catch (err) {
+    console.error('AI prompt generation failed:', err);
+    return {
+      success: false,
+      error: err.message
+    };
+  }
 }
 
-function generateImagePromptDraft(finalContent, query, hints) {
-  // 從最終內容中提取關鍵場景描述
-  const extractKeyScene = (content) => {
-    // 尋找描述性段落（通常包含場景、地點、動作等）
-    const sentences = content.split(/[。！？\n]+/).filter(s => s.trim().length > 20);
-    const descriptiveSentences = sentences.filter(s => 
-      /[地方場景環境天氣光線色彩氛圍]|在[^，]+[上下中裡]|[跑走站坐]/.test(s)
-    );
-    return descriptiveSentences.slice(0, 3).join('。') || sentences.slice(0, 3).join('。');
-  };
+function showImagePromptEditor(aiResult, onConfirm, onCancel) {
+  // Use AI-generated options or fallback to defaults
+  const hasAIResult = aiResult && aiResult.success;
   
-  const keyScene = extractKeyScene(finalContent);
-  
-  // 建立帶有 placeholders 的草稿
-  let draft = keyScene;
-  
-  // 如果內容中沒有明確指定，加入 placeholders
-  if (!/男|女|性別/.test(draft)) {
-    draft = draft.replace(/(?:一名|一位|某位)?跑者/, '一名{性別:男性/女性}跑者');
-    draft = draft.replace(/(?:一名|一位|某位)?人/, '一名{性別:男性/女性}人');
+  // Build dynamic option groups from AI result
+  let optionGroupsHtml = '';
+  if (hasAIResult && aiResult.optionGroups && aiResult.optionGroups.length > 0) {
+    optionGroupsHtml = aiResult.optionGroups.map(group => `
+      <div class="quick-option-group">
+        <label class="quick-option-label">${escapeHtml(group.name)}</label>
+        <div class="quick-option-chips" data-category="${escapeAttr(group.name)}">
+          ${group.options.map(opt => `<button class="option-chip" data-value="${escapeAttr(opt)}">${escapeHtml(opt)}</button>`).join('')}
+        </div>
+      </div>
+    `).join('');
   }
   
-  // 服裝顏色 placeholder
-  if (!/[紅藍綠黃白黑]色/.test(draft) && /跑者|運動/.test(draft)) {
-    draft += '\n\n服裝：{衣服顏色:藍色/紅色/黑色/白色}運動服';
-  }
+  // Style options
+  const styleOptions = hasAIResult && aiResult.styleOptions?.length > 0 
+    ? aiResult.styleOptions 
+    : ['寫實攝影風格', '油畫風', '水彩', '動畫風', '電影感', '賽博龐克', '極簡風格', '插畫風'];
   
-  // 畫風 placeholder
-  draft += '\n\n畫風：{指定畫風:寫實攝影風格/油畫風/水彩/動畫風/電影感}';
+  // Color palette
+  const colorOptions = hasAIResult && aiResult.colorPalette?.length > 0
+    ? aiResult.colorPalette
+    : ['暖色調', '冷色調', '高對比', '柔和', '復古色調'];
   
-  // 加入從 hints 中提取的建議
-  const allHints = [];
-  if (hints.styles?.length > 0) allHints.push(`風格參考：${hints.styles.join('、')}`);
-  if (hints.colors?.length > 0) allHints.push(`色調參考：${hints.colors.join('、')}`);
-  if (hints.compositions?.length > 0) allHints.push(`構圖參考：${hints.compositions.join('、')}`);
+  // Get the prompt text
+  const promptText = hasAIResult && aiResult.finalPrompt 
+    ? aiResult.finalPrompt 
+    : (aiResult?.sceneDescription || '');
   
-  if (allHints.length > 0) {
-    draft += `\n\n【AI 建議的選項】\n${allHints.join('\n')}`;
-  }
-  
-  // 加入說明
-  draft += `\n\n---
-提示：請將 {選項} 替換為您想要的具體值，或直接編輯文字。
-範例：{性別:男性/女性} → 男性`;
-  
-  return draft;
-}
-
-function showImagePromptEditor(draft, hints, onConfirm, onCancel) {
-  // 預設選項
-  const defaultOptions = {
-    gender: ['男性', '女性', '中性'],
-    clothing: ['藍色', '紅色', '黑色', '白色', '綠色', '橙色'],
-    style: ['寫實攝影風格', '油畫風', '水彩', '動畫風', '電影感', '賽博龐克', '極簡風格', '插畫風']
-  };
-  
-  // 合併從 hints 提取的選項
-  const mergedStyles = [...new Set([...defaultOptions.style, ...(hints.styles || [])])];
-  const mergedColors = [...new Set([...defaultOptions.clothing, ...(hints.colors || [])])];
+  // Theme type badge
+  const themeTypeBadge = hasAIResult && aiResult.themeType 
+    ? `<span class="theme-type-badge ${aiResult.themeType}">${
+        aiResult.themeType === 'abstract' ? '抽象概念' :
+        aiResult.themeType === 'narrative' ? '敘事場景' :
+        aiResult.themeType === 'data' ? '數據視覺化' : '具體場景'
+      }</span>` 
+    : '';
   
   const editorHtml = `
     <div class="image-prompt-editor">
@@ -2219,47 +2403,42 @@ function showImagePromptEditor(draft, hints, onConfirm, onCancel) {
             <polyline points="21 15 16 10 5 21"/>
           </svg>
           圖像生成 Prompt 編輯器
+          ${themeTypeBadge}
         </div>
-        <span class="prompt-editor-hint">編輯完成後點擊生成</span>
+        <span class="prompt-editor-hint">${hasAIResult ? 'AI 已分析內容並生成建議' : '使用預設選項'}</span>
       </div>
       
       <div class="prompt-quick-options">
-        <div class="quick-option-group">
-          <label class="quick-option-label">性別</label>
-          <div class="quick-option-chips" data-placeholder="{性別:男性/女性}">
-            ${defaultOptions.gender.map(g => `<button class="option-chip" data-value="${g}">${g}</button>`).join('')}
-          </div>
-        </div>
-        
-        <div class="quick-option-group">
-          <label class="quick-option-label">服裝顏色</label>
-          <div class="quick-option-chips" data-placeholder="{衣服顏色:藍色/紅色/黑色/白色}">
-            ${mergedColors.map(c => `<button class="option-chip" data-value="${c}">${c}</button>`).join('')}
-          </div>
-        </div>
+        ${optionGroupsHtml}
         
         <div class="quick-option-group">
           <label class="quick-option-label">畫風</label>
-          <div class="quick-option-chips" data-placeholder="{指定畫風:寫實攝影風格/油畫風/水彩/動畫風/電影感}">
-            ${mergedStyles.map(s => `<button class="option-chip" data-value="${s}">${s}</button>`).join('')}
+          <div class="quick-option-chips" data-category="style">
+            ${styleOptions.map(s => `<button class="option-chip" data-value="${escapeAttr(s)}">${escapeHtml(s)}</button>`).join('')}
+          </div>
+        </div>
+        
+        <div class="quick-option-group">
+          <label class="quick-option-label">色調</label>
+          <div class="quick-option-chips" data-category="color">
+            ${colorOptions.map(c => `<button class="option-chip" data-value="${escapeAttr(c)}">${escapeHtml(c)}</button>`).join('')}
           </div>
         </div>
       </div>
       
-      ${(hints.styles?.length > 0 || hints.compositions?.length > 0) ? `
+      ${hasAIResult && aiResult.compositionSuggestions?.length > 0 ? `
         <div class="prompt-hints">
-          <div class="prompt-hints-label">AI 偵測到的建議：</div>
+          <div class="prompt-hints-label">AI 構圖建議：</div>
           <div class="prompt-hints-tags">
-            ${(hints.styles || []).map(h => `<span class="hint-tag style">${escapeHtml(h)}</span>`).join('')}
-            ${(hints.compositions || []).map(h => `<span class="hint-tag comp">${escapeHtml(h)}</span>`).join('')}
+            ${aiResult.compositionSuggestions.map(h => `<span class="hint-tag comp clickable" data-value="${escapeAttr(h)}">${escapeHtml(h)}</span>`).join('')}
           </div>
         </div>
       ` : ''}
       
       <div class="prompt-editor-textarea-wrapper">
         <label class="textarea-label">最終生圖 Prompt</label>
-        <textarea class="prompt-editor-textarea" id="imagePromptTextarea" rows="10">${escapeHtml(draft)}</textarea>
-        <div class="textarea-hint">此 prompt 將直接送入圖像生成模型</div>
+        <textarea class="prompt-editor-textarea" id="imagePromptTextarea" rows="10">${escapeHtml(promptText)}</textarea>
+        <div class="textarea-hint">此 prompt 將直接送入圖像生成模型，可自由編輯</div>
       </div>
       
       <div class="prompt-editor-actions">
@@ -2283,41 +2462,56 @@ function showImagePromptEditor(draft, hints, onConfirm, onCancel) {
 
   const textarea = document.getElementById('imagePromptTextarea');
   
-  // 快速選項點擊處理
+  // Track selected options per category
+  const selectedOptions = new Map();
+  
+  // Quick option chip click handler
   container.querySelectorAll('.option-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       const value = chip.dataset.value;
-      const placeholder = chip.closest('.quick-option-chips').dataset.placeholder;
+      const category = chip.closest('.quick-option-chips').dataset.category;
+      const currentText = textarea.value;
       
-      // 嘗試替換 placeholder
-      const placeholderRegex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\{[^}]+\\\}/g, '\\{[^}]+\\}'), 'g');
-      let newText = textarea.value;
+      // Get previously selected value for this category
+      const prevValue = selectedOptions.get(category);
       
-      // 嘗試多種 placeholder 格式
-      const patterns = [
-        new RegExp(`\\{[^}]*${placeholder.split(':')[0].replace('{', '')}[^}]*\\}`, 'g'),
-        placeholderRegex
-      ];
-      
-      let replaced = false;
-      for (const pattern of patterns) {
-        if (pattern.test(newText)) {
-          newText = newText.replace(pattern, value);
-          replaced = true;
-          break;
-        }
+      // Update selection
+      if (prevValue === value) {
+        // Deselect if clicking same option
+        selectedOptions.delete(category);
+        chip.classList.remove('selected');
+        
+        // Remove from text
+        const removePattern = new RegExp(`，?${escapeRegex(value)}|${escapeRegex(value)}，?`, 'g');
+        textarea.value = currentText.replace(removePattern, '').trim();
+        return;
       }
       
-      if (!replaced) {
-        // 如果沒有找到 placeholder，直接附加
-        newText += `\n${value}`;
+      // Replace previous value if exists
+      if (prevValue) {
+        textarea.value = currentText.replace(prevValue, value);
+      } else {
+        // Append to prompt with appropriate separator
+        const separator = currentText.endsWith('。') || currentText.endsWith('\n') || currentText === '' ? '' : '，';
+        textarea.value = currentText + separator + value;
       }
       
-      textarea.value = newText;
+      selectedOptions.set(category, value);
       
-      // 高亮選中的 chip
+      // Update chip highlighting
       chip.closest('.quick-option-chips').querySelectorAll('.option-chip').forEach(c => c.classList.remove('selected'));
       chip.classList.add('selected');
+    });
+  });
+
+  // Clickable composition hints
+  container.querySelectorAll('.hint-tag.clickable').forEach(tag => {
+    tag.addEventListener('click', () => {
+      const value = tag.dataset.value;
+      const currentText = textarea.value;
+      const separator = currentText.endsWith('。') || currentText.endsWith('\n') || currentText === '' ? '' : '，';
+      textarea.value = currentText + separator + value;
+      tag.classList.add('applied');
     });
   });
 
@@ -2328,12 +2522,9 @@ function showImagePromptEditor(draft, hints, onConfirm, onCancel) {
   document.getElementById('confirmImageGen').addEventListener('click', () => {
     let editedPrompt = textarea.value.trim();
     
-    // 清理未替換的 placeholder 和說明文字
+    // Clean up the prompt
     editedPrompt = editedPrompt
-      .replace(/\{[^}]+\}/g, '') // 移除未填的 placeholders
-      .replace(/---[\s\S]*提示：[\s\S]*範例：[\s\S]*/g, '') // 移除說明
-      .replace(/【AI 建議的選項】[\s\S]*?(?=\n\n|$)/g, '') // 移除 AI 建議區塊
-      .replace(/\n{3,}/g, '\n\n') // 清理多餘空行
+      .replace(/\n{3,}/g, '\n\n') // Clean up excess newlines
       .trim();
     
     container.remove();
@@ -2344,6 +2535,11 @@ function showImagePromptEditor(draft, hints, onConfirm, onCancel) {
     container.remove();
     onCancel();
   });
+}
+
+// Helper to escape regex special characters
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function runImageGeneration(prompt) {

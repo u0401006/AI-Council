@@ -1344,6 +1344,110 @@ body {
   color: var(--text-primary);
 }
 
+/* Review Failures */
+.review-failures {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(220, 38, 38, 0.05);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: 8px;
+}
+
+.review-failures-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--error);
+  margin-bottom: 0.5rem;
+}
+
+.review-failure-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(220, 38, 38, 0.1);
+}
+
+.review-failure-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.failure-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.failure-model {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.failure-error {
+  font-size: 0.75rem;
+  color: var(--error);
+}
+
+.retry-review-btn,
+.retry-image-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--error);
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.retry-review-btn:hover:not(:disabled),
+.retry-image-btn:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.15);
+  border-color: rgba(220, 38, 38, 0.5);
+}
+
+.retry-review-btn:disabled,
+.retry-image-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Image Error Display */
+.image-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(220, 38, 38, 0.05);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: 8px;
+  margin-top: 1rem;
+}
+
+.image-error-message {
+  font-size: 0.875rem;
+  color: var(--error);
+  text-align: center;
+}
+
+.image-error-details {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  max-width: 100%;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+}
+
 /* Stage 3: Final Answer */
 .final-answer {
   padding: 1rem;
@@ -1990,6 +2094,67 @@ body {
   background: rgba(16, 185, 129, 0.1);
   border-color: rgba(16, 185, 129, 0.3);
   color: #10b981;
+}
+
+.hint-tag.clickable {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hint-tag.clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.hint-tag.applied {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+/* Theme type badge */
+.theme-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.theme-type-badge.abstract {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(236, 72, 153, 0.2));
+  color: #8b5cf6;
+}
+
+.theme-type-badge.concrete {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.theme-type-badge.narrative {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.theme-type-badge.data {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+/* Image prompt loading */
+.image-prompt-loading {
+  padding: 1.5rem;
+  text-align: center;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  margin-top: 1rem;
+}
+
+.image-prompt-loading .loading-text {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
 }
 
 .prompt-editor-textarea-wrapper {
