@@ -797,6 +797,33 @@ async function executeSearchAndIterate(searchQuery) {
       btn.disabled = true;
     });
     
+    // === 將本輪討論內容加入參考資料 ===
+    const currentResponses = Array.from(responses.entries())
+      .filter(([_, r]) => r.status === 'done')
+      .map(([model, r]) => ({ model, content: r.content }));
+    
+    if (currentResponses.length > 0) {
+      // 整理多模型回應 + 主席彙整
+      let discussionSummary = `## 第 ${searchIteration + 1} 輪討論摘要\n\n`;
+      discussionSummary += `### 問題\n${currentQuery}\n\n`;
+      discussionSummary += `### 模型回應\n`;
+      currentResponses.forEach((r, i) => {
+        discussionSummary += `#### ${getModelName(r.model)}\n${r.content}\n\n`;
+      });
+      
+      // 加入主席彙整（如果有）
+      if (currentConversation?.finalAnswer) {
+        const cleanFinalAnswer = extractFinalAnswer(currentConversation.finalAnswer);
+        discussionSummary += `### 主席彙整\n${cleanFinalAnswer}\n`;
+      }
+      
+      await addContextItem({
+        type: 'discussion',
+        title: `第 ${searchIteration + 1} 輪 Council 討論`,
+        content: discussionSummary
+      });
+    }
+    
     showToast(`正在搜尋「${searchQuery}」...`);
     
     const response = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: searchQuery });
@@ -1059,13 +1086,15 @@ function renderContextItems() {
   contextItemsEl.innerHTML = contextItems.map(item => {
     const preview = item.content.slice(0, 150).replace(/\n/g, ' ');
     const charCount = item.content.length;
-    const iconClass = item.type === 'page' ? 'page' : item.type === 'selection' ? 'selection' : item.type === 'search' ? 'search' : 'paste';
+    const iconClass = item.type === 'page' ? 'page' : item.type === 'selection' ? 'selection' : item.type === 'search' ? 'search' : item.type === 'discussion' ? 'discussion' : 'paste';
     const iconSvg = item.type === 'page' 
       ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line></svg>'
       : item.type === 'selection'
       ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>'
       : item.type === 'search'
       ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>'
+      : item.type === 'discussion'
+      ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
       : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
     
     return `

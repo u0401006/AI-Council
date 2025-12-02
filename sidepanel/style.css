@@ -2269,6 +2269,10 @@ body {
   background: #f59e0b;
 }
 
+.context-item-icon.discussion {
+  background: #6366f1;
+}
+
 .context-item-body {
   flex: 1;
   min-width: 0;
