@@ -238,7 +238,6 @@ const contextBadge = document.getElementById('contextBadge');
 const contextItemsEl = document.getElementById('contextItems');
 const capturePageBtn = document.getElementById('capturePageBtn');
 const captureSelectionBtn = document.getElementById('captureSelectionBtn');
-const webSearchBtn = document.getElementById('webSearchBtn');
 const pasteContextBtn = document.getElementById('pasteContextBtn');
 const clearContextBtn = document.getElementById('clearContextBtn');
 
@@ -499,7 +498,6 @@ function setupEventListeners() {
   contextHeader.addEventListener('click', toggleContextPanel);
   capturePageBtn.addEventListener('click', capturePageContent);
   captureSelectionBtn.addEventListener('click', captureSelection);
-  webSearchBtn.addEventListener('click', webSearch);
   pasteContextBtn.addEventListener('click', pasteContext);
   clearContextBtn.addEventListener('click', clearContext);
 
@@ -694,57 +692,6 @@ async function pasteContext() {
     showToast('已貼上內容');
   } catch (err) {
     showToast('貼上失敗：' + err.message, true);
-  }
-}
-
-async function webSearch() {
-  try {
-    // Use queryInput value or prompt for search query
-    let searchQuery = queryInput.value.trim();
-    if (!searchQuery) {
-      searchQuery = prompt('輸入搜尋關鍵字：');
-    }
-    
-    if (!searchQuery || searchQuery.length < 1) {
-      showToast('請輸入搜尋關鍵字', true);
-      return;
-    }
-    
-    webSearchBtn.disabled = true;
-    webSearchBtn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span>';
-    
-    const response = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: searchQuery });
-    
-    if (response.error) {
-      showToast(response.error, true);
-      return;
-    }
-    
-    const { results, query } = response;
-    
-    if (!results || results.length === 0) {
-      showToast('找不到相關結果', true);
-      return;
-    }
-    
-    // Format search results as context content
-    const content = results.map((r, i) => 
-      `[${i + 1}] ${r.title}\n${r.url}\n${r.description}`
-    ).join('\n\n');
-    
-    addContextItem({
-      type: 'search',
-      title: `搜尋: ${query}`,
-      content: content,
-      results: results
-    });
-    
-    showToast(`已加入 ${results.length} 筆搜尋結果`);
-  } catch (err) {
-    showToast('搜尋失敗：' + err.message, true);
-  } finally {
-    webSearchBtn.disabled = false;
-    webSearchBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><span>網搜</span>`;
   }
 }
 
@@ -1024,6 +971,16 @@ async function runCouncilIteration() {
       currentConversation.ranking = aggregatedRanking;
       currentConversation.finalAnswer = finalAnswerContent;
       currentConversation.searchIteration = searchIteration;
+      currentConversation.contextItemsSnapshot = JSON.parse(JSON.stringify(contextItems)); // 更新參考資料快照
+      
+      // 保存更新後的 conversation 到 storage
+      const result = await chrome.storage.local.get('conversations');
+      const conversations = result.conversations || [];
+      const idx = conversations.findIndex(c => c.id === currentConversation.id);
+      if (idx >= 0) {
+        conversations[idx] = currentConversation;
+        await chrome.storage.local.set({ conversations });
+      }
     }
     
   } catch (err) {
@@ -1317,6 +1274,19 @@ async function loadConversation(id) {
   historyPanel.classList.add('hidden');
   historyVisible = false;
 
+  // 載入並替換參考資料快照
+  contextItems = conv.contextItemsSnapshot ? JSON.parse(JSON.stringify(conv.contextItemsSnapshot)) : [];
+  await saveContextItems();
+  renderContextItems();
+  updateContextBadge();
+  
+  // 通知使用者參考資料已替換
+  if (contextItems.length > 0) {
+    showToast(`已載入此對話的 ${contextItems.length} 個參考資料`);
+  } else {
+    showToast('此對話無參考資料');
+  }
+
   // Display saved conversation
   queryInput.value = conv.query;
   emptyState.classList.add('hidden');
@@ -1417,6 +1387,7 @@ async function saveCurrentConversation(data) {
   const conv = {
     id: crypto.randomUUID(),
     timestamp: Date.now(),
+    contextItemsSnapshot: JSON.parse(JSON.stringify(contextItems)), // 深拷貝快照
     ...data
   };
   
