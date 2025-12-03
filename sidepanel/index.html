@@ -13,6 +13,12 @@
         <h1>MAV</h1>
       </div>
       <div class="header-right">
+        <button id="newChatBtn" class="icon-btn" title="新對話">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20h9"></path>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+          </svg>
+        </button>
         <button id="historyBtn" class="icon-btn" title="歷史紀錄">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"></circle>
@@ -78,6 +84,13 @@
                 <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
               </svg>
               <span>選取文字</span>
+            </button>
+            <button id="webSearchBtn" class="context-action-btn" title="網路搜尋">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <span>網搜</span>
             </button>
             <button id="pasteContextBtn" class="context-action-btn" title="從剪貼簿貼上">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -226,14 +239,24 @@
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <span>AI 建議搜尋</span>
+          <span>延伸搜尋</span>
         </div>
         <span id="searchIterationCounter" class="search-iteration-counter">0/5 次</span>
       </div>
       <div id="searchStrategies" class="search-strategies">
         <!-- Search query buttons will be added here -->
       </div>
-      <p class="search-strategy-hint">點擊關鍵詞執行搜尋，結果將加入參考資料並重新執行 Council</p>
+      <div class="custom-search-row">
+        <input type="text" id="customSearchInput" class="custom-search-input" placeholder="輸入自訂關鍵字...">
+        <button id="customSearchBtn" class="custom-search-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          搜尋
+        </button>
+      </div>
+      <p class="search-strategy-hint">點擊 AI 建議或輸入自訂關鍵字，搜尋結果將加入參考資料並重新執行 Council</p>
     </div>
 
     <!-- Canvas Action -->

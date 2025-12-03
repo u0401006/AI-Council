@@ -197,20 +197,21 @@ let contextItems = []; // Array of { id, type, title, content, timestamp }
 const SEARCH_STRATEGY_SUFFIX = `
 
 ## 搜尋策略
-如果你認為需要更多網路資訊來完善答案，請在回答最後提供 2-3 個搜尋關鍵詞建議。使用以下 JSON 格式：
+請在回答最後**必須**提供 2-3 個搜尋關鍵詞建議，以便進一步深入探索此議題。使用以下 JSON 格式：
 \`\`\`json
 {"search_queries": ["關鍵詞1", "關鍵詞2", "關鍵詞3"]}
 \`\`\`
-如果你認為目前資訊已足夠回答問題，請輸出空陣列：
-\`\`\`json
-{"search_queries": []}
-\`\`\`
-搜尋關鍵詞應該是具體、有針對性的，能夠幫助找到補充資訊。`;
+搜尋關鍵詞應該是：
+- 具體、有針對性的
+- 能夠補充目前回答中未涵蓋的面向
+- 探索相關但尚未深入的延伸議題
+即使你認為目前資訊已相當完整，仍請提供可延伸探索的方向。`;
 
 // DOM Elements
 const queryInput = document.getElementById('queryInput');
 const sendBtn = document.getElementById('sendBtn');
 const settingsBtn = document.getElementById('settingsBtn');
+const newChatBtn = document.getElementById('newChatBtn');
 const historyBtn = document.getElementById('historyBtn');
 const exportBtn = document.getElementById('exportBtn');
 const imageToggle = document.getElementById('imageToggle');
@@ -246,6 +247,8 @@ const searchModeToggle = document.getElementById('searchModeToggle');
 const searchStrategySection = document.getElementById('searchStrategySection');
 const searchStrategies = document.getElementById('searchStrategies');
 const searchIterationCounter = document.getElementById('searchIterationCounter');
+const customSearchInput = document.getElementById('customSearchInput');
+const customSearchBtn = document.getElementById('customSearchBtn');
 
 // Canvas elements
 const canvasSection = document.getElementById('canvasSection');
@@ -469,6 +472,7 @@ function setupEventListeners() {
   sendBtn.addEventListener('click', handleSend);
   queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend(); });
   settingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
+  newChatBtn.addEventListener('click', startNewChat);
   dismissError.addEventListener('click', () => errorBanner.classList.add('hidden'));
   
   // Auto-grow textarea
@@ -506,6 +510,15 @@ function setupEventListeners() {
     enableSearchMode = searchModeToggle.checked;
     if (!enableSearchMode) {
       searchStrategySection.classList.add('hidden');
+    }
+  });
+
+  // Custom search button (用按鈕啟動，不用 enter)
+  customSearchBtn.addEventListener('click', () => {
+    const query = customSearchInput.value.trim();
+    if (query) {
+      executeSearchAndIterate(query);
+      customSearchInput.value = '';
     }
   });
 
@@ -726,9 +739,10 @@ function updateSearchIterationCounter() {
 }
 
 function renderSearchStrategies(queries) {
-  currentSearchQueries = queries;
+  currentSearchQueries = queries || [];
   
-  if (!queries || queries.length === 0 || searchIteration >= maxSearchIterations) {
+  // 只有達到搜尋次數上限時才隱藏，否則即使無建議也顯示模組（讓用戶可輸入自定義關鍵字）
+  if (searchIteration >= maxSearchIterations) {
     searchStrategySection.classList.add('hidden');
     return;
   }
@@ -736,20 +750,26 @@ function renderSearchStrategies(queries) {
   searchStrategySection.classList.remove('hidden');
   updateSearchIterationCounter();
   
-  searchStrategies.innerHTML = queries.map((query, i) => `
-    <button class="search-query-btn" data-query="${escapeAttr(query)}" ${searchIteration >= maxSearchIterations ? 'disabled' : ''}>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="8"></circle>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-      </svg>
-      <span>${escapeHtml(query)}</span>
-    </button>
-  `).join('');
-  
-  // Add click handlers
-  searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
-    btn.addEventListener('click', () => executeSearchAndIterate(btn.dataset.query));
-  });
+  // 如果有 AI 建議的關鍵字，顯示它們
+  if (currentSearchQueries.length > 0) {
+    searchStrategies.innerHTML = currentSearchQueries.map((query, i) => `
+      <button class="search-query-btn" data-query="${escapeAttr(query)}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <span>${escapeHtml(query)}</span>
+      </button>
+    `).join('');
+    
+    // Add click handlers
+    searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+      btn.addEventListener('click', () => executeSearchAndIterate(btn.dataset.query));
+    });
+  } else {
+    // 無建議時顯示提示文字
+    searchStrategies.innerHTML = '<span class="no-suggestions">AI 未提供建議，請輸入自訂關鍵字</span>';
+  }
 }
 
 async function executeSearchAndIterate(searchQuery) {
@@ -1230,6 +1250,51 @@ async function copyImageToClipboard(src) {
 // ============================================
 // History Functions
 // ============================================
+// Start New Chat - Reset all state and clear context
+async function startNewChat() {
+  // Reset conversation state
+  currentConversation = null;
+  currentQuery = '';
+  responses.clear();
+  reviews.clear();
+  reviewFailures.clear();
+  activeTab = null;
+  
+  // Reset search mode state
+  searchIteration = 0;
+  currentSearchQueries = [];
+  searchStrategySection.classList.add('hidden');
+  
+  // Clear context items
+  contextItems = [];
+  await saveContextItems();
+  renderContextItems();
+  updateContextBadge();
+  
+  // Reset UI
+  queryInput.value = '';
+  autoGrowTextarea();
+  emptyState.classList.remove('hidden');
+  stage1Section.classList.add('hidden');
+  stage2Section.classList.add('hidden');
+  stage3Section.classList.add('hidden');
+  canvasSection.classList.add('hidden');
+  exportBtn.style.display = 'none';
+  errorBanner.classList.add('hidden');
+  hideStepper();
+  clearAllSummaries();
+  
+  // Close history panel if open
+  if (historyVisible) {
+    historyPanel.classList.add('hidden');
+    historyVisible = false;
+  }
+  
+  // Focus input
+  queryInput.focus();
+  showToast('已開始新對話');
+}
+
 async function toggleHistory() {
   historyVisible = !historyVisible;
   if (historyVisible) {
@@ -2033,8 +2098,8 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
             const cleanContent = extractFinalAnswer(content);
             if (el) el.innerHTML = parseMarkdown(cleanContent);
             
-            // Render search strategies if there are any and not at max iterations
-            if (searchQueries.length > 0 && searchIteration < maxSearchIterations) {
+            // 只要搜尋模式啟用且未達上限，就顯示搜尋模組（即使無建議也讓用戶可輸入自定義關鍵字）
+            if (searchIteration < maxSearchIterations) {
               renderSearchStrategies(searchQueries);
             }
           } else {
@@ -2198,11 +2263,21 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
   const images = aiResult?.images || [];
   const imageCount = images.length;
   
-  // Initialize state for tracking each image
+  // Collect all unique style and color options from all images
+  const allStyleOptions = new Set(['寫實攝影風格', '油畫風', '水彩', '動畫風', '電影感', '賽博龐克', '極簡風格', '插畫風']);
+  const allColorOptions = new Set(['暖色調', '冷色調', '高對比', '柔和', '復古色調', '霓虹色', '單色調']);
+  images.forEach(img => {
+    (img.styleOptions || []).forEach(s => allStyleOptions.add(s));
+    (img.colorPalette || []).forEach(c => allColorOptions.add(c));
+  });
+  
+  // Initialize state for tracking each image + global style
   multiImageState = {
     images: images.map(img => ({ ...img })),
     completedCount: 0,
-    generatedImages: []
+    generatedImages: [],
+    globalStyle: null,  // Will be set when user selects
+    globalColor: null   // Will be set when user selects
   };
   
   // Theme type badge
@@ -2214,7 +2289,35 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
       }</span>` 
     : '';
   
-  // Build image cards HTML
+  // Global style section HTML
+  const globalStyleHtml = `
+    <div class="global-style-section">
+      <div class="global-style-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span>統一風格設定</span>
+        <span class="global-style-hint">套用至所有圖卡（各圖卡可覆寫）</span>
+      </div>
+      <div class="global-style-options">
+        <div class="quick-option-group">
+          <label class="quick-option-label">畫風</label>
+          <div class="quick-option-chips global-chips" data-global-category="style">
+            ${[...allStyleOptions].map(s => `<button class="option-chip global-chip" data-value="${escapeAttr(s)}">${escapeHtml(s)}</button>`).join('')}
+          </div>
+        </div>
+        <div class="quick-option-group">
+          <label class="quick-option-label">色調</label>
+          <div class="quick-option-chips global-chips" data-global-category="color">
+            ${[...allColorOptions].map(c => `<button class="option-chip global-chip" data-value="${escapeAttr(c)}">${escapeHtml(c)}</button>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Build image cards HTML (without style/color options - they use global)
   const imageCardsHtml = images.map((img, idx) => {
     const optionGroupsHtml = (img.optionGroups || []).map(group => `
       <div class="quick-option-group">
@@ -2224,14 +2327,6 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
         </div>
       </div>
     `).join('');
-    
-    const styleOptions = img.styleOptions?.length > 0 
-      ? img.styleOptions 
-      : ['寫實攝影風格', '油畫風', '水彩', '動畫風', '電影感'];
-    
-    const colorOptions = img.colorPalette?.length > 0
-      ? img.colorPalette
-      : ['暖色調', '冷色調', '高對比', '柔和'];
     
     return `
       <div class="image-card" data-image-idx="${idx}" data-status="pending">
@@ -2247,26 +2342,11 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
         </div>
         
         <div class="image-card-content">
-          <div class="prompt-quick-options compact">
-            ${optionGroupsHtml}
-            
-            <div class="quick-option-group">
-              <label class="quick-option-label">畫風</label>
-              <div class="quick-option-chips" data-category="style" data-image-idx="${idx}">
-                ${styleOptions.map(s => `<button class="option-chip" data-value="${escapeAttr(s)}">${escapeHtml(s)}</button>`).join('')}
-              </div>
-            </div>
-            
-            <div class="quick-option-group">
-              <label class="quick-option-label">色調</label>
-              <div class="quick-option-chips" data-category="color" data-image-idx="${idx}">
-                ${colorOptions.map(c => `<button class="option-chip" data-value="${escapeAttr(c)}">${escapeHtml(c)}</button>`).join('')}
-              </div>
-            </div>
-          </div>
+          ${optionGroupsHtml ? `<div class="prompt-quick-options compact">${optionGroupsHtml}</div>` : ''}
           
           <div class="prompt-editor-textarea-wrapper">
-            <textarea class="prompt-editor-textarea image-prompt-textarea" data-image-idx="${idx}" rows="6">${escapeHtml(img.finalPrompt || '')}</textarea>
+            <textarea class="prompt-editor-textarea image-prompt-textarea" data-image-idx="${idx}" rows="5">${escapeHtml(img.finalPrompt || '')}</textarea>
+            <div class="textarea-hint">統一風格會自動套用，此處僅需編輯內容描述</div>
           </div>
           
           <div class="image-card-actions">
@@ -2306,6 +2386,8 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
         </div>
       </div>
       
+      ${globalStyleHtml}
+      
       <div class="image-cards-container">
         ${imageCardsHtml}
       </div>
@@ -2320,6 +2402,49 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
   container.className = 'multi-image-editor-section';
   container.innerHTML = editorHtml;
   finalAnswer.appendChild(container);
+
+  // Setup global style chip handlers
+  container.querySelectorAll('.global-chips').forEach(chipsContainer => {
+    const category = chipsContainer.dataset.globalCategory;
+    chipsContainer.querySelectorAll('.global-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const value = chip.dataset.value;
+        const currentValue = category === 'style' ? multiImageState.globalStyle : multiImageState.globalColor;
+        
+        // Toggle selection
+        if (currentValue === value) {
+          // Deselect
+          if (category === 'style') multiImageState.globalStyle = null;
+          else multiImageState.globalColor = null;
+          chip.classList.remove('selected');
+        } else {
+          // Select new value
+          if (category === 'style') multiImageState.globalStyle = value;
+          else multiImageState.globalColor = value;
+          chipsContainer.querySelectorAll('.global-chip').forEach(c => c.classList.remove('selected'));
+          chip.classList.add('selected');
+        }
+        
+        // Update display showing current global style
+        updateGlobalStyleDisplay();
+      });
+    });
+  });
+  
+  // Function to update global style display
+  function updateGlobalStyleDisplay() {
+    const styleText = [];
+    if (multiImageState.globalStyle) styleText.push(multiImageState.globalStyle);
+    if (multiImageState.globalColor) styleText.push(multiImageState.globalColor);
+    
+    const hint = container.querySelector('.global-style-hint');
+    if (hint) {
+      hint.textContent = styleText.length > 0 
+        ? `已選：${styleText.join(' + ')}` 
+        : '套用至所有圖卡（各圖卡可覆寫）';
+      hint.classList.toggle('has-selection', styleText.length > 0);
+    }
+  }
 
   // Setup event handlers for each image card
   container.querySelectorAll('.image-card').forEach(card => {
@@ -2359,11 +2484,20 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
     // Generate button handler
     card.querySelector('.generate-single-btn').addEventListener('click', async function() {
       const btn = this;
-      const prompt = textarea.value.trim();
+      let prompt = textarea.value.trim();
       
       if (!prompt) {
         showToast('請先輸入或編輯 Prompt', true);
         return;
+      }
+      
+      // Prepend global style if set
+      const stylePrefix = [];
+      if (multiImageState.globalStyle) stylePrefix.push(`畫風：${multiImageState.globalStyle}`);
+      if (multiImageState.globalColor) stylePrefix.push(`色調：${multiImageState.globalColor}`);
+      
+      if (stylePrefix.length > 0) {
+        prompt = stylePrefix.join('，') + '。\n\n' + prompt;
       }
       
       // Update UI to generating state
