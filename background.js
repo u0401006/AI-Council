@@ -90,6 +90,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  if (message.type === 'FETCH_PAGE_CONTENTS') {
+    handleFetchPageContents(message.urls)
+      .then(sendResponse)
+      .catch(err => sendResponse({ error: err.message }));
+    return true;
+  }
+  
   if (message.type === 'UPDATE_CONTEXT_BADGE') {
     updateContextBadge()
       .then(() => sendResponse({ success: true }))
@@ -161,6 +168,118 @@ async function handleWebSearch(query) {
   }));
 
   return { results, query };
+}
+
+// Handle fetch page contents for multiple URLs
+async function handleFetchPageContents(urls) {
+  if (!urls || urls.length === 0) {
+    return { results: [] };
+  }
+  
+  // Limit to max 5 URLs
+  const urlsToFetch = urls.slice(0, 5);
+  const results = [];
+  
+  // Process URLs with concurrency limit of 2
+  const CONCURRENCY = 2;
+  
+  for (let i = 0; i < urlsToFetch.length; i += CONCURRENCY) {
+    const batch = urlsToFetch.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.all(
+      batch.map(url => fetchSinglePageContent(url))
+    );
+    results.push(...batchResults);
+  }
+  
+  return { results };
+}
+
+// Fetch content from a single URL
+async function fetchSinglePageContent(url) {
+  let tabId = null;
+  const TIMEOUT = 10000; // 10 seconds timeout
+  
+  try {
+    // Skip non-http URLs
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return { url, content: null, error: 'Invalid URL scheme' };
+    }
+    
+    // Create a background tab
+    const tab = await chrome.tabs.create({ 
+      url: url, 
+      active: false 
+    });
+    tabId = tab.id;
+    
+    // Wait for page to load with timeout
+    await waitForTabLoad(tabId, TIMEOUT);
+    
+    // Inject content script and get content
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content/content.js']
+    });
+    
+    const response = await chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_CONTENT' });
+    
+    // Close the tab
+    try {
+      await chrome.tabs.remove(tabId);
+    } catch (e) {
+      // Tab may already be closed
+    }
+    
+    if (response.success) {
+      return {
+        url,
+        title: response.data.title,
+        content: response.data.content
+      };
+    } else {
+      return { url, content: null, error: response.error };
+    }
+  } catch (err) {
+    // Clean up tab if it exists
+    if (tabId) {
+      try {
+        await chrome.tabs.remove(tabId);
+      } catch (e) {
+        // Tab may already be closed
+      }
+    }
+    return { url, content: null, error: err.message };
+  }
+}
+
+// Wait for a tab to complete loading with timeout
+function waitForTabLoad(tabId, timeout) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve(); // Resolve anyway after timeout, content might be partially loaded
+    }, timeout);
+    
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        clearTimeout(timeoutId);
+        chrome.tabs.onUpdated.removeListener(listener);
+        // Small delay to let JS execute
+        setTimeout(resolve, 500);
+      }
+    };
+    
+    chrome.tabs.onUpdated.addListener(listener);
+    
+    // Check if already loaded
+    chrome.tabs.get(tabId).then(tab => {
+      if (tab.status === 'complete') {
+        clearTimeout(timeoutId);
+        chrome.tabs.onUpdated.removeListener(listener);
+        setTimeout(resolve, 500);
+      }
+    }).catch(reject);
+  });
 }
 
 // Handle get page content request

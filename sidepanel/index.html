@@ -112,6 +112,26 @@
         </div>
       </div>
 
+      <!-- Search Iteration Hint (shown when preparing next iteration) -->
+      <div id="searchIterationHint" class="search-iteration-hint hidden">
+        <div class="search-iteration-hint-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
+        <div class="search-iteration-hint-content">
+          <span class="search-iteration-hint-label">延伸搜尋：</span>
+          <span id="searchIterationKeyword" class="search-iteration-keyword"></span>
+        </div>
+        <button id="cancelSearchIteration" class="search-iteration-cancel" title="取消">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
       <textarea 
         id="queryInput" 
         placeholder="輸入您的問題..."

@@ -193,6 +193,11 @@ let currentConversation = null;
 let historyVisible = false;
 let contextItems = []; // Array of { id, type, title, content, timestamp }
 
+// Search iteration state
+let pendingSearchKeyword = null; // Selected keyword waiting for prompt edit
+let isSearchIterationMode = false; // Whether we're in "edit prompt for next iteration" mode
+let originalQueryBeforeIteration = ''; // Store original query for AI suggestion context
+
 // Search strategy prompt suffix (appended when search mode is enabled)
 const SEARCH_STRATEGY_SUFFIX = `
 
@@ -249,6 +254,11 @@ const searchStrategies = document.getElementById('searchStrategies');
 const searchIterationCounter = document.getElementById('searchIterationCounter');
 const customSearchInput = document.getElementById('customSearchInput');
 const customSearchBtn = document.getElementById('customSearchBtn');
+
+// Search iteration hint elements
+const searchIterationHint = document.getElementById('searchIterationHint');
+const searchIterationKeyword = document.getElementById('searchIterationKeyword');
+const cancelSearchIteration = document.getElementById('cancelSearchIteration');
 
 // Canvas elements
 const canvasSection = document.getElementById('canvasSection');
@@ -517,10 +527,13 @@ function setupEventListeners() {
   customSearchBtn.addEventListener('click', () => {
     const query = customSearchInput.value.trim();
     if (query) {
-      executeSearchAndIterate(query);
+      prepareSearchIteration(query);
       customSearchInput.value = '';
     }
   });
+
+  // Cancel search iteration
+  cancelSearchIteration.addEventListener('click', cancelSearchIterationMode);
 
   // Canvas button & dropdown
   canvasBtn.addEventListener('click', () => openCanvas(false));
@@ -762,9 +775,9 @@ function renderSearchStrategies(queries) {
       </button>
     `).join('');
     
-    // Add click handlers
+    // Add click handlers - now calls prepareSearchIteration instead of executeSearchAndIterate
     searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
-      btn.addEventListener('click', () => executeSearchAndIterate(btn.dataset.query));
+      btn.addEventListener('click', () => prepareSearchIteration(btn.dataset.query));
     });
   } else {
     // 無建議時顯示提示文字
@@ -772,77 +785,199 @@ function renderSearchStrategies(queries) {
   }
 }
 
-async function executeSearchAndIterate(searchQuery) {
+// ============================================
+// Search Iteration Preparation Flow
+// ============================================
+
+// Step 1: User clicks a keyword -> prepare for next iteration
+async function prepareSearchIteration(keyword) {
   if (searchIteration >= maxSearchIterations) {
     showToast('已達搜尋次數上限', true);
     return;
   }
   
-  try {
-    // Disable all search buttons
-    searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
-      btn.disabled = true;
+  // Store the selected keyword
+  pendingSearchKeyword = keyword;
+  isSearchIterationMode = true;
+  originalQueryBeforeIteration = currentQuery;
+  
+  // === 將本輪討論內容加入參考資料 ===
+  const currentResponses = Array.from(responses.entries())
+    .filter(([_, r]) => r.status === 'done')
+    .map(([model, r]) => ({ model, content: r.content }));
+  
+  if (currentResponses.length > 0) {
+    // 整理多模型回應 + 主席彙整
+    let discussionSummary = `## 第 ${searchIteration + 1} 輪討論摘要\n\n`;
+    discussionSummary += `### 問題\n${currentQuery}\n\n`;
+    discussionSummary += `### 模型回應\n`;
+    currentResponses.forEach((r, i) => {
+      discussionSummary += `#### ${getModelName(r.model)}\n${r.content}\n\n`;
     });
     
-    // === 將本輪討論內容加入參考資料 ===
-    const currentResponses = Array.from(responses.entries())
-      .filter(([_, r]) => r.status === 'done')
-      .map(([model, r]) => ({ model, content: r.content }));
-    
-    if (currentResponses.length > 0) {
-      // 整理多模型回應 + 主席彙整
-      let discussionSummary = `## 第 ${searchIteration + 1} 輪討論摘要\n\n`;
-      discussionSummary += `### 問題\n${currentQuery}\n\n`;
-      discussionSummary += `### 模型回應\n`;
-      currentResponses.forEach((r, i) => {
-        discussionSummary += `#### ${getModelName(r.model)}\n${r.content}\n\n`;
-      });
-      
-      // 加入主席彙整（如果有）
-      if (currentConversation?.finalAnswer) {
-        const cleanFinalAnswer = extractFinalAnswer(currentConversation.finalAnswer);
-        discussionSummary += `### 主席彙整\n${cleanFinalAnswer}\n`;
-      }
-      
-      await addContextItem({
-        type: 'discussion',
-        title: `第 ${searchIteration + 1} 輪 Council 討論`,
-        content: discussionSummary
-      });
+    // 加入主席彙整（如果有）
+    if (currentConversation?.finalAnswer) {
+      const cleanFinalAnswer = extractFinalAnswer(currentConversation.finalAnswer);
+      discussionSummary += `### 主席彙整\n${cleanFinalAnswer}\n`;
     }
     
-    showToast(`正在搜尋「${searchQuery}」...`);
+    await addContextItem({
+      type: 'discussion',
+      title: `第 ${searchIteration + 1} 輪 Council 討論`,
+      content: discussionSummary
+    });
+  }
+  
+  // Hide search strategy section
+  searchStrategySection.classList.add('hidden');
+  
+  // Show the search iteration hint
+  searchIterationHint.classList.remove('hidden');
+  searchIterationKeyword.textContent = keyword;
+  
+  // Update send button to "next iteration" style
+  sendBtn.innerHTML = '<span>開始下一輪</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"></path></svg>';
+  sendBtn.classList.add('next-iteration');
+  
+  // Scroll to top
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  
+  // Generate AI suggested prompt
+  showToast('AI 正在生成建議的延伸問題...');
+  queryInput.disabled = true;
+  queryInput.placeholder = '正在生成建議...';
+  
+  try {
+    const suggestedPrompt = await generateSuggestedPrompt(
+      originalQueryBeforeIteration,
+      keyword,
+      currentResponses.map(r => r.content).join('\n\n')
+    );
     
-    const response = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: searchQuery });
+    queryInput.value = suggestedPrompt;
+    autoGrowTextarea();
+    showToast('已生成建議問題，可自行修改後送出');
+  } catch (err) {
+    console.error('Failed to generate suggested prompt:', err);
+    // Fallback: use a simple template
+    queryInput.value = `針對「${keyword}」進行延伸討論：${originalQueryBeforeIteration}`;
+    autoGrowTextarea();
+    showToast('建議生成失敗，已使用預設模板', true);
+  } finally {
+    queryInput.disabled = false;
+    queryInput.placeholder = '輸入您的問題...';
+    queryInput.focus();
+  }
+}
+
+// Cancel search iteration mode
+function cancelSearchIterationMode() {
+  pendingSearchKeyword = null;
+  isSearchIterationMode = false;
+  
+  // Hide the hint
+  searchIterationHint.classList.add('hidden');
+  
+  // Restore send button
+  sendBtn.innerHTML = '<span>送出</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
+  sendBtn.classList.remove('next-iteration');
+  
+  // Restore original query
+  queryInput.value = originalQueryBeforeIteration;
+  autoGrowTextarea();
+  
+  // Show search strategy section again
+  if (enableSearchMode && searchIteration < maxSearchIterations) {
+    searchStrategySection.classList.remove('hidden');
+  }
+  
+  showToast('已取消延伸搜尋');
+}
+
+// Step 2: User confirms prompt -> execute search and council
+async function executeSearchIteration() {
+  const newQuery = queryInput.value.trim();
+  if (!newQuery) {
+    showToast('請輸入問題', true);
+    return;
+  }
+  
+  const keyword = pendingSearchKeyword;
+  
+  // Reset iteration mode state
+  pendingSearchKeyword = null;
+  isSearchIterationMode = false;
+  searchIterationHint.classList.add('hidden');
+  
+  // Update current query to the new one
+  currentQuery = newQuery;
+  
+  // Reset send button
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner"></span><span>搜尋中...</span>';
+  sendBtn.classList.remove('next-iteration');
+  
+  try {
+    showToast(`正在搜尋「${keyword}」...`);
     
-    if (response.error) {
-      showToast(response.error, true);
-      searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
-        btn.disabled = false;
-      });
+    // Execute Brave Search
+    const searchResponse = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: keyword });
+    
+    if (searchResponse.error) {
+      showToast(searchResponse.error, true);
+      resetButton();
       return;
     }
     
-    const { results, query } = response;
+    const { results, query } = searchResponse;
     
     if (!results || results.length === 0) {
       showToast('找不到相關結果', true);
-      searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
-        btn.disabled = false;
-      });
+      resetButton();
       return;
     }
     
-    // Format search results as context content
-    const content = results.map((r, i) => 
-      `[${i + 1}] ${r.title}\n${r.url}\n${r.description}`
-    ).join('\n\n');
+    // Fetch full page contents for top results
+    showToast('正在擷取搜尋結果內頁內容...');
+    const urls = results.slice(0, 5).map(r => r.url);
+    
+    let pageContents = [];
+    try {
+      const fetchResponse = await chrome.runtime.sendMessage({ 
+        type: 'FETCH_PAGE_CONTENTS', 
+        urls: urls 
+      });
+      
+      if (fetchResponse.results) {
+        pageContents = fetchResponse.results;
+      }
+    } catch (fetchErr) {
+      console.error('Page content fetch failed:', fetchErr);
+      // Continue without page contents - just use snippets
+    }
+    
+    // Format search results with page contents as context
+    let content = '';
+    results.slice(0, 5).forEach((r, i) => {
+      content += `[${i + 1}] ${r.title}\n`;
+      content += `URL: ${r.url}\n`;
+      content += `摘要: ${r.description}\n`;
+      
+      // Add full page content if available
+      const pageContent = pageContents.find(p => p.url === r.url);
+      if (pageContent && pageContent.content) {
+        // Limit page content to avoid context explosion
+        const truncatedContent = pageContent.content.slice(0, 3000);
+        content += `\n內頁內容:\n${truncatedContent}${pageContent.content.length > 3000 ? '\n...(內容已截斷)' : ''}\n`;
+      }
+      content += '\n---\n\n';
+    });
     
     // Add to context
     await addContextItem({
       type: 'search',
-      title: `搜尋: ${query}`,
-      content: content,
+      title: `搜尋: ${keyword}`,
+      content: content.trim(),
       results: results
     });
     
@@ -850,19 +985,51 @@ async function executeSearchAndIterate(searchQuery) {
     searchIteration++;
     updateSearchIterationCounter();
     
-    showToast(`已加入搜尋結果，正在重新執行 Council...`);
+    showToast(`已加入搜尋結果，正在執行 Council...`);
     
-    // Hide search strategy section during re-execution
-    searchStrategySection.classList.add('hidden');
-    
-    // Re-run Council with the same query but updated context
+    // Run Council with the new query
     await runCouncilIteration();
     
   } catch (err) {
     showToast('搜尋失敗：' + err.message, true);
-    searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
-      btn.disabled = false;
-    });
+    console.error('Search iteration error:', err);
+  } finally {
+    resetButton();
+  }
+}
+
+// AI-based prompt suggestion for search iteration
+const PROMPT_SUGGESTION_SYSTEM = `你是一位研究助理，專門幫助用戶深入探索議題。
+
+任務：根據用戶的原始問題、選擇的延伸關鍵字，以及先前的討論內容，生成一個更聚焦、更深入的新問題。
+
+要求：
+1. 新問題應該聚焦於用戶選擇的關鍵字方向
+2. 應該探索先前討論中未充分涵蓋的面向
+3. 保持與原始問題的關聯性
+4. 問題應該具體、可回答
+5. 使用繁體中文
+6. 直接輸出新問題，不要加任何解釋或前綴`;
+
+async function generateSuggestedPrompt(originalQuery, selectedKeyword, discussionContext) {
+  const userPrompt = `## 原始問題
+${originalQuery}
+
+## 用戶選擇的延伸關鍵字
+${selectedKeyword}
+
+## 先前討論摘要
+${discussionContext.slice(0, 2000)}${discussionContext.length > 2000 ? '...(已截斷)' : ''}
+
+---
+請生成一個針對「${selectedKeyword}」方向的深入問題：`;
+
+  try {
+    const result = await queryModelNonStreaming(chairmanModel, PROMPT_SUGGESTION_SYSTEM + '\n\n' + userPrompt);
+    return result.trim();
+  } catch (err) {
+    console.error('Prompt suggestion failed:', err);
+    throw err;
   }
 }
 
@@ -1265,6 +1432,13 @@ async function startNewChat() {
   currentSearchQueries = [];
   searchStrategySection.classList.add('hidden');
   
+  // Reset search iteration mode state
+  pendingSearchKeyword = null;
+  isSearchIterationMode = false;
+  originalQueryBeforeIteration = '';
+  searchIterationHint.classList.add('hidden');
+  sendBtn.classList.remove('next-iteration');
+  
   // Clear context items
   contextItems = [];
   await saveContextItems();
@@ -1338,6 +1512,14 @@ async function loadConversation(id) {
   currentConversation = conv;
   historyPanel.classList.add('hidden');
   historyVisible = false;
+  
+  // Reset search iteration mode state
+  pendingSearchKeyword = null;
+  isSearchIterationMode = false;
+  originalQueryBeforeIteration = '';
+  searchIterationHint.classList.add('hidden');
+  sendBtn.classList.remove('next-iteration');
+  searchStrategySection.classList.add('hidden');
 
   // 載入並替換參考資料快照
   contextItems = conv.contextItemsSnapshot ? JSON.parse(JSON.stringify(conv.contextItemsSnapshot)) : [];
@@ -1570,6 +1752,12 @@ async function handleSend() {
     return;
   }
 
+  // If we're in search iteration mode, execute the iteration flow
+  if (isSearchIterationMode && pendingSearchKeyword) {
+    await executeSearchIteration();
+    return;
+  }
+
   currentQuery = query;
   currentConversation = null;
   responses.clear();
@@ -1799,6 +1987,7 @@ async function handleSend() {
 
 function resetButton() {
   sendBtn.disabled = false;
+  sendBtn.classList.remove('next-iteration');
   sendBtn.innerHTML = '<span>送出</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
 }
 
