@@ -293,3 +293,52 @@ header h1 {
   font-size: 0.6875rem;
 }
 
+/* Radio group for output style settings */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.radio-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.radio-item:hover {
+  background: var(--border-color);
+}
+
+.radio-item:has(input:checked) {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: var(--accent);
+}
+
+.radio-item input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  margin-top: 0.125rem;
+  flex-shrink: 0;
+}
+
+.radio-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.radio-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.125rem;
+}
+

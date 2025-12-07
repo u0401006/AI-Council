@@ -67,6 +67,53 @@
     </section>
 
     <section class="card">
+      <h2>回應風格</h2>
+      <p class="hint">控制 AI 回應的長度與格式偏好</p>
+      
+      <div class="field" style="margin-top: 1rem;">
+        <label for="outputLength">長度偏好</label>
+        <div class="radio-group" id="outputLengthGroup">
+          <label class="radio-item">
+            <input type="radio" name="outputLength" value="concise">
+            <span class="radio-label">簡潔</span>
+            <span class="radio-hint">約 500 字，重點摘要</span>
+          </label>
+          <label class="radio-item">
+            <input type="radio" name="outputLength" value="standard" checked>
+            <span class="radio-label">標準</span>
+            <span class="radio-hint">約 800 字，適度展開</span>
+          </label>
+          <label class="radio-item">
+            <input type="radio" name="outputLength" value="detailed">
+            <span class="radio-label">詳盡</span>
+            <span class="radio-hint">約 1200 字，完整說明</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top: 1rem;">
+        <label for="outputFormat">格式偏好</label>
+        <div class="radio-group" id="outputFormatGroup">
+          <label class="radio-item">
+            <input type="radio" name="outputFormat" value="bullet">
+            <span class="radio-label">條列式優先</span>
+            <span class="radio-hint">使用項目符號，每點簡短</span>
+          </label>
+          <label class="radio-item">
+            <input type="radio" name="outputFormat" value="mixed" checked>
+            <span class="radio-label">混合</span>
+            <span class="radio-hint">依內容性質靈活選擇</span>
+          </label>
+          <label class="radio-item">
+            <input type="radio" name="outputFormat" value="paragraph">
+            <span class="radio-label">段落式</span>
+            <span class="radio-hint">使用完整段落說明</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
       <div class="section-header">
         <h2>提示詞範本</h2>
         <button type="button" id="resetPromptsBtn" class="btn-secondary">重設為預設</button>

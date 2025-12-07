@@ -65,12 +65,12 @@ Since this is a Chrome Extension, there are no build/compile steps. Development 
 - Each model evaluates OTHER models' responses (excluding its own)
 - Responses anonymized as "Response A", "Response B", etc.
 - Reviews return JSON with rankings and reasons
-- Implemented in `lib/council.js::generateReviewPrompt()`
+- Implemented in `sidepanel/app.js::generateReviewPrompt()`
 
 **Stage 3: Chairman Synthesis**
 - Designated "chairman" model receives all responses + review summary
 - Synthesizes a final answer incorporating best insights
-- Implemented in `lib/council.js::generateChairmanPrompt()`
+- Implemented in `sidepanel/app.js::generateChairmanPrompt()`
 
 ### Storage Architecture
 
@@ -91,15 +91,13 @@ Since this is a Chrome Extension, there are no build/compile steps. Development 
 
 ### Key Files
 
-**Core Logic:**
-- `lib/council.js`: Peer review and chairman prompt generation, JSON parsing
-- `lib/models.js`: Model metadata, pricing info ($USD per 1M tokens), token estimation
-- `lib/storage.js`: Chrome storage helpers with defaults
-- `lib/api.js`: OpenRouter API wrapper (minimal, most logic in background.js)
-- `lib/markdown.js`: Markdown parser for rendering responses
+**Core Logic (all inlined in sidepanel/app.js):**
+- Council logic: Peer review and chairman prompt generation, JSON parsing
+- Model metadata: Pricing info ($USD per 1M tokens), token estimation
+- Markdown parser: For rendering responses
 
 **UI Components:**
-- `sidepanel/app.js`: Main council interface with tabs, streaming, and context management
+- `sidepanel/app.js`: Main council interface with tabs, streaming, context management, and all core logic
 - `canvas/canvas.js`: WYSIWYG markdown editor with AI assist features
 - `options/options.js`: Settings page for API keys, model selection, prompt customization
 - `content/content.js`: Page content extraction and toast notifications
@@ -157,7 +155,7 @@ Model IDs follow `provider/model-name` format (OpenRouter convention):
 - `google/gemini-3-pro-preview`
 - `x-ai/grok-3`
 
-Pricing in `lib/models.js` is per 1M tokens in USD.
+Pricing in `sidepanel/app.js` (MODELS object) is per 1M tokens in USD.
 
 ### Error Handling
 

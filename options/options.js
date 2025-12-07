@@ -72,8 +72,13 @@ Create a single authoritative answer that:
 1. Incorporates the best insights from all experts
 2. Resolves contradictions by favoring accurate information
 3. Is well-organized and comprehensive
+4. When referencing context/search results, use citation markers like [1], [2] to indicate sources
 
 Provide your answer directly in Traditional Chinese (繁體中文), without meta-commentary.`;
+
+// Default output style settings
+const DEFAULT_OUTPUT_LENGTH = 'standard';
+const DEFAULT_OUTPUT_FORMAT = 'mixed';
 
 // DOM Elements
 const apiKeyInput = document.getElementById('apiKey');
@@ -87,6 +92,10 @@ const chairmanPromptTextarea = document.getElementById('chairmanPrompt');
 const resetPromptsBtn = document.getElementById('resetPromptsBtn');
 const saveBtn = document.getElementById('saveBtn');
 const statusEl = document.getElementById('status');
+
+// Output style radio groups
+const outputLengthRadios = document.querySelectorAll('input[name="outputLength"]');
+const outputFormatRadios = document.querySelectorAll('input[name="outputFormat"]');
 
 // Initialize
 async function init() {
@@ -123,7 +132,9 @@ async function loadSettings() {
     enableReview: true,
     maxSearchIterations: 5,
     reviewPrompt: DEFAULT_REVIEW_PROMPT,
-    chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT
+    chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT,
+    outputLength: DEFAULT_OUTPUT_LENGTH,
+    outputFormat: DEFAULT_OUTPUT_FORMAT
   });
 
   apiKeyInput.value = result.apiKey;
@@ -138,6 +149,14 @@ async function loadSettings() {
   const checkboxes = modelListEl.querySelectorAll('[data-model]');
   checkboxes.forEach(cb => {
     cb.checked = result.councilModels.includes(cb.value);
+  });
+
+  // Set output style radio buttons
+  outputLengthRadios.forEach(radio => {
+    radio.checked = radio.value === result.outputLength;
+  });
+  outputFormatRadios.forEach(radio => {
+    radio.checked = radio.value === result.outputFormat;
   });
 }
 
@@ -154,6 +173,10 @@ async function saveSettings() {
   const checkboxes = modelListEl.querySelectorAll('[data-model]:checked');
   const councilModels = Array.from(checkboxes).map(cb => cb.value);
 
+  // Get output style settings
+  const outputLength = document.querySelector('input[name="outputLength"]:checked')?.value || DEFAULT_OUTPUT_LENGTH;
+  const outputFormat = document.querySelector('input[name="outputFormat"]:checked')?.value || DEFAULT_OUTPUT_FORMAT;
+
   if (councilModels.length < 2) {
     showStatus('請選擇至少 2 個模型', 'error');
     return;
@@ -167,7 +190,9 @@ async function saveSettings() {
     enableReview,
     maxSearchIterations,
     reviewPrompt,
-    chairmanPrompt
+    chairmanPrompt,
+    outputLength,
+    outputFormat
   });
 
   showStatus('設定已儲存', 'success');

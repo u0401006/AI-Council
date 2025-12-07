@@ -100,10 +100,13 @@ function generateChairmanPrompt(query, responses, aggregatedRanking = null) {
   }
   
   // Use custom prompt with placeholders replaced
-  return customChairmanPrompt
+  const basePrompt = customChairmanPrompt
     .replace('{query}', query)
     .replace('{responses}', responsesText)
     .replace('{ranking}', rankingInfo);
+  
+  // Append output style instructions from settings
+  return basePrompt + getOutputStyleInstructions();
 }
 
 function parseReviewResponse(content) {
@@ -172,6 +175,7 @@ Create a single authoritative answer that:
 1. Incorporates the best insights from all experts
 2. Resolves contradictions by favoring accurate information
 3. Is well-organized and comprehensive
+4. When referencing context/search results, use citation markers like [1], [2] to indicate sources
 
 Provide your answer directly in Traditional Chinese (繁體中文), without meta-commentary.`;
 
@@ -228,6 +232,7 @@ const dismissError = document.getElementById('dismissError');
 const historyPanel = document.getElementById('historyPanel');
 const historyList = document.getElementById('historyList');
 const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+const closeHistoryBtn = document.getElementById('closeHistoryBtn');
 const exportModal = document.getElementById('exportModal');
 const closeExportModal = document.getElementById('closeExportModal');
 const exportMd = document.getElementById('exportMd');
@@ -244,6 +249,7 @@ const contextBadge = document.getElementById('contextBadge');
 const contextItemsEl = document.getElementById('contextItems');
 const capturePageBtn = document.getElementById('capturePageBtn');
 const captureSelectionBtn = document.getElementById('captureSelectionBtn');
+const webSearchBtn = document.getElementById('webSearchBtn');
 const pasteContextBtn = document.getElementById('pasteContextBtn');
 const clearContextBtn = document.getElementById('clearContextBtn');
 
@@ -265,6 +271,12 @@ const canvasSection = document.getElementById('canvasSection');
 const canvasBtn = document.getElementById('canvasBtn');
 const canvasDropdownBtn = document.getElementById('canvasDropdownBtn');
 const canvasDropdown = document.getElementById('canvasDropdown');
+
+// Branch actions elements
+const branchActionsSection = document.getElementById('branchActionsSection');
+const branchSearchBtn = document.getElementById('branchSearchBtn');
+const branchImageBtn = document.getElementById('branchImageBtn');
+const branchCanvasBtn = document.getElementById('branchCanvasBtn');
 
 // Stage elements
 const stage1Section = document.getElementById('stage1Section');
@@ -413,13 +425,114 @@ function autoGrowTextarea() {
 }
 
 // ============================================
+// Storage Quota Utilities
+// ============================================
+async function checkStorageQuota() {
+  try {
+    const usage = await chrome.storage.local.getBytesInUse();
+    const quota = chrome.storage.local.QUOTA_BYTES || 5242880; // 5MB default
+    const usagePercent = (usage / quota) * 100;
+    
+    if (usagePercent > 80) {
+      showStorageWarning(usagePercent, usage, quota);
+    }
+    return { usage, quota, usagePercent };
+  } catch (err) {
+    console.error('Failed to check storage quota:', err);
+    return null;
+  }
+}
+
+function showStorageWarning(percent, usage, quota) {
+  const usageMB = (usage / 1024 / 1024).toFixed(2);
+  const quotaMB = (quota / 1024 / 1024).toFixed(2);
+  showToast(`儲存空間已使用 ${percent.toFixed(0)}% (${usageMB}/${quotaMB} MB)，建議清理歷史紀錄`, true);
+}
+
+// Wrapper for safe storage.local.set with quota error handling
+async function safeStorageSet(data) {
+  try {
+    await chrome.storage.local.set(data);
+    return { success: true };
+  } catch (err) {
+    if (err.message?.includes('QUOTA_BYTES') || err.message?.includes('quota')) {
+      showToast('儲存空間不足，請清理歷史紀錄', true);
+      return { success: false, quotaError: true, error: err };
+    }
+    throw err;
+  }
+}
+
+// ============================================
+// API Key Validation
+// ============================================
+let hasBraveApiKey = false;
+
+async function checkApiKeys() {
+  const result = await chrome.storage.sync.get(['apiKey', 'braveApiKey']);
+  const hasOpenRouter = !!result.apiKey;
+  hasBraveApiKey = !!result.braveApiKey;
+  
+  // Update search UI state based on Brave API key
+  updateSearchUIState(hasBraveApiKey);
+  
+  return { hasOpenRouter, hasBrave: hasBraveApiKey };
+}
+
+function updateSearchUIState(hasBrave) {
+  // Disable/enable searchModeToggle
+  searchModeToggle.disabled = !hasBrave;
+  if (!hasBrave && searchModeToggle.checked) {
+    searchModeToggle.checked = false;
+    enableSearchMode = false;
+  }
+  
+  // Update toggle appearance
+  const searchToggleLabel = searchModeToggle.closest('.search-toggle');
+  if (searchToggleLabel) {
+    searchToggleLabel.title = hasBrave 
+      ? '啟用 AI 網搜迭代模式' 
+      : '需要設定 Brave Search API 金鑰才能使用網搜功能';
+    searchToggleLabel.style.opacity = hasBrave ? '1' : '0.5';
+  }
+  
+  // Disable branchSearchBtn
+  if (branchSearchBtn) {
+    branchSearchBtn.disabled = !hasBrave;
+    branchSearchBtn.title = hasBrave ? '延伸搜尋' : '需要設定 Brave Search API 金鑰';
+  }
+  
+  // Disable customSearchBtn
+  if (customSearchBtn) {
+    customSearchBtn.disabled = !hasBrave;
+  }
+  
+  // Disable customSearchInput
+  if (customSearchInput) {
+    customSearchInput.disabled = !hasBrave;
+    customSearchInput.placeholder = hasBrave ? '輸入自訂關鍵字...' : '需要設定 Brave API 金鑰';
+  }
+  
+  // Disable webSearchBtn in context section
+  if (webSearchBtn) {
+    webSearchBtn.disabled = !hasBrave;
+    webSearchBtn.title = hasBrave ? '網路搜尋' : '需要設定 Brave Search API 金鑰';
+    webSearchBtn.style.opacity = hasBrave ? '1' : '0.5';
+  }
+}
+
+// ============================================
 // Initialize
 // ============================================
 async function init() {
   await loadSettings();
+  await checkApiKeys();
   await loadContextItems();
   setupEventListeners();
   setupStorageListener();
+  
+  // Check storage quota on startup
+  await checkStorageQuota();
 }
 
 // Load context items from storage
@@ -430,9 +543,10 @@ async function loadContextItems() {
   updateContextBadge();
 }
 
-// Listen for storage changes (from context menu additions)
+// Listen for storage changes (from context menu additions and settings)
 function setupStorageListener() {
   chrome.storage.onChanged.addListener((changes, areaName) => {
+    // Local storage changes (context items)
     if (areaName === 'local' && changes.contextItems) {
       contextItems = changes.contextItems.newValue || [];
       renderContextItems();
@@ -444,8 +558,21 @@ function setupStorageListener() {
         contextToggle.classList.add('expanded');
       }
     }
+    
+    // Sync storage changes (API keys and settings)
+    if (areaName === 'sync') {
+      // Update Brave API key state
+      if (changes.braveApiKey) {
+        hasBraveApiKey = !!changes.braveApiKey.newValue;
+        updateSearchUIState(hasBraveApiKey);
+      }
+    }
   });
 }
+
+// Output style settings
+let outputLength = 'standard';
+let outputFormat = 'mixed';
 
 async function loadSettings() {
   const result = await chrome.storage.sync.get({ 
@@ -454,7 +581,9 @@ async function loadSettings() {
     enableReview: true,
     maxSearchIterations: 5,
     reviewPrompt: DEFAULT_REVIEW_PROMPT,
-    chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT
+    chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT,
+    outputLength: 'standard',
+    outputFormat: 'mixed'
   });
   councilModels = result.councilModels;
   chairmanModel = result.chairmanModel;
@@ -462,7 +591,29 @@ async function loadSettings() {
   maxSearchIterations = result.maxSearchIterations || 5;
   customReviewPrompt = result.reviewPrompt || DEFAULT_REVIEW_PROMPT;
   customChairmanPrompt = result.chairmanPrompt || DEFAULT_CHAIRMAN_PROMPT;
+  outputLength = result.outputLength || 'standard';
+  outputFormat = result.outputFormat || 'mixed';
   updateModelCount();
+}
+
+// Generate output style instructions based on settings
+function getOutputStyleInstructions() {
+  const lengthInstructions = {
+    concise: '回答請控制在 500 字以內，聚焦核心重點，每個要點用 1-2 句話說明。',
+    standard: '回答請控制在 800 字左右，適度展開說明重要概念。',
+    detailed: '回答可詳細展開至 1200 字左右，完整涵蓋各面向。'
+  };
+
+  const formatInstructions = {
+    bullet: '優先使用條列式格式，每個項目簡短扼要。',
+    mixed: '依內容性質靈活選擇條列式或段落式。',
+    paragraph: '使用完整段落進行說明，保持邏輯連貫。'
+  };
+
+  return `\n\n**輸出風格指引**：
+- ${lengthInstructions[outputLength] || lengthInstructions.standard}
+- ${formatInstructions[outputFormat] || formatInstructions.mixed}
+- 避免冗長的開場白和重複說明，直接切入主題。`;
 }
 
 function updateModelCount() {
@@ -495,6 +646,7 @@ function setupEventListeners() {
   // History
   historyBtn.addEventListener('click', toggleHistory);
   clearHistoryBtn.addEventListener('click', clearHistory);
+  closeHistoryBtn.addEventListener('click', closeHistory);
 
   // Export
   exportBtn.addEventListener('click', () => exportModal.classList.remove('hidden'));
@@ -514,9 +666,20 @@ function setupEventListeners() {
   captureSelectionBtn.addEventListener('click', captureSelection);
   pasteContextBtn.addEventListener('click', pasteContext);
   clearContextBtn.addEventListener('click', clearContext);
+  
+  // Web search button in context section
+  if (webSearchBtn) {
+    webSearchBtn.addEventListener('click', handleWebSearchFromContext);
+  }
 
   // Search mode toggle
   searchModeToggle.addEventListener('change', () => { 
+    // Check Brave API key before enabling search mode
+    if (searchModeToggle.checked && !hasBraveApiKey) {
+      searchModeToggle.checked = false;
+      showToast('需要設定 Brave Search API 金鑰才能使用網搜功能', true);
+      return;
+    }
     enableSearchMode = searchModeToggle.checked;
     if (!enableSearchMode) {
       searchStrategySection.classList.add('hidden');
@@ -525,6 +688,11 @@ function setupEventListeners() {
 
   // Custom search button (用按鈕啟動，不用 enter)
   customSearchBtn.addEventListener('click', () => {
+    // Check Brave API key
+    if (!hasBraveApiKey) {
+      showToast('需要設定 Brave Search API 金鑰才能使用網搜功能', true);
+      return;
+    }
     const query = customSearchInput.value.trim();
     if (query) {
       prepareSearchIteration(query);
@@ -550,6 +718,11 @@ function setupEventListeners() {
       canvasDropdown.classList.add('hidden');
     }
   });
+
+  // Branch action buttons
+  branchSearchBtn.addEventListener('click', handleBranchSearch);
+  branchImageBtn.addEventListener('click', handleBranchImage);
+  branchCanvasBtn.addEventListener('click', () => openCanvas(false));
 
   // Toggle stage sections (accordion mode - only one expanded at a time)
   document.querySelectorAll('.toggle-btn').forEach(btn => {
@@ -591,13 +764,20 @@ function setupEventListeners() {
     });
   });
 
-  chrome.storage.onChanged.addListener((changes) => {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'sync') return;
     if (changes.councilModels) councilModels = changes.councilModels.newValue || [];
     if (changes.chairmanModel) chairmanModel = changes.chairmanModel.newValue;
     if (changes.enableReview) enableReview = changes.enableReview.newValue;
     if (changes.maxSearchIterations) maxSearchIterations = changes.maxSearchIterations.newValue || 5;
     if (changes.reviewPrompt) customReviewPrompt = changes.reviewPrompt.newValue || DEFAULT_REVIEW_PROMPT;
     if (changes.chairmanPrompt) customChairmanPrompt = changes.chairmanPrompt.newValue || DEFAULT_CHAIRMAN_PROMPT;
+    if (changes.outputLength) outputLength = changes.outputLength.newValue || 'standard';
+    if (changes.outputFormat) outputFormat = changes.outputFormat.newValue || 'mixed';
+    if (changes.braveApiKey) {
+      hasBraveApiKey = !!changes.braveApiKey.newValue;
+      updateSearchUIState(hasBraveApiKey);
+    }
     updateModelCount();
   });
 }
@@ -721,6 +901,65 @@ async function pasteContext() {
   }
 }
 
+async function handleWebSearchFromContext() {
+  // Check Brave API key
+  if (!hasBraveApiKey) {
+    showToast('需要設定 Brave Search API 金鑰才能使用網搜功能', true);
+    return;
+  }
+  
+  // Prompt user for search query
+  const query = prompt('請輸入搜尋關鍵字：');
+  if (!query || query.trim().length === 0) {
+    return;
+  }
+  
+  webSearchBtn.disabled = true;
+  webSearchBtn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span>';
+  
+  try {
+    showToast(`正在搜尋「${query}」...`);
+    
+    // Execute Brave Search
+    const searchResponse = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: query.trim() });
+    
+    if (searchResponse.error) {
+      showToast(searchResponse.error, true);
+      return;
+    }
+    
+    const { results } = searchResponse;
+    
+    if (!results || results.length === 0) {
+      showToast('找不到相關結果', true);
+      return;
+    }
+    
+    // Format search results as context
+    let content = '';
+    results.slice(0, 5).forEach((r, i) => {
+      content += `[${i + 1}] ${r.title}\n`;
+      content += `URL: ${r.url}\n`;
+      content += `摘要: ${r.description}\n\n`;
+    });
+    
+    // Add to context
+    await addContextItem({
+      type: 'search',
+      title: `搜尋: ${query}`,
+      content: content.trim(),
+      results: results
+    });
+    
+    showToast('已加入搜尋結果');
+  } catch (err) {
+    showToast('搜尋失敗：' + err.message, true);
+  } finally {
+    webSearchBtn.disabled = !hasBraveApiKey;
+    webSearchBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><span>網搜</span>`;
+  }
+}
+
 // ============================================
 // Search Strategy Functions
 // ============================================
@@ -796,6 +1035,13 @@ async function prepareSearchIteration(keyword) {
     return;
   }
   
+  // Disable all search query buttons to prevent double-click
+  searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+    btn.disabled = true;
+  });
+  customSearchBtn.disabled = true;
+  customSearchInput.disabled = true;
+  
   // Store the selected keyword
   pendingSearchKeyword = keyword;
   isSearchIterationMode = true;
@@ -835,17 +1081,20 @@ async function prepareSearchIteration(keyword) {
   searchIterationHint.classList.remove('hidden');
   searchIterationKeyword.textContent = keyword;
   
-  // Update send button to "next iteration" style
-  sendBtn.innerHTML = '<span>開始下一輪</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"></path></svg>';
-  sendBtn.classList.add('next-iteration');
-  
   // Scroll to top
   window.scrollTo({ top: 0, behavior: 'smooth' });
   
-  // Generate AI suggested prompt
+  // === UI Feedback: Show loading state ===
   showToast('AI 正在生成建議的延伸問題...');
+  
+  // Disable input and button during generation
   queryInput.disabled = true;
-  queryInput.placeholder = '正在生成建議...';
+  queryInput.placeholder = '正在生成建議問題...';
+  queryInput.classList.add('generating');
+  
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner"></span><span>生成中...</span>';
+  sendBtn.classList.add('next-iteration');
   
   try {
     const suggestedPrompt = await generateSuggestedPrompt(
@@ -864,9 +1113,15 @@ async function prepareSearchIteration(keyword) {
     autoGrowTextarea();
     showToast('建議生成失敗，已使用預設模板', true);
   } finally {
+    // Restore input state
     queryInput.disabled = false;
     queryInput.placeholder = '輸入您的問題...';
+    queryInput.classList.remove('generating');
     queryInput.focus();
+    
+    // Update send button to "next iteration" style (enabled)
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = '<span>開始下一輪</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"></path></svg>';
   }
 }
 
@@ -879,12 +1134,22 @@ function cancelSearchIterationMode() {
   searchIterationHint.classList.add('hidden');
   
   // Restore send button
+  sendBtn.disabled = false;
   sendBtn.innerHTML = '<span>送出</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
   sendBtn.classList.remove('next-iteration');
   
   // Restore original query
   queryInput.value = originalQueryBeforeIteration;
+  queryInput.disabled = false;
+  queryInput.classList.remove('generating');
   autoGrowTextarea();
+  
+  // Re-enable search buttons
+  searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+    btn.disabled = false;
+  });
+  customSearchBtn.disabled = false;
+  customSearchInput.disabled = false;
   
   // Show search strategy section again
   if (enableSearchMode && searchIteration < maxSearchIterations) {
@@ -958,6 +1223,8 @@ async function executeSearchIteration() {
     
     // Format search results with page contents as context
     let content = '';
+    const urlsWithStatus = [];
+    
     results.slice(0, 5).forEach((r, i) => {
       content += `[${i + 1}] ${r.title}\n`;
       content += `URL: ${r.url}\n`;
@@ -965,7 +1232,17 @@ async function executeSearchIteration() {
       
       // Add full page content if available
       const pageContent = pageContents.find(p => p.url === r.url);
-      if (pageContent && pageContent.content) {
+      const fetchSuccess = pageContent && pageContent.content && !pageContent.error;
+      
+      urlsWithStatus.push({
+        index: i + 1,
+        title: r.title,
+        url: r.url,
+        fetched: fetchSuccess,
+        error: pageContent?.error || null
+      });
+      
+      if (fetchSuccess) {
         // Limit page content to avoid context explosion
         const truncatedContent = pageContent.content.slice(0, 3000);
         content += `\n內頁內容:\n${truncatedContent}${pageContent.content.length > 3000 ? '\n...(內容已截斷)' : ''}\n`;
@@ -973,12 +1250,13 @@ async function executeSearchIteration() {
       content += '\n---\n\n';
     });
     
-    // Add to context
+    // Add to context with URL status info
     await addContextItem({
       type: 'search',
       title: `搜尋: ${keyword}`,
       content: content.trim(),
-      results: results
+      results: results,
+      urlsWithStatus: urlsWithStatus
     });
     
     // Increment search iteration
@@ -1144,13 +1422,25 @@ async function runCouncilIteration() {
       <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
     `;
     
-    finalAnswerContent = await runChairman(currentQuery, successfulResponses, aggregatedRanking, enableSearchMode);
-    
-    stage3Status.textContent = '完成';
-    stage3Status.classList.remove('loading');
-    stage3Status.classList.add('done');
-    
-    setAllStepsDone();
+    try {
+      finalAnswerContent = await runChairman(currentQuery, successfulResponses, aggregatedRanking, enableSearchMode);
+      
+      stage3Status.textContent = '完成';
+      stage3Status.classList.remove('loading');
+      stage3Status.classList.add('done');
+      
+      setAllStepsDone();
+      
+      // Show branch actions after iteration completes
+      showBranchActions();
+    } catch (err) {
+      stage3Status.textContent = '失敗';
+      stage3Status.classList.remove('loading');
+      stage3Status.classList.add('error');
+      showToast(`主席彙整失敗: ${err.message}`, true);
+      resetButton();
+      return;
+    }
     
     // Update conversation
     if (currentConversation) {
@@ -1166,7 +1456,7 @@ async function runCouncilIteration() {
       const idx = conversations.findIndex(c => c.id === currentConversation.id);
       if (idx >= 0) {
         conversations[idx] = currentConversation;
-        await chrome.storage.local.set({ conversations });
+        await safeStorageSet({ conversations });
       }
     }
     
@@ -1184,7 +1474,9 @@ async function addContextItem(item) {
     title: item.title,
     content: item.content,
     url: item.url,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    // Store URL status for search results
+    urlsWithStatus: item.urlsWithStatus || null
   };
   
   contextItems.push(contextItem);
@@ -1216,7 +1508,10 @@ async function clearContext() {
 
 // Save context items to storage
 async function saveContextItems() {
-  await chrome.storage.local.set({ contextItems });
+  const result = await safeStorageSet({ contextItems });
+  if (!result.success) {
+    console.error('Failed to save context items');
+  }
   // Notify background to update badge
   chrome.runtime.sendMessage({ type: 'UPDATE_CONTEXT_BADGE' });
 }
@@ -1262,15 +1557,36 @@ function renderContextItems() {
       ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
       : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
     
+    // Build URL list for search items
+    let urlListHtml = '';
+    if (item.type === 'search' && item.urlsWithStatus && item.urlsWithStatus.length > 0) {
+      urlListHtml = `
+        <div class="context-item-urls">
+          ${item.urlsWithStatus.map(u => `
+            <div class="context-url-item ${u.fetched ? 'fetched' : 'failed'}">
+              <span class="context-url-index">[${u.index}]</span>
+              <span class="context-url-status" title="${u.fetched ? '內容已擷取' : (u.error || '擷取失敗')}">
+                ${u.fetched 
+                  ? '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>' 
+                  : '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'}
+              </span>
+              <a href="${escapeAttr(u.url)}" target="_blank" class="context-url-link" title="${escapeAttr(u.title)}">${escapeHtml(truncateUrl(u.url))}</a>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+    
     return `
-      <div class="context-item" data-id="${item.id}">
+      <div class="context-item ${item.type === 'search' ? 'context-item-search' : ''}" data-id="${item.id}">
         <div class="context-item-icon ${iconClass}">${iconSvg}</div>
         <div class="context-item-body">
           <div class="context-item-title">${escapeHtml(item.title)}</div>
+          ${urlListHtml}
           <div class="context-item-preview">${escapeHtml(preview)}${charCount > 150 ? '...' : ''}</div>
           <div class="context-item-meta">${formatCharCount(charCount)}</div>
         </div>
-        <button class="context-item-remove" data-id="${item.id}" title="Remove">
+        <button class="context-item-remove" data-id="${item.id}" title="移除此參考資料">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1289,6 +1605,17 @@ function renderContextItems() {
   });
 }
 
+function truncateUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname.replace('www.', '');
+    const path = urlObj.pathname.length > 20 ? urlObj.pathname.slice(0, 20) + '...' : urlObj.pathname;
+    return domain + path;
+  } catch {
+    return url.length > 40 ? url.slice(0, 40) + '...' : url;
+  }
+}
+
 function formatCharCount(count) {
   if (count >= 1000) {
     return `${(count / 1000).toFixed(1)}k 字元`;
@@ -1297,16 +1624,24 @@ function formatCharCount(count) {
 }
 
 function buildPromptWithContext(query) {
+  // Get output style instructions
+  const styleInstructions = getOutputStyleInstructions();
+  
   if (contextItems.length === 0) {
-    return query;
+    return query + styleInstructions;
   }
   
   const contextText = contextItems.map((item, i) => {
+    const sourceNum = i + 1;
     const header = item.url 
-      ? `[Context ${i + 1}: ${item.title}]\nSource: ${item.url}\n`
-      : `[Context ${i + 1}: ${item.title}]\n`;
+      ? `[${sourceNum}] ${item.title}\n來源: ${item.url}\n`
+      : `[${sourceNum}] ${item.title}\n`;
     return header + item.content;
   }).join('\n\n---\n\n');
+  
+  const citationInstruction = contextItems.length > 0 
+    ? `\n\n**重要**: 回答時請使用 [1]、[2] 等編號標註引用來源。`
+    : '';
   
   return `以下是參考資料：
 
@@ -1314,12 +1649,140 @@ ${contextText}
 
 ---
 
-問題：${query}`;
+問題：${query}${citationInstruction}${styleInstructions}`;
 }
 
 function toggleCanvasDropdown(e) {
   e.stopPropagation();
   canvasDropdown.classList.toggle('hidden');
+}
+
+// Branch action handlers
+function handleBranchSearch() {
+  // Check Brave API key
+  if (!hasBraveApiKey) {
+    showToast('需要設定 Brave Search API 金鑰才能使用網搜功能', true);
+    return;
+  }
+  
+  // Enable search mode and show search strategy section
+  enableSearchMode = true;
+  searchModeToggle.checked = true;
+  
+  // Show search strategy section if we have context
+  if (searchIteration < maxSearchIterations) {
+    searchStrategySection.classList.remove('hidden');
+    
+    // If we have AI suggested queries, show them; otherwise prompt custom input
+    if (currentSearchQueries.length > 0) {
+      searchStrategies.innerHTML = currentSearchQueries.map((query, i) => `
+        <button class="search-query-btn" data-query="${escapeAttr(query)}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span>${escapeHtml(query)}</span>
+        </button>
+      `).join('');
+      
+      searchStrategies.querySelectorAll('.search-query-btn').forEach(btn => {
+        btn.addEventListener('click', () => prepareSearchIteration(btn.dataset.query));
+      });
+    } else {
+      searchStrategies.innerHTML = '<span class="no-suggestions">請輸入自訂關鍵字進行延伸搜尋</span>';
+    }
+    
+    updateSearchIterationCounter();
+    showToast('請選擇或輸入延伸搜尋關鍵字');
+    
+    // Scroll to search section
+    searchStrategySection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else {
+    showToast('已達搜尋迭代上限', true);
+  }
+}
+
+async function handleBranchImage() {
+  if (!currentConversation || !currentConversation.finalAnswer) {
+    showToast('尚無內容可供製圖', true);
+    return;
+  }
+  
+  branchImageBtn.disabled = true;
+  branchImageBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px"></span><span>準備中...</span>';
+  
+  try {
+    const finalAnswerContent = currentConversation.finalAnswer;
+    const query = currentConversation.query;
+    const savedResponses = currentConversation.responses || [];
+    
+    // Show loading while AI generates prompts
+    const promptLoadingEl = document.createElement('div');
+    promptLoadingEl.className = 'image-prompt-loading';
+    promptLoadingEl.innerHTML = `
+      <div class="loading-indicator">
+        <div class="loading-dots"><span></span><span></span><span></span></div>
+        <span class="loading-text">AI 正在分析內容並設計圖像 prompt...</span>
+      </div>
+    `;
+    finalAnswer.appendChild(promptLoadingEl);
+    
+    // Generate prompts with AI
+    const aiResult = await generateImagePromptWithAI(query, finalAnswerContent, savedResponses);
+    promptLoadingEl.remove();
+    
+    if (!aiResult.success) {
+      showToast('AI Prompt 生成失敗，使用預設模式', true);
+    } else if (aiResult.imageCount > 1) {
+      showToast(`AI 識別到 ${aiResult.imageCount} 張圖片規劃`);
+    }
+    
+    // Show multi-image editor
+    showMultiImageEditor(
+      aiResult,
+      async (generatedImages) => {
+        // Update saved conversation with image metadata
+        if (currentConversation && generatedImages.length > 0) {
+          currentConversation.imagePrompts = generatedImages.map(g => ({
+            title: g.title,
+            prompt: g.prompt
+          }));
+          
+          const result = await chrome.storage.local.get('conversations');
+          const conversations = result.conversations || [];
+          const idx = conversations.findIndex(c => c.id === currentConversation.id);
+          if (idx >= 0) {
+            conversations[idx] = currentConversation;
+            await safeStorageSet({ conversations });
+          }
+        }
+      },
+      () => {
+        showToast('已關閉圖像編輯器');
+      }
+    );
+  } catch (err) {
+    console.error('Branch image error:', err);
+    showToast('製圖失敗：' + err.message, true);
+  } finally {
+    branchImageBtn.disabled = false;
+    branchImageBtn.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+        <polyline points="21 15 16 10 5 21"></polyline>
+      </svg>
+      <span>生成圖片</span>
+    `;
+  }
+}
+
+function showBranchActions() {
+  branchActionsSection.classList.remove('hidden');
+}
+
+function hideBranchActions() {
+  branchActionsSection.classList.add('hidden');
 }
 
 function openCanvas(asWindow = false) {
@@ -1453,6 +1916,7 @@ async function startNewChat() {
   stage2Section.classList.add('hidden');
   stage3Section.classList.add('hidden');
   canvasSection.classList.add('hidden');
+  hideBranchActions();
   exportBtn.style.display = 'none';
   errorBanner.classList.add('hidden');
   hideStepper();
@@ -1479,6 +1943,11 @@ async function toggleHistory() {
   }
 }
 
+function closeHistory() {
+  historyVisible = false;
+  historyPanel.classList.add('hidden');
+}
+
 async function renderHistory() {
   const result = await chrome.storage.local.get('conversations');
   const conversations = result.conversations || [];
@@ -1490,17 +1959,55 @@ async function renderHistory() {
 
   historyList.innerHTML = conversations.map(conv => `
     <div class="history-item" data-id="${conv.id}">
-      <div class="history-query">${escapeHtml(conv.query)}</div>
-      <div class="history-meta">
-        <span>${formatDate(conv.timestamp)}</span>
-        <span>${conv.models?.length || 0} 個模型</span>
+      <div class="history-item-content">
+        <div class="history-query">${escapeHtml(conv.query)}</div>
+        <div class="history-meta">
+          <span>${formatDate(conv.timestamp)}</span>
+          <span>${conv.models?.length || 0} 個模型</span>
+        </div>
       </div>
+      <button class="history-delete-btn" data-id="${conv.id}" title="刪除此紀錄">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+      </button>
     </div>
   `).join('');
 
-  historyList.querySelectorAll('.history-item').forEach(item => {
-    item.addEventListener('click', () => loadConversation(item.dataset.id));
+  // 綁定載入對話事件
+  historyList.querySelectorAll('.history-item-content').forEach(content => {
+    content.addEventListener('click', () => {
+      const id = content.parentElement.dataset.id;
+      loadConversation(id);
+    });
   });
+
+  // 綁定刪除事件
+  historyList.querySelectorAll('.history-delete-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteConversation(btn.dataset.id);
+    });
+  });
+}
+
+async function deleteConversation(id) {
+  const result = await chrome.storage.local.get('conversations');
+  let conversations = result.conversations || [];
+  conversations = conversations.filter(c => c.id !== id);
+  
+  try {
+    await chrome.storage.local.set({ conversations });
+    await renderHistory();
+    showToast('已刪除紀錄');
+  } catch (err) {
+    if (err.message?.includes('QUOTA_BYTES')) {
+      showToast('儲存失敗：空間不足', true);
+    } else {
+      showToast('刪除失敗：' + err.message, true);
+    }
+  }
 }
 
 async function loadConversation(id) {
@@ -1538,7 +2045,10 @@ async function loadConversation(id) {
   queryInput.value = conv.query;
   emptyState.classList.add('hidden');
   exportBtn.style.display = 'flex';
-  if (conv.finalAnswer) canvasSection.classList.remove('hidden');
+  if (conv.finalAnswer) {
+    showBranchActions();
+    canvasSection.classList.add('hidden'); // Use branch actions instead
+  }
 
   // Show stages
   stage1Section.classList.remove('hidden');
@@ -1629,7 +2139,7 @@ function renderSavedResponses(savedResponses) {
 
 async function saveCurrentConversation(data) {
   const result = await chrome.storage.local.get('conversations');
-  const conversations = result.conversations || [];
+  let conversations = result.conversations || [];
   
   const conv = {
     id: crypto.randomUUID(),
@@ -1641,15 +2151,30 @@ async function saveCurrentConversation(data) {
   conversations.unshift(conv);
   if (conversations.length > 50) conversations.length = 50;
   
-  await chrome.storage.local.set({ conversations });
+  const saveResult = await safeStorageSet({ conversations });
+  if (!saveResult.success && saveResult.quotaError) {
+    // Quota exceeded - try removing older conversations and retry
+    while (conversations.length > 10) {
+      conversations.pop();
+      const retryResult = await safeStorageSet({ conversations });
+      if (retryResult.success) {
+        showToast('儲存空間不足，已自動清理舊紀錄', true);
+        break;
+      }
+    }
+  }
   currentConversation = conv;
 }
 
 async function clearHistory() {
   if (!confirm('確定要清除所有歷史紀錄？')) return;
-  await chrome.storage.local.set({ conversations: [] });
-  await renderHistory();
-  showToast('已清除歷史紀錄');
+  try {
+    await chrome.storage.local.set({ conversations: [] });
+    await renderHistory();
+    showToast('已清除歷史紀錄');
+  } catch (err) {
+    showToast('清除失敗：' + err.message, true);
+  }
 }
 
 function formatDate(timestamp) {
@@ -1752,6 +2277,13 @@ async function handleSend() {
     return;
   }
 
+  // Check OpenRouter API Key
+  const keyResult = await chrome.storage.sync.get('apiKey');
+  if (!keyResult.apiKey) {
+    showError('請先設定 OpenRouter API 金鑰。點擊右上角設定按鈕進行設定。');
+    return;
+  }
+
   // If we're in search iteration mode, execute the iteration flow
   if (isSearchIterationMode && pendingSearchKeyword) {
     await executeSearchIteration();
@@ -1777,6 +2309,7 @@ async function handleSend() {
   errorBanner.classList.add('hidden');
   exportBtn.style.display = 'none';
   canvasSection.classList.add('hidden');
+  hideBranchActions();
 
   // Clear summaries
   clearAllSummaries();
@@ -1899,30 +2432,39 @@ async function handleSend() {
       <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
     `;
 
-    finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking, enableSearchMode);
+    try {
+      finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking, enableSearchMode);
 
-    stage3Status.textContent = '完成';
-    stage3Status.classList.remove('loading');
-    stage3Status.classList.add('done');
-    
-    // Update stepper: All done
-    setAllStepsDone();
+      stage3Status.textContent = '完成';
+      stage3Status.classList.remove('loading');
+      stage3Status.classList.add('done');
+      
+      // Update stepper: All done
+      setAllStepsDone();
 
-    // Show canvas section
-    canvasSection.classList.remove('hidden');
+      // Show branch actions (replaces old canvas section)
+      showBranchActions();
 
-    // Save conversation first (without images)
-    await saveCurrentConversation({
-      query,
-      models: councilModels,
-      chairmanModel,
-      responses: savedResponses,
-      ranking: aggregatedRanking,
-      finalAnswer: finalAnswerContent,
-      generatedImages: []
-    });
+      // Save conversation first (without images)
+      await saveCurrentConversation({
+        query,
+        models: councilModels,
+        chairmanModel,
+        responses: savedResponses,
+        ranking: aggregatedRanking,
+        finalAnswer: finalAnswerContent,
+        generatedImages: []
+      });
 
-    exportBtn.style.display = 'flex';
+      exportBtn.style.display = 'flex';
+    } catch (err) {
+      stage3Status.textContent = '失敗';
+      stage3Status.classList.remove('loading');
+      stage3Status.classList.add('error');
+      showToast(`主席彙整失敗: ${err.message}`, true);
+      resetButton();
+      return;
+    }
 
     // === IMAGE GENERATION (if enabled) ===
     if (enableImage && finalAnswerContent) {
@@ -1952,13 +2494,13 @@ async function handleSend() {
         aiResult,
         // onImageGenerated callback - called each time an image is generated
         async (generatedImages) => {
-          // Update saved conversation with latest images
+          // Update saved conversation with image metadata (not base64 data to avoid quota)
           if (currentConversation && generatedImages.length > 0) {
-            currentConversation.generatedImages = generatedImages.map(g => g.image);
+            // Only store prompts and titles, not the actual image data
             currentConversation.imagePrompts = generatedImages.map(g => ({
               title: g.title,
-              prompt: g.prompt,
-              image: g.image
+              prompt: g.prompt
+              // image data not stored to avoid storage quota exceeded
             }));
             
             const result = await chrome.storage.local.get('conversations');
@@ -1966,7 +2508,7 @@ async function handleSend() {
             const idx = conversations.findIndex(c => c.id === currentConversation.id);
             if (idx >= 0) {
               conversations[idx] = currentConversation;
-              await chrome.storage.local.set({ conversations });
+              await safeStorageSet({ conversations });
             }
           }
         },
@@ -2305,7 +2847,11 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
       });
       port.postMessage({ type: 'QUERY_MODEL_STREAM', payload: { model: chairmanModel, messages: [{ role: 'user', content: prompt }] } });
     });
-  } catch (err) { console.error('Chairman error:', err); }
+  } catch (err) {
+    console.error('Chairman error:', err);
+    finalAnswer.innerHTML = `<div class="error-state"><p>主席彙整失敗: ${escapeHtml(err.message)}</p></div>`;
+    throw err;
+  }
 
   return finalContent;
 }
@@ -2322,32 +2868,71 @@ async function queryModelNonStreaming(model, prompt) {
 // AI-based multi-image prompt generation
 const IMAGE_PROMPT_SYSTEM = `你是視覺設計專家和圖像生成 Prompt 工程師。根據提供的內容，分析主題並生成適合的圖像描述。
 
-重要規則：
-1. 仔細分析內容是否規劃了多張圖片/圖卡/資訊圖表（如「三張圖卡」、「圖卡一/二/三」等）
+## 核心原則（必讀）
+1. **完整自然語句**：用完整句子描述，像對人類設計師溝通，不要只丟關鍵字
+2. **用途優先**：每張圖的 prompt 開頭先說明用途情境（如：用於財報簡報的資訊圖表、YouTube 縮圖、教學海報）
+3. **具體勝過抽象**：描述主體、場景、光影、材質，勝過「美麗的」「專業的」等形容詞
+
+## 分析規則
+1. 仔細分析內容是否規劃了多張圖片/圖卡/資訊圖表
 2. 如果內容明確規劃了多張圖，為每張圖生成獨立的 prompt
 3. 如果沒有明確規劃，根據內容複雜度決定是否需要多張圖（1-5張）
 4. 每張圖的選項應與該圖主題高度相關，而非通用選項
-5. 抽象概念（法律、政治、哲學等）應設計象徵性的視覺表達
+5. 抽象概念應設計象徵性的視覺表達
+
+## Prompt 撰寫技巧（根據主題類型）
+
+### 資訊圖表/數據視覺化 (theme_type: data)
+- 明確指定版面風格：「科技感雜誌排版」「工程技術藍圖」「手繪白板風」「現代化資訊圖表」
+- 清楚列出必須出現的文字項目和數據標籤
+- 指定文字排版方向（橫式/直式）與層級
+
+### 人物/角色場景 (theme_type: narrative)
+- 指定表情、姿勢、畫面位置（如「人在左側，驚訝表情，手指向右邊主題」）
+- 如需多張圖，註明「保持人物臉部特徵與服裝在所有圖片中一致」
+- 結合構圖元素：高飽和背景、粗體大標、箭頭/圈選（病毒式縮圖構圖）
+
+### 產品/物件 (theme_type: concrete)
+- 具體描述材質紋理（如「漢堡麵包焦脆裂紋、起司融化反光」）
+- 可用「4K 解析度」「high fidelity render」提升品質
+- 可加「解構視圖＋文字標註每一層的名稱與特性」
+
+### 抽象概念 (theme_type: abstract)
+- 設計象徵性視覺表達，用具體物件隱喻抽象概念
+- 指定光影風格（如「強烈邊光」「柔和自然光」）
+- 可用白板/流程圖呈現思考推理過程
+
+## 結構控制指令（可選）
+- 構圖位置：「主體置中」「三分法構圖」「對角線構圖」
+- 視角控制：「俯視45度」「正面平視」「廣角透視」
+- 比例指定：「16:9 橫幅」「1:1 方形」「9:16 直式」
+- 維度轉換：「2D 平面圖轉 3D 室內設計」「3D 轉像素風」
 
 你必須輸出 JSON 格式：
 \`\`\`json
 {
   "image_count": 3,
   "theme_type": "abstract|concrete|narrative|data",
+  "use_case": "用途說明（如：社群貼文、簡報配圖、教學素材）",
   "images": [
     {
-      "title": "圖卡標題（如：圖卡一：條約鏈時間軸）",
+      "title": "圖卡標題",
+      "use_case": "此圖的具體用途",
       "description": "這張圖的目的和內容說明",
       "scene_description": "詳細的場景描述，包含主體、環境、光線、氛圍",
+      "composition": "構圖與視角指令",
+      "text_elements": ["需要出現在圖中的文字項目（如有）"],
+      "material_detail": "材質與紋理描述",
       "option_groups": [
         {
-          "name": "選項組名稱（如：符號類型、視角等）",
+          "name": "選項組名稱",
           "options": ["選項1", "選項2", "選項3"]
         }
       ],
       "style_options": ["風格1", "風格2", "風格3"],
       "color_palette": ["色調1", "色調2", "色調3"],
-      "final_prompt": "直接可用的完整圖像生成 prompt（約100-200字）"
+      "resolution_hint": "4K|高清|標準",
+      "final_prompt": "直接可用的完整圖像生成 prompt（150-250字，用完整自然語句，開頭先寫用途）"
     }
   ]
 }
@@ -2381,10 +2966,36 @@ ${finalContent.slice(0, 2500)}
     // Use chairman model for consistency
     const result = await queryModelNonStreaming(chairmanModel, IMAGE_PROMPT_SYSTEM + '\n\n' + analysisPrompt);
     
-    // Parse JSON from response
+    // Parse JSON from response with error tolerance
     const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const jsonStr = jsonMatch ? jsonMatch[1] : result;
-    const parsed = JSON.parse(jsonStr.trim());
+    let jsonStr = jsonMatch ? jsonMatch[1] : result;
+    
+    // Try to extract JSON object if there's extra text
+    const jsonObjMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonObjMatch) jsonStr = jsonObjMatch[0];
+    
+    // Clean up common JSON issues
+    jsonStr = jsonStr
+      .trim()
+      .replace(/,\s*([}\]])/g, '$1')  // Remove trailing commas
+      .replace(/(['"])?([a-zA-Z_][a-zA-Z0-9_]*)\1\s*:/g, '"$2":')  // Ensure property names are double-quoted
+      .replace(/:\s*'([^']*)'/g, ':"$1"');  // Convert single-quoted values to double-quoted
+    
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (parseErr) {
+      // If still fails, try to fix truncated JSON by closing brackets
+      console.warn('JSON parse failed, attempting repair:', parseErr.message);
+      let repaired = jsonStr;
+      const openBrackets = (repaired.match(/\[/g) || []).length;
+      const closeBrackets = (repaired.match(/\]/g) || []).length;
+      const openBraces = (repaired.match(/\{/g) || []).length;
+      const closeBraces = (repaired.match(/\}/g) || []).length;
+      repaired += ']'.repeat(Math.max(0, openBrackets - closeBrackets));
+      repaired += '}'.repeat(Math.max(0, openBraces - closeBraces));
+      parsed = JSON.parse(repaired);
+    }
     
     // Normalize to multi-image structure
     const imageCount = parsed.image_count || 1;
@@ -2394,11 +3005,16 @@ ${finalContent.slice(0, 2500)}
     if (images.length === 0 && parsed.final_prompt) {
       images.push({
         title: '圖像',
+        use_case: parsed.use_case || '',
         description: parsed.scene_description || '',
         scene_description: parsed.scene_description || '',
+        composition: parsed.composition || '',
+        text_elements: parsed.text_elements || [],
+        material_detail: parsed.material_detail || '',
         option_groups: parsed.option_groups || [],
         style_options: parsed.style_options || [],
         color_palette: parsed.color_palette || [],
+        resolution_hint: parsed.resolution_hint || '高清',
         final_prompt: parsed.final_prompt
       });
     }
@@ -2407,14 +3023,20 @@ ${finalContent.slice(0, 2500)}
       success: true,
       imageCount: images.length || imageCount,
       themeType: parsed.theme_type || 'concrete',
+      useCase: parsed.use_case || '',
       images: images.map((img, idx) => ({
         id: `img-${idx}`,
         title: img.title || `圖像 ${idx + 1}`,
+        useCase: img.use_case || '',
         description: img.description || '',
         sceneDescription: img.scene_description || '',
+        composition: img.composition || '',
+        textElements: img.text_elements || [],
+        materialDetail: img.material_detail || '',
         optionGroups: img.option_groups || [],
         styleOptions: img.style_options || [],
         colorPalette: img.color_palette || [],
+        resolutionHint: img.resolution_hint || '高清',
         finalPrompt: img.final_prompt || '',
         status: 'pending', // pending | generating | done | error
         generatedImage: null,
@@ -2427,14 +3049,20 @@ ${finalContent.slice(0, 2500)}
       success: false,
       error: err.message,
       imageCount: 1,
+      useCase: '',
       images: [{
         id: 'img-0',
         title: '圖像',
+        useCase: '',
         description: '',
         sceneDescription: '',
+        composition: '',
+        textElements: [],
+        materialDetail: '',
         optionGroups: [],
         styleOptions: ['寫實攝影風格', '油畫風', '水彩', '動畫風', '電影感'],
         colorPalette: ['暖色調', '冷色調', '高對比', '柔和'],
+        resolutionHint: '高清',
         finalPrompt: '',
         status: 'pending',
         generatedImage: null,
@@ -2744,12 +3372,12 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
             <div class="generated-image-preview">
               <img src="${generatedImages[0]}" alt="${escapeAttr(multiImageState.images[idx].title)}" />
               <div class="image-preview-actions">
-                <button class="preview-action-btn reedit-btn" data-idx="${idx}">
+                <button class="preview-action-btn reedit-btn" data-idx="${idx}" title="跳至編輯區修改 Prompt">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                   </svg>
-                  重新編輯
+                  修改 Prompt
                 </button>
                 <button class="preview-action-btn download-btn" data-src="${generatedImages[0]}" data-idx="${idx}">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2761,6 +3389,7 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
                 </button>
               </div>
             </div>
+            <p class="regenerate-hint">不滿意？修改上方 Prompt 後點「重新生成」</p>
           `;
           
           // Add download handler
@@ -2768,33 +3397,27 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
             downloadImage(this.dataset.src, this.dataset.idx);
           });
           
-          // Add re-edit handler
+          // Add re-edit handler (for re-expanding if user collapses manually)
           resultArea.querySelector('.reedit-btn').addEventListener('click', function() {
-            // Expand the options area
+            // Expand the options area if collapsed
             card.querySelector('.image-card-content').classList.remove('collapsed');
-            
-            // Reset button to allow regeneration
-            btn.disabled = false;
-            btn.classList.remove('completed');
-            btn.innerHTML = `
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M23 4v6h-6M1 20v-6h6"/>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-              </svg>
-              重新生成
-            `;
-            
-            // Update status
-            card.dataset.status = 'editing';
-            card.querySelector('.status-badge').className = 'status-badge editing';
-            card.querySelector('.status-badge').textContent = '編輯中';
-            
-            // Scroll to make the editing area visible
-            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Focus on textarea for immediate editing
+            textarea.focus();
+            textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
           });
           
-          // Collapse the options area
-          card.querySelector('.image-card-content').classList.add('collapsed');
+          // Keep editing area visible for easy re-generation
+          // Just reset button to "regenerate" state
+          btn.disabled = false;
+          btn.classList.remove('completed');
+          btn.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6M1 20v-6h6"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            重新生成
+          `;
+          card.dataset.status = 'editing';
           
           // Update progress counter
           document.getElementById('completedCount').textContent = multiImageState.completedCount;
@@ -2854,8 +3477,12 @@ function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-async function runImageGeneration(prompt) {
+async function runImageGeneration(prompt, timeoutMs = 240000) {
   return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error('圖片生成逾時（超過 4 分鐘），請稍後再試'));
+    }, timeoutMs);
+    
     chrome.runtime.sendMessage({ 
       type: 'QUERY_IMAGE', 
       payload: { 
@@ -2863,8 +3490,14 @@ async function runImageGeneration(prompt) {
         prompt: prompt 
       } 
     }, (response) => {
+      clearTimeout(timeoutId);
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message || '連線中斷'));
+        return;
+      }
       if (response?.error) reject(new Error(response.error));
-      else resolve(response?.images || []);
+      else if (!response?.images?.length) reject(new Error('未收到圖片，請重試'));
+      else resolve(response.images);
     });
   });
 }
