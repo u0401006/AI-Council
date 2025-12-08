@@ -49,22 +49,22 @@ function createStreamingParser() {
 // ============================================
 const MODELS = {
   // OpenAI
-  'openai/gpt-5.1': { name: 'GPT-5.1', provider: 'OpenAI', inputPrice: 5, outputPrice: 15 },
-  'openai/gpt-4o': { name: 'GPT-4o', provider: 'OpenAI', inputPrice: 2.5, outputPrice: 10 },
-  'openai/gpt-4o-mini': { name: 'GPT-4o Mini', provider: 'OpenAI', inputPrice: 0.15, outputPrice: 0.6 },
+  'openai/gpt-5.1': { name: 'GPT-5.1', provider: 'OpenAI', inputPrice: 5, outputPrice: 15, canVision: true },
+  'openai/gpt-4o': { name: 'GPT-4o', provider: 'OpenAI', inputPrice: 2.5, outputPrice: 10, canVision: true },
+  'openai/gpt-4o-mini': { name: 'GPT-4o Mini', provider: 'OpenAI', inputPrice: 0.15, outputPrice: 0.6, canVision: true },
   // Anthropic
-  'anthropic/claude-sonnet-4.5': { name: 'Claude Sonnet 4.5', provider: 'Anthropic', inputPrice: 3, outputPrice: 15 },
-  'anthropic/claude-sonnet-4': { name: 'Claude Sonnet 4', provider: 'Anthropic', inputPrice: 3, outputPrice: 15 },
-  'anthropic/claude-3.5-sonnet': { name: 'Claude 3.5 Sonnet', provider: 'Anthropic', inputPrice: 3, outputPrice: 15 },
+  'anthropic/claude-sonnet-4.5': { name: 'Claude Sonnet 4.5', provider: 'Anthropic', inputPrice: 3, outputPrice: 15, canVision: true },
+  'anthropic/claude-sonnet-4': { name: 'Claude Sonnet 4', provider: 'Anthropic', inputPrice: 3, outputPrice: 15, canVision: true },
+  'anthropic/claude-3.5-sonnet': { name: 'Claude 3.5 Sonnet', provider: 'Anthropic', inputPrice: 3, outputPrice: 15, canVision: true },
   // Google
-  'google/gemini-3-pro-preview': { name: 'Gemini 3 Pro', provider: 'Google', inputPrice: 1.25, outputPrice: 5 },
-  'google/gemini-3-pro-image-preview': { name: 'Gemini 3 Pro Image', provider: 'Google', inputPrice: 0.3, outputPrice: 2.5 },
-  'google/gemini-2.5-flash': { name: 'Gemini 2.5 Flash', provider: 'Google', inputPrice: 0.15, outputPrice: 0.6 },
-  'google/gemini-2.5-flash-image-preview': { name: 'Gemini 2.5 Flash Image', provider: 'Google', inputPrice: 0.3, outputPrice: 2.5 },
-  'google/gemini-2.0-flash-001': { name: 'Gemini 2.0 Flash', provider: 'Google', inputPrice: 0.1, outputPrice: 0.4 },
-  'google/gemini-1.5-pro': { name: 'Gemini 1.5 Pro', provider: 'Google', inputPrice: 1.25, outputPrice: 5 },
+  'google/gemini-3-pro-preview': { name: 'Gemini 3 Pro', provider: 'Google', inputPrice: 1.25, outputPrice: 5, canVision: true },
+  'google/gemini-3-pro-image-preview': { name: 'Gemini 3 Pro Image', provider: 'Google', inputPrice: 0.3, outputPrice: 2.5, canVision: true },
+  'google/gemini-2.5-flash': { name: 'Gemini 2.5 Flash', provider: 'Google', inputPrice: 0.15, outputPrice: 0.6, canVision: true },
+  'google/gemini-2.5-flash-image-preview': { name: 'Gemini 2.5 Flash Image', provider: 'Google', inputPrice: 0.3, outputPrice: 2.5, canVision: true },
+  'google/gemini-2.0-flash-001': { name: 'Gemini 2.0 Flash', provider: 'Google', inputPrice: 0.1, outputPrice: 0.4, canVision: true },
+  'google/gemini-1.5-pro': { name: 'Gemini 1.5 Pro', provider: 'Google', inputPrice: 1.25, outputPrice: 5, canVision: true },
   // Others
-  'x-ai/grok-3': { name: 'Grok 3', provider: 'xAI', inputPrice: 3, outputPrice: 15 },
+  'x-ai/grok-3': { name: 'Grok 3', provider: 'xAI', inputPrice: 3, outputPrice: 15, canVision: true },
   'meta-llama/llama-3.1-405b-instruct': { name: 'Llama 3.1 405B', provider: 'Meta', inputPrice: 2, outputPrice: 2 },
   'deepseek/deepseek-r1': { name: 'DeepSeek R1', provider: 'DeepSeek', inputPrice: 0.55, outputPrice: 2.19 },
   'mistralai/mistral-large-2411': { name: 'Mistral Large', provider: 'Mistral', inputPrice: 2, outputPrice: 6 }
@@ -197,6 +197,12 @@ let currentConversation = null;
 let historyVisible = false;
 let contextItems = []; // Array of { id, type, title, content, timestamp }
 
+// Vision Council state
+let visionMode = false;
+let uploadedImage = null; // { dataUrl, file, width, height, name, size }
+let sessionCost = { input: 0, output: 0, total: 0, imageTokens: 0 };
+let visionReviewDepth = 'standard'; // 'simple', 'standard', 'deep'
+
 // Search iteration state
 let pendingSearchKeyword = null; // Selected keyword waiting for prompt edit
 let isSearchIterationMode = false; // Whether we're in "edit prompt for next iteration" mode
@@ -277,6 +283,23 @@ const branchActionsSection = document.getElementById('branchActionsSection');
 const branchSearchBtn = document.getElementById('branchSearchBtn');
 const branchImageBtn = document.getElementById('branchImageBtn');
 const branchCanvasBtn = document.getElementById('branchCanvasBtn');
+
+// Vision Council elements
+const visionToggle = document.getElementById('visionToggle');
+const visionUploadSection = document.getElementById('visionUploadSection');
+const visionUploadArea = document.getElementById('visionUploadArea');
+const visionFileInput = document.getElementById('visionFileInput');
+const visionPreviewArea = document.getElementById('visionPreviewArea');
+const visionPreviewImg = document.getElementById('visionPreviewImg');
+const visionImageName = document.getElementById('visionImageName');
+const visionImageSize = document.getElementById('visionImageSize');
+const removeVisionImage = document.getElementById('removeVisionImage');
+const costTracker = document.getElementById('costTracker');
+const costTrackerDetails = document.getElementById('costTrackerDetails');
+const sessionCostTotal = document.getElementById('sessionCostTotal');
+const sessionCostInput = document.getElementById('sessionCostInput');
+const sessionCostOutput = document.getElementById('sessionCostOutput');
+const sessionImageTokens = document.getElementById('sessionImageTokens');
 
 // Stage elements
 const stage1Section = document.getElementById('stage1Section');
@@ -642,6 +665,68 @@ function setupEventListeners() {
 
   // Image toggle
   imageToggle.addEventListener('change', () => { enableImage = imageToggle.checked; });
+
+  // Vision toggle
+  if (visionToggle) {
+    visionToggle.addEventListener('change', () => { 
+      visionMode = visionToggle.checked;
+      if (visionMode) {
+        visionUploadSection.classList.remove('hidden');
+        costTracker.classList.remove('hidden');
+        // Disable image generation mode when vision is enabled
+        if (imageToggle.checked) {
+          imageToggle.checked = false;
+          enableImage = false;
+        }
+      } else {
+        visionUploadSection.classList.add('hidden');
+        if (sessionCost.total === 0) {
+          costTracker.classList.add('hidden');
+        }
+        clearUploadedImage();
+      }
+    });
+  }
+
+  // Vision image upload
+  if (visionUploadArea) {
+    visionUploadArea.addEventListener('click', () => visionFileInput?.click());
+    visionUploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      visionUploadArea.classList.add('dragover');
+    });
+    visionUploadArea.addEventListener('dragleave', () => {
+      visionUploadArea.classList.remove('dragover');
+    });
+    visionUploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      visionUploadArea.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) {
+        handleVisionImageUpload(file);
+      }
+    });
+  }
+
+  if (visionFileInput) {
+    visionFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        handleVisionImageUpload(file);
+      }
+    });
+  }
+
+  if (removeVisionImage) {
+    removeVisionImage.addEventListener('click', clearUploadedImage);
+  }
+
+  // Cost tracker toggle details
+  if (costTracker) {
+    costTracker.querySelector('.cost-tracker-header')?.addEventListener('click', () => {
+      costTrackerDetails?.classList.toggle('hidden');
+    });
+  }
 
   // History
   historyBtn.addEventListener('click', toggleHistory);
@@ -1798,6 +1883,241 @@ function openCanvas(asWindow = false) {
 }
 
 // ============================================
+// ============================================
+// Vision Council Functions
+// ============================================
+
+function handleVisionImageUpload(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    showToast('請上傳有效的圖片檔案', true);
+    return;
+  }
+
+  const maxSize = 20 * 1024 * 1024; // 20MB
+  if (file.size > maxSize) {
+    showToast('圖片大小超過 20MB 限制', true);
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const dataUrl = e.target.result;
+    
+    // Get image dimensions
+    const img = new Image();
+    img.onload = () => {
+      uploadedImage = {
+        dataUrl,
+        file,
+        width: img.width,
+        height: img.height,
+        name: file.name,
+        size: file.size
+      };
+
+      // Show preview
+      visionPreviewImg.src = dataUrl;
+      visionImageName.textContent = file.name;
+      visionImageSize.textContent = `${img.width}×${img.height} · ${formatFileSize(file.size)}`;
+      
+      visionUploadArea.classList.add('hidden');
+      visionPreviewArea.classList.remove('hidden');
+
+      // Update cost estimation
+      updateVisionCostEstimate();
+    };
+    img.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearUploadedImage() {
+  uploadedImage = null;
+  visionFileInput.value = '';
+  visionPreviewImg.src = '';
+  visionImageName.textContent = '';
+  visionImageSize.textContent = '';
+  
+  visionPreviewArea.classList.add('hidden');
+  visionUploadArea.classList.remove('hidden');
+  
+  // Reset image tokens in cost tracker
+  sessionCost.imageTokens = 0;
+  updateCostTrackerDisplay();
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Estimate image tokens based on OpenAI's approach
+// Low detail: ~85 tokens
+// High detail: ~170 base + 85 per 512x512 tile
+function estimateImageTokens(width, height, detail = 'high') {
+  if (detail === 'low') {
+    return 85;
+  }
+  
+  // High detail calculation
+  // First, scale to fit within 2048x2048
+  let scaledWidth = width;
+  let scaledHeight = height;
+  const maxDim = 2048;
+  
+  if (width > maxDim || height > maxDim) {
+    const scale = maxDim / Math.max(width, height);
+    scaledWidth = Math.floor(width * scale);
+    scaledHeight = Math.floor(height * scale);
+  }
+  
+  // Then scale shortest side to 768
+  const minDim = 768;
+  const shortestSide = Math.min(scaledWidth, scaledHeight);
+  if (shortestSide > minDim) {
+    const scale = minDim / shortestSide;
+    scaledWidth = Math.floor(scaledWidth * scale);
+    scaledHeight = Math.floor(scaledHeight * scale);
+  }
+  
+  // Calculate number of 512x512 tiles
+  const tilesX = Math.ceil(scaledWidth / 512);
+  const tilesY = Math.ceil(scaledHeight / 512);
+  const totalTiles = tilesX * tilesY;
+  
+  // Base tokens + tokens per tile
+  return 170 + (85 * totalTiles);
+}
+
+function updateVisionCostEstimate() {
+  if (!uploadedImage) return;
+  
+  const imageTokens = estimateImageTokens(uploadedImage.width, uploadedImage.height);
+  sessionCost.imageTokens = imageTokens;
+  updateCostTrackerDisplay();
+}
+
+function updateCostTrackerDisplay() {
+  if (sessionCostTotal) sessionCostTotal.textContent = formatCost(sessionCost.total);
+  if (sessionCostInput) sessionCostInput.textContent = formatCost(sessionCost.input);
+  if (sessionCostOutput) sessionCostOutput.textContent = formatCost(sessionCost.output);
+  if (sessionImageTokens) sessionImageTokens.textContent = sessionCost.imageTokens.toLocaleString();
+}
+
+function addToSessionCost(modelId, inputTokens, outputTokens) {
+  const cost = calculateCost(modelId, inputTokens, outputTokens);
+  sessionCost.input += cost.input;
+  sessionCost.output += cost.output;
+  sessionCost.total += cost.total;
+  updateCostTrackerDisplay();
+}
+
+function resetSessionCost() {
+  sessionCost = { input: 0, output: 0, total: 0, imageTokens: 0 };
+  updateCostTrackerDisplay();
+}
+
+// Check if a model supports vision
+function isVisionModel(modelId) {
+  const info = MODELS[modelId];
+  return info?.canVision === true;
+}
+
+// Build vision message with image
+function buildVisionMessage(query, imageDataUrl) {
+  return {
+    role: 'user',
+    content: [
+      { type: 'text', text: query },
+      { 
+        type: 'image_url', 
+        image_url: { 
+          url: imageDataUrl,
+          detail: 'high'
+        } 
+      }
+    ]
+  };
+}
+
+// Generate Vision Review Prompt (evaluating image analyses)
+function generateVisionReviewPrompt(query, responses, currentModel, includeImage = false) {
+  const otherResponses = responses.filter(r => r.model !== currentModel).map((r, i) => ({ 
+    label: `分析 ${String.fromCharCode(65 + i)}`, 
+    content: r.content 
+  }));
+  if (otherResponses.length === 0) return null;
+  
+  const responsesText = otherResponses.map(r => `### ${r.label}\n${r.content}`).join('\n\n---\n\n');
+  
+  const prompt = `你是一位公正的圖像分析評審。請評估以下各個 AI 對圖片的分析結果。
+
+**重要：你必須使用繁體中文回答。禁止使用簡體中文。**
+
+## 原始問題
+${query}
+
+## 各方分析
+${responsesText}
+
+## 評審任務
+根據以下標準評估各分析：
+1. **準確性**：對圖像內容的描述是否準確
+2. **完整性**：是否涵蓋了圖像的重要細節
+3. **洞察力**：是否提供了有價值的解讀或見解
+4. **相關性**：分析是否回應了用戶的問題
+
+請以 JSON 格式輸出排名：
+\`\`\`json
+{
+  "rankings": [
+    {"response": "A", "rank": 1, "reason": "簡短理由"},
+    {"response": "B", "rank": 2, "reason": "簡短理由"}
+  ]
+}
+\`\`\``;
+
+  return prompt;
+}
+
+// Generate Vision Chairman Prompt
+function generateVisionChairmanPrompt(query, responses, aggregatedRanking = null) {
+  const responsesText = responses.map((r, i) => 
+    `### 分析專家 ${i + 1} (${getModelName(r.model)})\n${r.content}`
+  ).join('\n\n---\n\n');
+  
+  let rankingInfo = '';
+  if (aggregatedRanking && aggregatedRanking.length > 0) {
+    rankingInfo = `## 互評排名\n根據各專家互評結果：${aggregatedRanking.map((r, i) => `${i + 1}. ${getModelName(r.model)}`).join('、')}`;
+  }
+  
+  const prompt = `你是 AI Council 的主席。請綜合各位專家對圖像的分析，提供一個完整且權威的最終分析報告。
+
+**重要：你必須使用繁體中文回答。禁止使用簡體中文。英文和日文專有名詞可保留原文。**
+
+## 原始問題
+${query}
+
+## 專家分析
+${responsesText}
+
+${rankingInfo}
+
+## 主席任務
+請創建一個綜合性的最終分析報告：
+1. 整合各專家的最佳觀察和見解
+2. 如有矛盾之處，以準確的資訊為準
+3. 組織良好、結構清晰
+4. 直接提供分析結果，不要有元評論
+
+請以繁體中文直接回答。`;
+
+  // Append output style instructions
+  return prompt + getOutputStyleInstructions();
+}
+
+// ============================================
 // Image Functions
 // ============================================
 function isImageModel(model) {
@@ -2284,6 +2604,26 @@ async function handleSend() {
     return;
   }
 
+  // Vision mode validation
+  if (visionMode) {
+    if (!uploadedImage) {
+      showError('請先上傳要分析的圖片');
+      return;
+    }
+    
+    // Check if at least some models support vision
+    const visionModels = councilModels.filter(isVisionModel);
+    if (visionModels.length === 0) {
+      showError('所選模型都不支援圖片分析功能，請在設定中選擇支援 Vision 的模型');
+      return;
+    }
+    
+    // Check if chairman supports vision (optional warning)
+    if (!isVisionModel(chairmanModel)) {
+      console.warn('Chairman model does not support vision, will use text-only synthesis');
+    }
+  }
+
   // If we're in search iteration mode, execute the iteration flow
   if (isSearchIterationMode && pendingSearchKeyword) {
     await executeSearchIteration();
@@ -2296,6 +2636,11 @@ async function handleSend() {
   reviews.clear();
   reviewFailures.clear();
   activeTab = null;
+  
+  // Reset session cost for new conversation (but keep if in vision mode to track total)
+  if (!visionMode) {
+    resetSessionCost();
+  }
   
   // Reset search iteration for new query
   searchIteration = 0;
@@ -2626,6 +2971,7 @@ async function queryModel(model, query) {
   const startTime = Date.now();
   const parser = createStreamingParser();
   const shouldGenerateImage = enableImage && isImageModel(model);
+  const isVisionQuery = visionMode && uploadedImage && isVisionModel(model);
   
   responses.set(model, { content: '', status: 'loading', latency: 0, images: [] });
   updateTabStatus(model, 'loading');
@@ -2633,6 +2979,8 @@ async function queryModel(model, query) {
   
   if (shouldGenerateImage) {
     if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">使用 ${getModelName(model)} 生成圖片中...</span></div><div class="image-generating"><div class="spinner-large"></div><span>建立視覺內容中...</span></div>`;
+  } else if (isVisionQuery) {
+    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">使用 ${getModelName(model)} 分析圖片...</span></div><div class="vision-stage-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>Vision 分析中</div>`;
   } else {
     if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">連線至 ${getModelName(model)}...</span></div>`;
   }
@@ -2662,6 +3010,12 @@ async function queryModel(model, query) {
             }
           }
           finalizeResponse(model, content, latency);
+          
+          // Track cost from usage data if available
+          if (msg.usage) {
+            addToSessionCost(model, msg.usage.prompt_tokens || 0, msg.usage.completion_tokens || 0);
+          }
+          
           port.disconnect();
           resolve();
         } else if (msg.type === 'ERROR') {
@@ -2673,12 +3027,21 @@ async function queryModel(model, query) {
         }
       });
       
+      // Build messages based on mode
+      let messages;
+      if (isVisionQuery) {
+        messages = [buildVisionMessage(query, uploadedImage.dataUrl)];
+      } else {
+        messages = [{ role: 'user', content: query }];
+      }
+      
       port.postMessage({ 
         type: 'QUERY_MODEL_STREAM', 
         payload: { 
           model, 
-          messages: [{ role: 'user', content: query }],
-          enableImage: shouldGenerateImage
+          messages,
+          enableImage: shouldGenerateImage,
+          visionMode: isVisionQuery
         } 
       });
     });
@@ -2689,7 +3052,10 @@ async function queryModel(model, query) {
 }
 
 async function runReview(reviewerModel, query, allResponses) {
-  const prompt = generateReviewPrompt(query, allResponses, reviewerModel);
+  // Use vision-specific review prompt if in vision mode
+  const prompt = visionMode && uploadedImage
+    ? generateVisionReviewPrompt(query, allResponses, reviewerModel, visionReviewDepth !== 'simple')
+    : generateReviewPrompt(query, allResponses, reviewerModel);
   if (!prompt) return;
   try {
     const result = await queryModelNonStreaming(reviewerModel, prompt);
@@ -2799,7 +3165,10 @@ function renderReviewResults(ranking) {
 }
 
 async function runChairman(query, allResponses, aggregatedRanking, withSearchMode = false) {
-  let prompt = generateChairmanPrompt(query, allResponses, aggregatedRanking);
+  // Use vision-specific chairman prompt if in vision mode
+  let prompt = visionMode && uploadedImage
+    ? generateVisionChairmanPrompt(query, allResponses, aggregatedRanking)
+    : generateChairmanPrompt(query, allResponses, aggregatedRanking);
   
   // Append search strategy suffix if search mode is enabled and not at max iterations
   if (withSearchMode && searchIteration < maxSearchIterations) {
@@ -2808,6 +3177,7 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
   
   const parser = createStreamingParser();
   let finalContent = '';
+  const isVisionChairman = visionMode && uploadedImage && isVisionModel(chairmanModel);
 
   try {
     const port = chrome.runtime.connect({ name: 'stream' });
@@ -2816,12 +3186,21 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
       let started = false;
       port.onMessage.addListener((msg) => {
         if (msg.type === 'CHUNK') {
-          if (!started) { started = true; finalAnswer.innerHTML = `<div class="chairman-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>${getModelName(chairmanModel)}</div><div class="response-content"></div>`; }
+          if (!started) { 
+            started = true; 
+            const visionBadge = isVisionChairman ? '<span class="vision-stage-badge" style="margin-left: 0.5rem; font-size: 0.625rem;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>Vision</span>' : '';
+            finalAnswer.innerHTML = `<div class="chairman-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>${getModelName(chairmanModel)}${visionBadge}</div><div class="response-content"></div>`; 
+          }
           content += msg.content;
           finalAnswer.querySelector('.response-content').innerHTML = parser.append(msg.content) + '<span class="cursor"></span>';
         } else if (msg.type === 'DONE') {
           finalContent = content;
           const el = finalAnswer.querySelector('.response-content');
+          
+          // Track cost from usage data if available
+          if (msg.usage) {
+            addToSessionCost(chairmanModel, msg.usage.prompt_tokens || 0, msg.usage.completion_tokens || 0);
+          }
           
           // If search mode is enabled, extract and display search strategies
           if (withSearchMode) {
@@ -2845,7 +3224,23 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
           reject(new Error(msg.error));
         }
       });
-      port.postMessage({ type: 'QUERY_MODEL_STREAM', payload: { model: chairmanModel, messages: [{ role: 'user', content: prompt }] } });
+      
+      // Build messages - include image for vision chairman
+      let messages;
+      if (isVisionChairman) {
+        messages = [buildVisionMessage(prompt, uploadedImage.dataUrl)];
+      } else {
+        messages = [{ role: 'user', content: prompt }];
+      }
+      
+      port.postMessage({ 
+        type: 'QUERY_MODEL_STREAM', 
+        payload: { 
+          model: chairmanModel, 
+          messages,
+          visionMode: isVisionChairman
+        } 
+      });
     });
   } catch (err) {
     console.error('Chairman error:', err);

@@ -3558,3 +3558,389 @@ body {
   opacity: 0.7;
 }
 
+/* ============================================
+   Vision Council
+   ============================================ */
+
+/* Vision Toggle */
+.vision-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.vision-toggle:hover {
+  border-color: var(--border-active);
+  color: var(--text-secondary);
+}
+
+.vision-toggle input {
+  display: none;
+}
+
+.vision-toggle:has(input:checked) {
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  border-color: transparent;
+  color: white;
+}
+
+/* Vision Upload Section */
+.vision-upload-section {
+  margin-bottom: 0.75rem;
+}
+
+.vision-upload-section.hidden {
+  display: none;
+}
+
+.vision-upload-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(6, 182, 212, 0.05));
+  border: 2px dashed rgba(59, 130, 246, 0.3);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.vision-upload-area:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(6, 182, 212, 0.1));
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.vision-upload-area.dragover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(6, 182, 212, 0.15));
+  border-color: #3b82f6;
+  border-style: solid;
+}
+
+.upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+}
+
+.upload-placeholder svg {
+  color: #3b82f6;
+  opacity: 0.7;
+}
+
+.upload-placeholder span {
+  font-size: 0.8125rem;
+}
+
+.upload-hint {
+  font-size: 0.6875rem !important;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Vision Preview */
+.vision-preview-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.vision-preview-area.hidden {
+  display: none;
+}
+
+.vision-preview-container {
+  position: relative;
+  display: inline-block;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.vision-preview-container img {
+  display: block;
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+}
+
+.remove-vision-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.remove-vision-btn:hover {
+  background: var(--error);
+}
+
+.vision-image-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+.vision-image-name {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* Cost Tracker */
+.cost-tracker {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(5, 150, 105, 0.05));
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 8px;
+}
+
+.cost-tracker.hidden {
+  display: none;
+}
+
+.cost-tracker-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cost-tracker-header svg {
+  color: #10b981;
+}
+
+.cost-total {
+  margin-left: auto;
+  font-weight: 600;
+  color: #10b981;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.cost-tracker-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(16, 185, 129, 0.15);
+}
+
+.cost-tracker-details.hidden {
+  display: none;
+}
+
+.cost-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.6875rem;
+}
+
+.cost-label {
+  color: var(--text-muted);
+}
+
+.cost-value {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+/* Cost Warning */
+.cost-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  padding: 0.625rem 0.875rem;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(234, 88, 12, 0.08));
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.cost-warning svg {
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
+.cost-warning-amount {
+  font-weight: 600;
+  color: #f59e0b;
+  font-family: var(--font-mono);
+}
+
+.cost-warning-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.cost-warning-btn {
+  padding: 0.375rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cost-warning-btn.proceed {
+  background: #f59e0b;
+  border: none;
+  color: white;
+}
+
+.cost-warning-btn.proceed:hover {
+  background: #d97706;
+}
+
+.cost-warning-btn.skip {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.cost-warning-btn.skip:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-active);
+}
+
+/* Vision Badge for Models */
+.model-badge-vision {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  border-radius: 3px;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: white;
+  margin-left: 0.375rem;
+  text-transform: uppercase;
+}
+
+.model-badge-vision svg {
+  width: 10px;
+  height: 10px;
+}
+
+/* Vision mode indicator in tabs */
+.tab.vision-enabled::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 6px;
+  height: 6px;
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  border-radius: 50%;
+}
+
+/* Vision Council stage indicator */
+.vision-stage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(6, 182, 212, 0.15));
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 6px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #3b82f6;
+}
+
+.vision-stage-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Vision image thumbnail in response */
+.vision-image-thumb {
+  display: inline-block;
+  max-width: 120px;
+  max-height: 80px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  margin-right: 0.75rem;
+  margin-bottom: 0.5rem;
+  vertical-align: top;
+}
+
+/* Review depth options */
+.review-depth-options {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.review-depth-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.review-depth-btn:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-active);
+}
+
+.review-depth-btn.selected {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+  border-color: var(--accent);
+}
+
+.review-depth-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.review-depth-desc {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.review-depth-cost {
+  font-size: 0.625rem;
+  font-family: var(--font-mono);
+  color: #10b981;
+}
+

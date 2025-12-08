@@ -145,7 +145,45 @@
         placeholder="輸入您的問題..."
         rows="1"
       ></textarea>
+      <!-- Vision Image Upload Area -->
+      <div id="visionUploadSection" class="vision-upload-section hidden">
+        <div id="visionUploadArea" class="vision-upload-area">
+          <input type="file" id="visionFileInput" accept="image/*" hidden>
+          <div class="upload-placeholder">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+            <span>點擊或拖放圖片至此</span>
+            <span class="upload-hint">支援 JPG、PNG、GIF、WebP</span>
+          </div>
+        </div>
+        <div id="visionPreviewArea" class="vision-preview-area hidden">
+          <div class="vision-preview-container">
+            <img id="visionPreviewImg" src="" alt="上傳的圖片">
+            <button id="removeVisionImage" class="remove-vision-btn" title="移除圖片">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div class="vision-image-info">
+            <span id="visionImageName" class="vision-image-name"></span>
+            <span id="visionImageSize" class="vision-image-size"></span>
+          </div>
+        </div>
+      </div>
+
       <div class="input-actions">
+        <label class="vision-toggle" title="Vision Council：上傳圖片讓多個 AI 分析">
+          <input type="checkbox" id="visionToggle">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </label>
         <label class="image-toggle" title="啟用圖片生成（支援特定模型）">
           <input type="checkbox" id="imageToggle">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -168,6 +206,32 @@
             <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path>
           </svg>
         </button>
+      </div>
+
+      <!-- Cost Tracker Panel -->
+      <div id="costTracker" class="cost-tracker hidden">
+        <div class="cost-tracker-header">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="1" x2="12" y2="23"></line>
+            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+          </svg>
+          <span>費用追蹤</span>
+          <span id="sessionCostTotal" class="cost-total">$0.0000</span>
+        </div>
+        <div class="cost-tracker-details hidden" id="costTrackerDetails">
+          <div class="cost-item">
+            <span class="cost-label">輸入</span>
+            <span id="sessionCostInput" class="cost-value">$0.0000</span>
+          </div>
+          <div class="cost-item">
+            <span class="cost-label">輸出</span>
+            <span id="sessionCostOutput" class="cost-value">$0.0000</span>
+          </div>
+          <div class="cost-item">
+            <span class="cost-label">圖片 tokens</span>
+            <span id="sessionImageTokens" class="cost-value">0</span>
+          </div>
+        </div>
       </div>
     </div>
 

@@ -1,22 +1,22 @@
 // Available models configuration
 const AVAILABLE_MODELS = [
   // OpenAI
-  { id: 'openai/gpt-5.1', name: 'GPT-5.1', provider: 'OpenAI' },
-  { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI' },
-  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI' },
+  { id: 'openai/gpt-5.1', name: 'GPT-5.1', provider: 'OpenAI', canVision: true },
+  { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI', canVision: true },
+  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', canVision: true },
   // Anthropic
-  { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5', provider: 'Anthropic' },
-  { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'Anthropic' },
-  { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic' },
+  { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5', provider: 'Anthropic', canVision: true },
+  { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'Anthropic', canVision: true },
+  { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', canVision: true },
   // Google
-  { id: 'google/gemini-3-pro-preview', name: 'Gemini 3 Pro', provider: 'Google' },
-  { id: 'google/gemini-3-pro-image-preview', name: 'Gemini 3 Pro Image', provider: 'Google', canImage: true },
-  { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Google' },
-  { id: 'google/gemini-2.5-flash-image-preview', name: 'Gemini 2.5 Flash Image', provider: 'Google', canImage: true },
-  { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', provider: 'Google' },
-  { id: 'google/gemini-1.5-pro', name: 'Gemini 1.5 Pro', provider: 'Google' },
+  { id: 'google/gemini-3-pro-preview', name: 'Gemini 3 Pro', provider: 'Google', canVision: true },
+  { id: 'google/gemini-3-pro-image-preview', name: 'Gemini 3 Pro Image', provider: 'Google', canImage: true, canVision: true },
+  { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Google', canVision: true },
+  { id: 'google/gemini-2.5-flash-image-preview', name: 'Gemini 2.5 Flash Image', provider: 'Google', canImage: true, canVision: true },
+  { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', provider: 'Google', canVision: true },
+  { id: 'google/gemini-1.5-pro', name: 'Gemini 1.5 Pro', provider: 'Google', canVision: true },
   // Others
-  { id: 'x-ai/grok-3', name: 'Grok 3', provider: 'xAI' },
+  { id: 'x-ai/grok-3', name: 'Grok 3', provider: 'xAI', canVision: true },
   { id: 'meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B', provider: 'Meta' },
   { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', provider: 'DeepSeek' },
   { id: 'mistralai/mistral-large-2411', name: 'Mistral Large', provider: 'Mistral' }
@@ -108,13 +108,18 @@ async function init() {
 }
 
 function renderModelList() {
-  modelListEl.innerHTML = AVAILABLE_MODELS.map(model => `
+  modelListEl.innerHTML = AVAILABLE_MODELS.map(model => {
+    const badges = [];
+    if (model.canVision) badges.push('<span class="vision-badge">VIS</span>');
+    if (model.canImage) badges.push('<span class="image-badge">IMG</span>');
+    return `
     <label class="model-item">
       <input type="checkbox" value="${model.id}" data-model>
-      <span class="model-name">${model.name}${model.canImage ? '<span class="image-badge">IMG</span>' : ''}</span>
+      <span class="model-name">${model.name}${badges.join('')}</span>
       <span class="model-provider">${model.provider}</span>
     </label>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function renderChairmanSelect() {

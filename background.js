@@ -569,7 +569,7 @@
 }
 
 async function handleStreamingQuery(port, payload) {
-  const { model, messages, enableImage = false } = payload;
+  const { model, messages, enableImage = false, visionMode = false } = payload;
   const apiKey = await getApiKey();
   
   if (!apiKey) {
@@ -589,6 +589,45 @@ async function handleStreamingQuery(port, payload) {
         port.postMessage({ type: 'CHUNK', model, content: result.text });
       }
       port.postMessage({ type: 'DONE', model, images: result.images });
+    } catch (err) {
+      port.postMessage({ type: 'ERROR', error: err.message });
+    }
+    return;
+  }
+
+  // For vision mode, use non-streaming (some models don't support streaming with images)
+  if (visionMode) {
+    try {
+      port.postMessage({ type: 'START', model });
+      const messagesWithSystem = [LANGUAGE_SYSTEM_PROMPT, ...messages];
+      
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'chrome-extension://mav-extension',
+          'X-Title': 'MAV Extension'
+        },
+        body: JSON.stringify({
+          model,
+          messages: messagesWithSystem,
+          stream: false
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error?.message || `Vision query failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      
+      if (content) {
+        port.postMessage({ type: 'CHUNK', model, content });
+      }
+      port.postMessage({ type: 'DONE', model, usage: data.usage });
     } catch (err) {
       port.postMessage({ type: 'ERROR', error: err.message });
     }
