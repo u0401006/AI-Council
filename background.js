@@ -15,7 +15,7 @@
         chrome.runtime.onInstalled.addListener(() => {
         chrome.contextMenus.create({
             id: 'add-to-context',
-            title: '加入 MAV Context',
+            title: '加入 AI Council Context',
             contexts: ['selection']
         });
         chrome.contextMenus.create({
@@ -396,7 +396,7 @@
         await updateContextBadge();
         
         // Show toast in the tab
-        await showToastInTab(tab.id, '已加入 MAV Context');
+        await showToastInTab(tab.id, '已加入 AI Council Context');
         }
 
         // Update extension badge with context count
@@ -457,8 +457,8 @@
             headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': 'chrome-extension://mav-extension',
-            'X-Title': 'MAV Extension'
+            'HTTP-Referer': 'chrome-extension://AI-Council-extension',
+            'X-Title': 'AI Council Extension'
             },
             body: JSON.stringify({
             model,
@@ -497,8 +497,8 @@
             headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': 'chrome-extension://mav-extension',
-            'X-Title': 'MAV Extension'
+            'HTTP-Referer': 'chrome-extension://AI-Council-extension',
+            'X-Title': 'AI-Council-Extension'
             },
             body: JSON.stringify({
             model,
@@ -558,6 +558,10 @@
     });
   }
 
+  // Include usage data for cost tracking
+  result.usage = data.usage || null;
+  result.model = model;
+
   return result;
         } catch (err) {
           clearTimeout(timeoutId);
@@ -597,30 +601,42 @@ async function handleStreamingQuery(port, payload) {
 
   // For vision mode, use non-streaming (some models don't support streaming with images)
   if (visionMode) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout for vision
+    
     try {
       port.postMessage({ type: 'START', model });
+      port.postMessage({ type: 'PROGRESS', model, message: '正在連接至 Vision 模型...' });
+      
       const messagesWithSystem = [LANGUAGE_SYSTEM_PROMPT, ...messages];
+      
+      port.postMessage({ type: 'PROGRESS', model, message: '正在分析圖片內容...' });
       
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': 'chrome-extension://mav-extension',
-          'X-Title': 'MAV Extension'
+          'HTTP-Referer': 'chrome-extension://AI-Council-extension',
+          'X-Title': 'AI-Council-Extension'
         },
         body: JSON.stringify({
           model,
           messages: messagesWithSystem,
           stream: false
-        })
+        }),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         throw new Error(error.error?.message || `Vision query failed: ${response.status}`);
       }
 
+      port.postMessage({ type: 'PROGRESS', model, message: '正在處理回應...' });
+      
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content || '';
       
@@ -629,7 +645,12 @@ async function handleStreamingQuery(port, payload) {
       }
       port.postMessage({ type: 'DONE', model, usage: data.usage });
     } catch (err) {
-      port.postMessage({ type: 'ERROR', error: err.message });
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        port.postMessage({ type: 'ERROR', error: 'Vision 分析超時（超過 2 分鐘），請稍後再試' });
+      } else {
+        port.postMessage({ type: 'ERROR', error: err.message });
+      }
     }
     return;
   }
@@ -643,8 +664,8 @@ async function handleStreamingQuery(port, payload) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'chrome-extension://mav-extension',
-        'X-Title': 'MAV Extension'
+        'HTTP-Referer': 'chrome-extension://AI-Council-extension',
+        'X-Title': 'AI-Council-Extension'
       },
       body: JSON.stringify({
         model,

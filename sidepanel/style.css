@@ -806,17 +806,24 @@ body {
   padding: 2rem;
   text-align: center;
   color: var(--error);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(220, 38, 38, 0.05));
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 10px;
+  margin: 1rem;
 }
 
 .error-state svg {
-  margin-bottom: 1rem;
-  opacity: 0.8;
+  margin-bottom: 0.75rem;
+  color: var(--error);
+  opacity: 0.9;
 }
 
 .error-state p {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   margin-bottom: 1rem;
   color: var(--text-secondary);
+  max-width: 280px;
+  line-height: 1.5;
 }
 
 .retry-btn {
@@ -1810,6 +1817,24 @@ body {
 
 .image-actions button:hover {
   background: var(--accent);
+}
+
+.image-actions .analyze-image-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(6, 182, 212, 0.9));
+  border: none;
+  color: white;
+}
+
+.image-actions .analyze-image-btn:hover {
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+}
+
+.image-actions .analyze-image-btn svg {
+  flex-shrink: 0;
 }
 
 /* Image lightbox */
@@ -3458,6 +3483,22 @@ body {
   color: var(--accent);
 }
 
+/* Vision branch button */
+.branch-action-btn.branch-vision {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(6, 182, 212, 0.05));
+}
+
+.branch-action-btn.branch-vision:hover {
+  border-color: #3b82f6;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(6, 182, 212, 0.1));
+  color: #3b82f6;
+}
+
+.branch-action-btn.branch-vision svg {
+  color: #3b82f6;
+}
+
 .branch-action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -3832,6 +3873,79 @@ body {
   border-color: var(--border-active);
 }
 
+/* Conversation Cost Summary (shown after completion) */
+.conversation-cost {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.06), rgba(5, 150, 105, 0.04));
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 10px;
+}
+
+.conversation-cost.hidden {
+  display: none;
+}
+
+.cost-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.625rem;
+  border-bottom: 1px solid rgba(16, 185, 129, 0.15);
+}
+
+.cost-summary-header svg {
+  color: #10b981;
+}
+
+.cost-summary-total {
+  margin-left: auto;
+  font-weight: 700;
+  color: #10b981;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+}
+
+.cost-summary-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.cost-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.25rem 0;
+}
+
+.cost-detail-row.hidden {
+  display: none;
+}
+
+.cost-detail-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.cost-detail-value {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.cost-detail-row.cost-detail-image .cost-detail-label {
+  color: #8b5cf6;
+}
+
+.cost-detail-row.cost-detail-image .cost-detail-value {
+  color: #8b5cf6;
+}
+
 /* Vision Badge for Models */
 .model-badge-vision {
   display: inline-flex;
@@ -3876,6 +3990,19 @@ body {
   font-size: 0.6875rem;
   font-weight: 500;
   color: #3b82f6;
+  animation: vision-pulse 2s ease-in-out infinite;
+}
+
+@keyframes vision-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.vision-stage-badge.done {
+  animation: none;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.15));
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #10b981;
 }
 
 .vision-stage-badge svg {

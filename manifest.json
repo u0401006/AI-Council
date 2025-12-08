@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "MAV - 多模型 AI 投票",
+  "name": "AI Council - 多 AI 模型智囊團",
   "version": "1.0.2",
   "description": "同時查詢多個 LLM，互相評審，產出綜合答案",
   "permissions": ["storage", "sidePanel", "activeTab", "scripting", "contextMenus"],
@@ -19,7 +19,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "開啟 MAV 面板",
+    "default_title": "開啟 AI Council 面板",
     "default_icon": {
       "32": "icons/icon32.png",
       "64": "icons/icon64.png",

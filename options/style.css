@@ -355,3 +355,26 @@ header h1 {
   margin-top: 0.125rem;
 }
 
+/* Donate banner */
+.donate-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.donate-banner a {
+  color: #b45309;
+  font-weight: 600;
+  text-decoration: none;
+  margin-left: auto;
+}
+
+.donate-banner a:hover {
+  text-decoration: underline;
+}

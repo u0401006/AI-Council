@@ -73,9 +73,35 @@ mav-extension/
 │   ├── icon32.png
 │   ├── icon64.png
 │   └── icon128.png
+├── .gitignore
+├── LICENSE                    # MIT License
+├── README.md
 ├── CLAUDE.md                  # Claude 開發指南
 └── SPEC.md                    # 本文件
 ```
+
+---
+
+## 支援模型
+
+| 模型 | Provider | Vision | Image Gen |
+|------|----------|--------|-----------|
+| GPT-5.1 | OpenAI | ✓ | |
+| GPT-4o | OpenAI | ✓ | |
+| GPT-4o Mini | OpenAI | ✓ | |
+| Claude Sonnet 4.5 | Anthropic | ✓ | |
+| Claude Sonnet 4 | Anthropic | ✓ | |
+| Claude 3.5 Sonnet | Anthropic | ✓ | |
+| Gemini 3 Pro | Google | ✓ | |
+| Gemini 3 Pro Image | Google | ✓ | ✓ |
+| Gemini 2.5 Flash | Google | ✓ | |
+| Gemini 2.5 Flash Image | Google | ✓ | ✓ |
+| Gemini 2.0 Flash | Google | ✓ | |
+| Gemini 1.5 Pro | Google | ✓ | |
+| Grok 3 | xAI | ✓ | |
+| Llama 3.1 405B | Meta | | |
+| DeepSeek R1 | DeepSeek | | |
+| Mistral Large | Mistral | | |
 
 ---
 
@@ -109,35 +135,39 @@ mav-extension/
 
 ### 內部訊息格式
 
-```typescript
-interface CouncilRequest {
-  query: string;
-  models: string[];           // 參與模型
-  chairmanModel: string;      // 主席模型
-  enableReview: boolean;      // 是否啟用互評
+```javascript
+// CouncilRequest
+{
+  query: string,              // 用戶問題
+  models: string[],           // 參與模型
+  chairmanModel: string,      // 主席模型
+  enableReview: boolean       // 是否啟用互評
 }
 
-interface ModelResponse {
-  model: string;
-  content: string;
-  latency: number;            // ms
-  tokenCount?: number;
+// ModelResponse
+{
+  model: string,
+  content: string,
+  latency: number,            // ms
+  tokenCount: number          // optional
 }
 
-interface ReviewResult {
-  reviewer: string;           // 匿名化
-  rankings: {
-    model: string;            // 匿名化 (Model A, B, C...)
-    rank: number;
-    reason: string;
-  }[];
+// ReviewResult
+{
+  reviewer: string,           // 匿名化
+  rankings: [{
+    model: string,            // 匿名化 (Model A, B, C...)
+    rank: number,
+    reason: string
+  }]
 }
 
-interface CouncilResult {
-  responses: ModelResponse[];
-  reviews?: ReviewResult[];
-  finalAnswer: string;
-  totalLatency: number;
+// CouncilResult
+{
+  responses: ModelResponse[],
+  reviews: ReviewResult[],    // optional
+  finalAnswer: string,
+  totalLatency: number
 }
 ```
 
@@ -167,6 +197,17 @@ interface CouncilResult {
 - Gemini image models 支援
 - Lightbox 預覽
 - 支援下載
+
+### Vision Mode ✅
+- 支援圖片輸入分析
+- 拖曳或貼上圖片至輸入區
+- 支援 `canVision: true` 的模型（GPT-4o, Claude, Gemini 等）
+- 自動轉換為 base64 傳送
+
+### Output Style ✅
+- **輸出長度**：簡潔 / 標準 / 詳盡
+- **輸出格式**：純文字 / 混合 / 結構化
+- 設定於 Options 頁面
 
 ---
 
@@ -224,9 +265,11 @@ interface CouncilResult {
 
 - OpenRouter API Key（必要）
 - Brave Search API Key（可選）
-- 模型選擇 (checkbox list)
+- 模型選擇 (checkbox list，顯示 VIS/IMG 標記)
 - 主席模型選擇 (dropdown)
 - 啟用/停用互評階段
+- 延伸搜尋最大迭代次數
+- 輸出風格設定（長度、格式）
 - 自訂提示詞範本
 
 ---
@@ -236,15 +279,16 @@ interface CouncilResult {
 ```javascript
 // chrome.storage.sync (跨裝置同步)
 {
-  "apiKey": "sk-or-v1-...",
-  "braveApiKey": "BSA...",
+  "apiKey": "sk-or-v1-...",           // OpenRouter API Key
+  "braveApiKey": "BSA...",            // Brave Search API Key (optional)
   "councilModels": ["openai/gpt-4o", "anthropic/claude-sonnet-4", ...],
   "chairmanModel": "anthropic/claude-sonnet-4",
   "enableReview": true,
+  "maxSearchIterations": 5,           // 延伸搜尋最大迭代次數
   "reviewPrompt": "...",
   "chairmanPrompt": "...",
-  "outputLength": "standard",
-  "outputFormat": "mixed"
+  "outputLength": "standard",         // concise | standard | detailed
+  "outputFormat": "mixed"             // text | mixed | structured
 }
 
 // chrome.storage.local (本地)

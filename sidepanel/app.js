@@ -200,8 +200,18 @@ let contextItems = []; // Array of { id, type, title, content, timestamp }
 // Vision Council state
 let visionMode = false;
 let uploadedImage = null; // { dataUrl, file, width, height, name, size }
-let sessionCost = { input: 0, output: 0, total: 0, imageTokens: 0 };
 let visionReviewDepth = 'standard'; // 'simple', 'standard', 'deep'
+
+// Cost tracking state - tracks costs per stage
+let sessionCost = {
+  stage1: { input: 0, output: 0, total: 0, calls: 0 },
+  stage2: { input: 0, output: 0, total: 0, calls: 0 },
+  stage3: { input: 0, output: 0, total: 0, calls: 0 },
+  imageGen: { input: 0, output: 0, total: 0, calls: 0 },
+  imageTokens: 0,
+  total: 0
+};
+let currentStage = null; // 'stage1', 'stage2', 'stage3', 'imageGen'
 
 // Search iteration state
 let pendingSearchKeyword = null; // Selected keyword waiting for prompt edit
@@ -282,6 +292,7 @@ const canvasDropdown = document.getElementById('canvasDropdown');
 const branchActionsSection = document.getElementById('branchActionsSection');
 const branchSearchBtn = document.getElementById('branchSearchBtn');
 const branchImageBtn = document.getElementById('branchImageBtn');
+const branchVisionBtn = document.getElementById('branchVisionBtn');
 const branchCanvasBtn = document.getElementById('branchCanvasBtn');
 
 // Vision Council elements
@@ -300,6 +311,15 @@ const sessionCostTotal = document.getElementById('sessionCostTotal');
 const sessionCostInput = document.getElementById('sessionCostInput');
 const sessionCostOutput = document.getElementById('sessionCostOutput');
 const sessionImageTokens = document.getElementById('sessionImageTokens');
+
+// Conversation cost summary elements
+const conversationCost = document.getElementById('conversationCost');
+const conversationCostTotal = document.getElementById('conversationCostTotal');
+const costStage1 = document.getElementById('costStage1');
+const costStage2 = document.getElementById('costStage2');
+const costStage3 = document.getElementById('costStage3');
+const costImageRow = document.getElementById('costImageRow');
+const costImageGen = document.getElementById('costImageGen');
 
 // Stage elements
 const stage1Section = document.getElementById('stage1Section');
@@ -807,6 +827,9 @@ function setupEventListeners() {
   // Branch action buttons
   branchSearchBtn.addEventListener('click', handleBranchSearch);
   branchImageBtn.addEventListener('click', handleBranchImage);
+  if (branchVisionBtn) {
+    branchVisionBtn.addEventListener('click', handleBranchVision);
+  }
   branchCanvasBtn.addEventListener('click', () => openCanvas(false));
 
   // Toggle stage sections (accordion mode - only one expanded at a time)
@@ -1428,6 +1451,7 @@ async function runCouncilIteration() {
   
   try {
     // === STAGE 1 ===
+    currentStage = 'stage1';
     stage1Status.textContent = `迭代 ${searchIteration}: 查詢中...`;
     stage1Status.classList.add('loading');
     
@@ -1461,6 +1485,7 @@ async function runCouncilIteration() {
     
     // === STAGE 2 ===
     if (enableReview && successfulResponses.length >= 2) {
+      currentStage = 'stage2';
       setStepActive(2);
       stage2Status.textContent = '審查中...';
       stage2Status.classList.add('loading');
@@ -1490,6 +1515,7 @@ async function runCouncilIteration() {
     }
     
     // === STAGE 3 ===
+    currentStage = 'stage3';
     setStepActive(3);
     updateStage3Summary(chairmanModel);
     
@@ -1518,6 +1544,9 @@ async function runCouncilIteration() {
       
       // Show branch actions after iteration completes
       showBranchActions();
+      
+      // Show conversation cost summary
+      renderConversationCost();
     } catch (err) {
       stage3Status.textContent = '失敗';
       stage3Status.classList.remove('loading');
@@ -1787,6 +1816,29 @@ function handleBranchSearch() {
   }
 }
 
+function handleBranchVision() {
+  // Try to get images from multiImageState (current session) first
+  if (multiImageState && multiImageState.generatedImages && multiImageState.generatedImages.length > 0) {
+    const firstImage = multiImageState.generatedImages[0];
+    const imageDataUrl = firstImage.image;
+    const title = firstImage.title || '生成的圖片';
+    
+    if (imageDataUrl) {
+      startVisionFromGeneratedImage(imageDataUrl, title);
+      return;
+    }
+  }
+  
+  // Fallback: try to find image from the UI (image-gallery)
+  const galleryImage = document.querySelector('.image-gallery .generated-image img');
+  if (galleryImage && galleryImage.src) {
+    startVisionFromGeneratedImage(galleryImage.src, '生成的圖片');
+    return;
+  }
+  
+  showToast('尚無生成的圖片可供分析', true);
+}
+
 async function handleBranchImage() {
   if (!currentConversation || !currentConversation.finalAnswer) {
     showToast('尚無內容可供製圖', true);
@@ -1841,6 +1893,11 @@ async function handleBranchImage() {
             await safeStorageSet({ conversations });
           }
         }
+        
+        // Show Vision button now that images are generated
+        if (branchVisionBtn && generatedImages.length > 0) {
+          branchVisionBtn.classList.remove('hidden');
+        }
       },
       () => {
         showToast('已關閉圖像編輯器');
@@ -1864,10 +1921,26 @@ async function handleBranchImage() {
 
 function showBranchActions() {
   branchActionsSection.classList.remove('hidden');
+  
+  // Show Vision button only if there are generated images
+  if (branchVisionBtn) {
+    // Check multiImageState (current session) or gallery images in UI
+    const hasMultiStateImages = multiImageState?.generatedImages?.length > 0;
+    const hasGalleryImages = !!document.querySelector('.image-gallery .generated-image img');
+    
+    if (hasMultiStateImages || hasGalleryImages) {
+      branchVisionBtn.classList.remove('hidden');
+    } else {
+      branchVisionBtn.classList.add('hidden');
+    }
+  }
 }
 
 function hideBranchActions() {
   branchActionsSection.classList.add('hidden');
+  if (branchVisionBtn) {
+    branchVisionBtn.classList.add('hidden');
+  }
 }
 
 function openCanvas(asWindow = false) {
@@ -1946,6 +2019,85 @@ function clearUploadedImage() {
   updateCostTrackerDisplay();
 }
 
+// Start Vision Council analysis from a generated/existing image
+function startVisionFromGeneratedImage(imageDataUrl, imageName = '生成的圖片') {
+  if (!imageDataUrl) {
+    showToast('無法取得圖片資料', true);
+    return;
+  }
+  
+  // Create an image to get dimensions
+  const img = new Image();
+  img.onload = () => {
+    // Set up the uploaded image state
+    uploadedImage = {
+      dataUrl: imageDataUrl,
+      file: null,
+      width: img.width,
+      height: img.height,
+      name: imageName,
+      size: 0 // Size unknown for data URLs
+    };
+    
+    // Enable vision mode
+    visionMode = true;
+    if (visionToggle) {
+      visionToggle.checked = true;
+    }
+    
+    // Disable image generation mode if enabled
+    if (imageToggle && imageToggle.checked) {
+      imageToggle.checked = false;
+      enableImage = false;
+    }
+    
+    // Show vision upload section with preview
+    if (visionUploadSection) {
+      visionUploadSection.classList.remove('hidden');
+    }
+    if (costTracker) {
+      costTracker.classList.remove('hidden');
+    }
+    
+    // Show preview
+    if (visionPreviewImg) {
+      visionPreviewImg.src = imageDataUrl;
+    }
+    if (visionImageName) {
+      visionImageName.textContent = imageName;
+    }
+    if (visionImageSize) {
+      visionImageSize.textContent = `${img.width}×${img.height}`;
+    }
+    
+    if (visionUploadArea) {
+      visionUploadArea.classList.add('hidden');
+    }
+    if (visionPreviewArea) {
+      visionPreviewArea.classList.remove('hidden');
+    }
+    
+    // Update cost estimation
+    updateVisionCostEstimate();
+    
+    // Set a default prompt for analysis
+    queryInput.value = '請分析這張圖片的內容、構圖和視覺元素。';
+    autoGrowTextarea();
+    
+    // Focus on query input
+    queryInput.focus();
+    queryInput.select();
+    
+    showToast('已載入圖片，請輸入分析問題後送出');
+  };
+  
+  img.onerror = () => {
+    showToast('圖片載入失敗', true);
+  };
+  
+  img.src = imageDataUrl;
+}
+
 function formatFileSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -1999,23 +2151,88 @@ function updateVisionCostEstimate() {
 }
 
 function updateCostTrackerDisplay() {
+  // Calculate totals from all stages
+  const totalInput = sessionCost.stage1.input + sessionCost.stage2.input + sessionCost.stage3.input + sessionCost.imageGen.input;
+  const totalOutput = sessionCost.stage1.output + sessionCost.stage2.output + sessionCost.stage3.output + sessionCost.imageGen.output;
+  
   if (sessionCostTotal) sessionCostTotal.textContent = formatCost(sessionCost.total);
-  if (sessionCostInput) sessionCostInput.textContent = formatCost(sessionCost.input);
-  if (sessionCostOutput) sessionCostOutput.textContent = formatCost(sessionCost.output);
+  if (sessionCostInput) sessionCostInput.textContent = formatCost(totalInput);
+  if (sessionCostOutput) sessionCostOutput.textContent = formatCost(totalOutput);
   if (sessionImageTokens) sessionImageTokens.textContent = sessionCost.imageTokens.toLocaleString();
 }
 
-function addToSessionCost(modelId, inputTokens, outputTokens) {
+function addToSessionCost(modelId, inputTokens, outputTokens, stage = null) {
   const cost = calculateCost(modelId, inputTokens, outputTokens);
-  sessionCost.input += cost.input;
-  sessionCost.output += cost.output;
+  const targetStage = stage || currentStage || 'stage1';
+  
+  if (sessionCost[targetStage]) {
+    sessionCost[targetStage].input += cost.input;
+    sessionCost[targetStage].output += cost.output;
+    sessionCost[targetStage].total += cost.total;
+    sessionCost[targetStage].calls++;
+  }
+  
   sessionCost.total += cost.total;
   updateCostTrackerDisplay();
 }
 
 function resetSessionCost() {
-  sessionCost = { input: 0, output: 0, total: 0, imageTokens: 0 };
+  sessionCost = {
+    stage1: { input: 0, output: 0, total: 0, calls: 0 },
+    stage2: { input: 0, output: 0, total: 0, calls: 0 },
+    stage3: { input: 0, output: 0, total: 0, calls: 0 },
+    imageGen: { input: 0, output: 0, total: 0, calls: 0 },
+    imageTokens: 0,
+    total: 0
+  };
+  currentStage = null;
   updateCostTrackerDisplay();
+  hideConversationCost();
+}
+
+function renderConversationCost() {
+  if (!conversationCost) return;
+  
+  // Only show if there's actual cost data
+  if (sessionCost.total === 0) {
+    hideConversationCost();
+    return;
+  }
+  
+  // Update total
+  if (conversationCostTotal) {
+    conversationCostTotal.textContent = formatCost(sessionCost.total);
+  }
+  
+  // Update stage costs
+  if (costStage1) {
+    costStage1.textContent = formatCost(sessionCost.stage1.total);
+  }
+  if (costStage2) {
+    costStage2.textContent = formatCost(sessionCost.stage2.total);
+  }
+  if (costStage3) {
+    costStage3.textContent = formatCost(sessionCost.stage3.total);
+  }
+  
+  // Show image generation cost row if applicable
+  if (costImageRow && costImageGen) {
+    if (sessionCost.imageGen.total > 0) {
+      costImageRow.classList.remove('hidden');
+      costImageGen.textContent = formatCost(sessionCost.imageGen.total);
+    } else {
+      costImageRow.classList.add('hidden');
+    }
+  }
+  
+  // Show the cost summary section
+  conversationCost.classList.remove('hidden');
+}
+
+function hideConversationCost() {
+  if (conversationCost) {
+    conversationCost.classList.add('hidden');
+  }
 }
 
 // Check if a model supports vision
@@ -2142,6 +2359,15 @@ function renderImages(images, container) {
     const actions = document.createElement('div');
     actions.className = 'image-actions';
     
+    // Analyze button (Vision Council)
+    const analyzeBtn = document.createElement('button');
+    analyzeBtn.className = 'analyze-image-btn';
+    analyzeBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>分析`;
+    analyzeBtn.addEventListener('click', (e) => { 
+      e.stopPropagation(); 
+      startVisionFromGeneratedImage(imgSrc, `生成圖片 ${idx + 1}`); 
+    });
+    
     const downloadBtn = document.createElement('button');
     downloadBtn.textContent = 'Download';
     downloadBtn.addEventListener('click', (e) => { e.stopPropagation(); downloadImage(imgSrc, idx); });
@@ -2150,6 +2376,7 @@ function renderImages(images, container) {
     copyBtn.textContent = 'Copy';
     copyBtn.addEventListener('click', (e) => { e.stopPropagation(); copyImageToClipboard(imgSrc); });
     
+    actions.appendChild(analyzeBtn);
     actions.appendChild(downloadBtn);
     actions.appendChild(copyBtn);
     wrapper.appendChild(img);
@@ -2227,6 +2454,9 @@ async function startNewChat() {
   await saveContextItems();
   renderContextItems();
   updateContextBadge();
+  
+  // Reset session cost
+  resetSessionCost();
   
   // Reset UI
   queryInput.value = '';
@@ -2637,10 +2867,8 @@ async function handleSend() {
   reviewFailures.clear();
   activeTab = null;
   
-  // Reset session cost for new conversation (but keep if in vision mode to track total)
-  if (!visionMode) {
-    resetSessionCost();
-  }
+  // Reset session cost for new conversation
+  resetSessionCost();
   
   // Reset search iteration for new query
   searchIteration = 0;
@@ -2684,6 +2912,7 @@ async function handleSend() {
 
   try {
     // === STAGE 1 ===
+    currentStage = 'stage1';
     stage1Status.textContent = '查詢中...';
     stage1Status.classList.add('loading');
     
@@ -2721,6 +2950,7 @@ async function handleSend() {
 
     // === STAGE 2 ===
     if (enableReview && successfulResponses.length >= 2) {
+      currentStage = 'stage2';
       // Update stepper: Stage 2 active
       setStepActive(2);
       
@@ -2757,6 +2987,7 @@ async function handleSend() {
     }
 
     // === STAGE 3 ===
+    currentStage = 'stage3';
     // Update stepper: Stage 3 active
     setStepActive(3);
     
@@ -2789,6 +3020,9 @@ async function handleSend() {
 
       // Show branch actions (replaces old canvas section)
       showBranchActions();
+      
+      // Show conversation cost summary
+      renderConversationCost();
 
       // Save conversation first (without images)
       await saveCurrentConversation({
@@ -2813,6 +3047,7 @@ async function handleSend() {
 
     // === IMAGE GENERATION (if enabled) ===
     if (enableImage && finalAnswerContent) {
+      currentStage = 'imageGen';
       // Show loading while AI generates prompts
       const promptLoadingEl = document.createElement('div');
       promptLoadingEl.className = 'image-prompt-loading';
@@ -2855,6 +3090,11 @@ async function handleSend() {
               conversations[idx] = currentConversation;
               await safeStorageSet({ conversations });
             }
+          }
+          
+          // Show Vision button now that images are generated
+          if (branchVisionBtn && generatedImages.length > 0) {
+            branchVisionBtn.classList.remove('hidden');
           }
         },
         // onCancel
@@ -2918,6 +3158,27 @@ function updateTabStatus(model, status) {
     if (dot) dot.className = `status-dot ${status}`;
   }
 }
+
+// Retry a failed query for a specific model
+async function retryQuery(model) {
+  if (!currentQuery) {
+    showToast('無法重試：找不到原始查詢', true);
+    return;
+  }
+  
+  showToast(`正在重試 ${getModelName(model)}...`);
+  
+  try {
+    const promptWithContext = buildPromptWithContext(currentQuery);
+    await queryModel(model, promptWithContext);
+    showToast(`${getModelName(model)} 重試成功`);
+  } catch (err) {
+    showToast(`${getModelName(model)} 重試失敗: ${err.message}`, true);
+  }
+}
+
+// Make retryQuery available globally for onclick handlers
+window.retryQuery = retryQuery;
 
 function updateResponseContent(model, html) {
   const el = document.getElementById(`content-${cssEscape(model)}`);
@@ -2987,16 +3248,103 @@ async function queryModel(model, query) {
 
   try {
     const port = chrome.runtime.connect({ name: 'stream' });
+    const timeoutMs = isVisionQuery ? 150000 : 60000; // 2.5 min for vision, 1 min for text
+    
     await new Promise((resolve, reject) => {
       let content = '';
       let images = [];
+      let timeoutId = null;
+      let resolved = false;
+      
+      const cleanup = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        resolved = true;
+      };
+      
+      // Timeout handler
+      timeoutId = setTimeout(() => {
+        if (!resolved) {
+          cleanup();
+          responses.set(model, { content: '', status: 'error', latency: 0, images: [] });
+          updateTabStatus(model, 'error');
+          if (contentEl) {
+            contentEl.innerHTML = `
+              <div class="error-state">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <p>請求超時，請稍後再試</p>
+                <button class="retry-btn" onclick="retryQuery('${escapeHtml(model)}')">重試</button>
+              </div>`;
+          }
+          try { port.disconnect(); } catch (e) {}
+          reject(new Error('Request timeout'));
+        }
+      }, timeoutMs);
+      
+      // Handle unexpected port disconnect
+      port.onDisconnect.addListener(() => {
+        if (!resolved) {
+          cleanup();
+          const error = chrome.runtime.lastError?.message || '連線中斷';
+          responses.set(model, { content: '', status: 'error', latency: 0, images: [] });
+          updateTabStatus(model, 'error');
+          if (contentEl) {
+            contentEl.innerHTML = `
+              <div class="error-state">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <p>連線中斷：${escapeHtml(error)}</p>
+                <button class="retry-btn" onclick="retryQuery('${escapeHtml(model)}')">重試</button>
+              </div>`;
+          }
+          reject(new Error(error));
+        }
+      });
       
       port.onMessage.addListener((msg) => {
-        if (msg.type === 'CHUNK') { 
+        // Reset timeout on any message
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            if (!resolved) {
+              cleanup();
+              responses.set(model, { content: '', status: 'error', latency: 0, images: [] });
+              updateTabStatus(model, 'error');
+              if (contentEl) {
+                contentEl.innerHTML = `
+                  <div class="error-state">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="8" x2="12" y2="12"></line>
+                      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <p>請求超時，請稍後再試</p>
+                    <button class="retry-btn" onclick="retryQuery('${escapeHtml(model)}')">重試</button>
+                  </div>`;
+              }
+              try { port.disconnect(); } catch (e) {}
+              reject(new Error('Request timeout'));
+            }
+          }, timeoutMs);
+        }
+        
+        if (msg.type === 'PROGRESS') {
+          // Update loading indicator with progress message
+          if (contentEl) {
+            contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">${escapeHtml(msg.message)}</span></div>`;
+          }
+        } else if (msg.type === 'CHUNK') { 
           content += msg.content; 
           updateResponseContent(model, parser.append(msg.content)); 
         }
         else if (msg.type === 'DONE') {
+          cleanup();
           const latency = Date.now() - startTime;
           images = msg.images || [];
           responses.set(model, { content, status: 'done', latency, images });
@@ -3016,13 +3364,25 @@ async function queryModel(model, query) {
             addToSessionCost(model, msg.usage.prompt_tokens || 0, msg.usage.completion_tokens || 0);
           }
           
-          port.disconnect();
+          try { port.disconnect(); } catch (e) {}
           resolve();
         } else if (msg.type === 'ERROR') {
+          cleanup();
           responses.set(model, { content: '', status: 'error', latency: 0, images: [] });
           updateTabStatus(model, 'error');
-          if (contentEl) contentEl.innerHTML = `<div class="error-state"><p>${escapeHtml(msg.error)}</p></div>`;
-          port.disconnect();
+          if (contentEl) {
+            contentEl.innerHTML = `
+              <div class="error-state">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <p>${escapeHtml(msg.error)}</p>
+                <button class="retry-btn" onclick="retryQuery('${escapeHtml(model)}')">重試</button>
+              </div>`;
+          }
+          try { port.disconnect(); } catch (e) {}
           reject(new Error(msg.error));
         }
       });
@@ -3251,11 +3611,22 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
   return finalContent;
 }
 
-async function queryModelNonStreaming(model, prompt) {
+async function queryModelNonStreaming(model, prompt, trackCost = true) {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage({ type: 'QUERY_MODEL', payload: { model, messages: [{ role: 'user', content: prompt }] } }, (response) => {
       if (response?.error) reject(new Error(response.error));
-      else resolve(response?.choices?.[0]?.message?.content || '');
+      else {
+        // Track cost if usage data available
+        if (trackCost && response?.usage) {
+          addToSessionCost(
+            model, 
+            response.usage.prompt_tokens || 0, 
+            response.usage.completion_tokens || 0,
+            'imageGen'  // AI prompt generation is part of image generation flow
+          );
+        }
+        resolve(response?.choices?.[0]?.message?.content || '');
+      }
     });
   });
 }
@@ -3892,7 +4263,18 @@ async function runImageGeneration(prompt, timeoutMs = 240000) {
       }
       if (response?.error) reject(new Error(response.error));
       else if (!response?.images?.length) reject(new Error('未收到圖片，請重試'));
-      else resolve(response.images);
+      else {
+        // Track image generation cost
+        if (response.usage && response.model) {
+          addToSessionCost(
+            response.model, 
+            response.usage.prompt_tokens || 0, 
+            response.usage.completion_tokens || 0,
+            'imageGen'
+          );
+        }
+        resolve(response.images);
+      }
     });
   });
 }

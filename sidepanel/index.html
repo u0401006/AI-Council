@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MAV</title>
+  <title>AI Council</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="app">
     <header class="header">
       <div class="header-left">
-        <h1>MAV</h1>
+        <h1>AI Council</h1>
       </div>
       <div class="header-right">
         <button id="newChatBtn" class="icon-btn" title="新對話">
@@ -320,6 +320,35 @@
       </div>
       <div id="stage3Content" class="stage-content expanded">
         <div id="finalAnswer" class="final-answer"></div>
+        <!-- Conversation Cost Summary -->
+        <div id="conversationCost" class="conversation-cost hidden">
+          <div class="cost-summary-header">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="1" x2="12" y2="23"></line>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+            <span>本次對話費用</span>
+            <span id="conversationCostTotal" class="cost-summary-total">$0.0000</span>
+          </div>
+          <div class="cost-summary-details">
+            <div class="cost-detail-row">
+              <span class="cost-detail-label">階段 1（模型回應）</span>
+              <span id="costStage1" class="cost-detail-value">$0.0000</span>
+            </div>
+            <div class="cost-detail-row">
+              <span class="cost-detail-label">階段 2（互評審查）</span>
+              <span id="costStage2" class="cost-detail-value">$0.0000</span>
+            </div>
+            <div class="cost-detail-row">
+              <span class="cost-detail-label">階段 3（主席彙整）</span>
+              <span id="costStage3" class="cost-detail-value">$0.0000</span>
+            </div>
+            <div class="cost-detail-row cost-detail-image hidden" id="costImageRow">
+              <span class="cost-detail-label">圖片生成</span>
+              <span id="costImageGen" class="cost-detail-value">$0.0000</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -371,6 +400,13 @@
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
           <span>生成圖片</span>
+        </button>
+        <button id="branchVisionBtn" class="branch-action-btn branch-vision hidden">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <span>Vision 分析</span>
         </button>
         <button id="branchCanvasBtn" class="branch-action-btn branch-canvas">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

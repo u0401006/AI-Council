@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+
+# Development tools
+icons/generate-icons.html
+
+CLAUDE.md
