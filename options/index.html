@@ -34,8 +34,12 @@
     </section>
 
     <section class="card">
-      <h2>參與模型</h2>
+      <div class="section-header">
+        <h2>參與模型</h2>
+        <button type="button" id="refreshModelsBtn" class="btn-secondary">重新整理</button>
+      </div>
       <p class="hint">選擇要參與討論的模型。<span class="vision-badge">VIS</span> 表示支援圖片分析，<span class="image-badge">IMG</span> 表示支援圖片生成</p>
+      <p class="hint cache-status" id="modelsCacheStatus"></p>
       <div class="model-list" id="modelList">
         <!-- Populated by JS -->
       </div>
@@ -69,6 +73,16 @@
           <option value="5" selected>5 次</option>
         </select>
         <p class="hint">單次對話中 AI 可建議網搜的最大次數</p>
+      </div>
+      
+      <div class="field" style="margin-top: 1rem;">
+        <label for="maxCardDepth">任務深度上限</label>
+        <select id="maxCardDepth">
+          <option value="2">L0 - L2（3 層）</option>
+          <option value="3" selected>L0 - L3（4 層）</option>
+          <option value="4">L0 - L4（5 層）</option>
+        </select>
+        <p class="hint">任務規劃器中子任務可展開的最大深度</p>
       </div>
     </section>
 

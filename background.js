@@ -6,6 +6,31 @@
         'google/gemini-2.5-flash-image-preview'
         ];
 
+        // Brave Search API 合法選項值
+        const BRAVE_SEARCH_OPTIONS = {
+        country: ['ar', 'au', 'at', 'be', 'br', 'ca', 'cl', 'dk', 'fi', 'fr', 'de', 'hk', 'in', 'id', 'it', 'jp', 'kr', 'my', 'mx', 'nl', 'nz', 'no', 'cn', 'pl', 'pt', 'ph', 'ru', 'sa', 'za', 'es', 'se', 'ch', 'tw', 'tr', 'gb', 'us'],
+        search_lang: ['ar', 'eu', 'bn', 'bg', 'ca', 'zh-hans', 'zh-hant', 'hr', 'cs', 'da', 'nl', 'en', 'en-gb', 'et', 'fi', 'fr', 'de', 'gu', 'he', 'hi', 'hu', 'is', 'it', 'jp', 'kn', 'ko', 'lv', 'lt', 'ms', 'ml', 'mr', 'nb', 'pl', 'pt-br', 'pt-pt', 'pa', 'ro', 'ru', 'sr', 'sk', 'sl', 'es', 'sv', 'ta', 'te', 'th', 'tr', 'uk', 'vi'],
+        freshness: ['pd', 'pw', 'pm', 'py'],
+        safesearch: ['off', 'moderate', 'strict']
+        };
+
+        // 驗證並過濾非法的搜尋選項
+        function validateSearchOptions(options) {
+        const validated = {};
+        for (const [key, value] of Object.entries(options)) {
+            if (key === 'count') {
+            const num = parseInt(value);
+            if (num >= 1 && num <= 20) validated.count = num;
+            } else if (BRAVE_SEARCH_OPTIONS[key]?.includes(value)) {
+            validated[key] = value;
+            } else if (key === 'freshness' && /^\d{4}-\d{2}-\d{2}to\d{4}-\d{2}-\d{2}$/.test(value)) {
+            // 支援日期範圍格式 YYYY-MM-DDtoYYYY-MM-DD
+            validated[key] = value;
+            }
+        }
+        return validated;
+        }
+
         // Open side panel on action click
         chrome.action.onClicked.addListener(async (tab) => {
         await chrome.sidePanel.open({ tabId: tab.id });
@@ -84,7 +109,7 @@
         }
         
         if (message.type === 'WEB_SEARCH') {
-            handleWebSearch(message.query)
+            handleWebSearch(message.query, message.options)
             .then(sendResponse)
             .catch(err => sendResponse({ error: err.message }));
             return true;
@@ -136,15 +161,32 @@
         }
 
         // Handle web search request
-        async function handleWebSearch(query) {
+        async function handleWebSearch(query, options = {}) {
         const braveApiKey = await getBraveApiKey();
         
         if (!braveApiKey) {
             throw new Error('Brave Search API 金鑰尚未設定，請至設定頁面新增');
         }
 
+        // 預設參數
+        const defaultParams = {
+            count: 20,
+            country: 'tw',
+            search_lang: 'zh-hant',
+            freshness: 'pm',
+            safesearch: 'strict'
+        };
+
+        // 驗證並合併 agent 傳入的參數（覆蓋預設）
+        const validatedOptions = validateSearchOptions(options);
+        const params = new URLSearchParams({
+            q: query,
+            ...defaultParams,
+            ...validatedOptions
+        });
+
         const response = await fetch(
-            `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`,
+            `https://api.search.brave.com/res/v1/web/search?${params}`,
             {
             headers: {
                 'Accept': 'application/json',
@@ -576,8 +618,26 @@ async function handleStreamingQuery(port, payload) {
   const { model, messages, enableImage = false, visionMode = false } = payload;
   const apiKey = await getApiKey();
   
+  // Track port connection state
+  let isPortConnected = true;
+  port.onDisconnect.addListener(() => {
+    isPortConnected = false;
+  });
+  
+  // Safe post message helper
+  const safePostMessage = (msg) => {
+    if (isPortConnected) {
+      try {
+        port.postMessage(msg);
+      } catch (e) {
+        isPortConnected = false;
+        console.warn('Port message failed:', e.message);
+      }
+    }
+  };
+  
   if (!apiKey) {
-    port.postMessage({ type: 'ERROR', error: 'API Key not configured' });
+    safePostMessage({ type: 'ERROR', error: 'API Key not configured' });
     return;
   }
 
@@ -588,13 +648,13 @@ async function handleStreamingQuery(port, payload) {
   if (isImageModel && enableImage) {
     try {
       const result = await handleImageQuery({ model, prompt: messages[0]?.content });
-      port.postMessage({ type: 'START', model });
+      safePostMessage({ type: 'START', model });
       if (result.text) {
-        port.postMessage({ type: 'CHUNK', model, content: result.text });
+        safePostMessage({ type: 'CHUNK', model, content: result.text });
       }
-      port.postMessage({ type: 'DONE', model, images: result.images });
+      safePostMessage({ type: 'DONE', model, images: result.images });
     } catch (err) {
-      port.postMessage({ type: 'ERROR', error: err.message });
+      safePostMessage({ type: 'ERROR', error: err.message });
     }
     return;
   }
@@ -605,12 +665,12 @@ async function handleStreamingQuery(port, payload) {
     const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout for vision
     
     try {
-      port.postMessage({ type: 'START', model });
-      port.postMessage({ type: 'PROGRESS', model, message: '正在連接至 Vision 模型...' });
+      safePostMessage({ type: 'START', model });
+      safePostMessage({ type: 'PROGRESS', model, message: '正在連接至 Vision 模型...' });
       
       const messagesWithSystem = [LANGUAGE_SYSTEM_PROMPT, ...messages];
       
-      port.postMessage({ type: 'PROGRESS', model, message: '正在分析圖片內容...' });
+      safePostMessage({ type: 'PROGRESS', model, message: '正在分析圖片內容...' });
       
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -635,21 +695,21 @@ async function handleStreamingQuery(port, payload) {
         throw new Error(error.error?.message || `Vision query failed: ${response.status}`);
       }
 
-      port.postMessage({ type: 'PROGRESS', model, message: '正在處理回應...' });
+      safePostMessage({ type: 'PROGRESS', model, message: '正在處理回應...' });
       
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content || '';
       
       if (content) {
-        port.postMessage({ type: 'CHUNK', model, content });
+        safePostMessage({ type: 'CHUNK', model, content });
       }
-      port.postMessage({ type: 'DONE', model, usage: data.usage });
+      safePostMessage({ type: 'DONE', model, usage: data.usage });
     } catch (err) {
       clearTimeout(timeoutId);
       if (err.name === 'AbortError') {
-        port.postMessage({ type: 'ERROR', error: 'Vision 分析超時（超過 2 分鐘），請稍後再試' });
+        safePostMessage({ type: 'ERROR', error: 'Vision 分析超時（超過 2 分鐘），請稍後再試' });
       } else {
-        port.postMessage({ type: 'ERROR', error: err.message });
+        safePostMessage({ type: 'ERROR', error: err.message });
       }
     }
     return;
@@ -676,7 +736,7 @@ async function handleStreamingQuery(port, payload) {
 
     if (!response.ok) {
       const error = await response.json();
-      port.postMessage({ type: 'ERROR', error: error.error?.message || 'API request failed' });
+      safePostMessage({ type: 'ERROR', error: error.error?.message || 'API request failed' });
       return;
     }
 
@@ -684,11 +744,17 @@ async function handleStreamingQuery(port, payload) {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    port.postMessage({ type: 'START', model });
+    safePostMessage({ type: 'START', model });
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      
+      // Stop processing if port disconnected
+      if (!isPortConnected) {
+        reader.cancel();
+        break;
+      }
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
@@ -698,14 +764,14 @@ async function handleStreamingQuery(port, payload) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6);
           if (data === '[DONE]') {
-            port.postMessage({ type: 'DONE', model });
+            safePostMessage({ type: 'DONE', model });
             return;
           }
           try {
             const parsed = JSON.parse(data);
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
-              port.postMessage({ type: 'CHUNK', model, content });
+              safePostMessage({ type: 'CHUNK', model, content });
             }
           } catch (e) {
             // Skip invalid JSON
@@ -714,8 +780,8 @@ async function handleStreamingQuery(port, payload) {
       }
     }
 
-    port.postMessage({ type: 'DONE', model });
+    safePostMessage({ type: 'DONE', model });
   } catch (err) {
-    port.postMessage({ type: 'ERROR', error: err.message });
+    safePostMessage({ type: 'ERROR', error: err.message });
   }
 }

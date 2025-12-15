@@ -106,19 +106,78 @@ function generateChairmanPrompt(query, responses, aggregatedRanking = null) {
     .replace('{ranking}', rankingInfo);
   
   // Append output style instructions from settings
-  return basePrompt + getOutputStyleInstructions();
+  let finalPrompt = basePrompt + getOutputStyleInstructions();
+  
+  // Append task decomposition suffix if task planner is enabled
+  if (enableTaskPlanner) {
+    finalPrompt += TASK_DECOMPOSITION_SUFFIX;
+  }
+  
+  return finalPrompt;
 }
 
 function parseReviewResponse(content) {
   try {
+    // Extract JSON from code blocks or use raw content
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const jsonStr = jsonMatch ? jsonMatch[1] : content;
-    const parsed = JSON.parse(jsonStr.trim());
+    let jsonStr = jsonMatch ? jsonMatch[1] : content;
+    
+    // Try to extract JSON object/array if there's extra text
+    const jsonObjMatch = jsonStr.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+    if (jsonObjMatch) jsonStr = jsonObjMatch[0];
+    
+    jsonStr = jsonStr.trim();
+    
+    // Attempt to repair truncated JSON
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (firstErr) {
+      // Try to repair common truncation issues
+      let repaired = jsonStr;
+      
+      // Remove trailing incomplete strings (e.g., "reason": "incomplete...)
+      repaired = repaired.replace(/,?\s*"[^"]*":\s*"[^"]*$/g, '');
+      
+      // Remove trailing incomplete object entries
+      repaired = repaired.replace(/,?\s*\{[^}]*$/g, '');
+      
+      // Count and balance brackets
+      const openBraces = (repaired.match(/\{/g) || []).length;
+      const closeBraces = (repaired.match(/\}/g) || []).length;
+      const openBrackets = (repaired.match(/\[/g) || []).length;
+      const closeBrackets = (repaired.match(/\]/g) || []).length;
+      
+      // Close unclosed arrays first, then objects
+      repaired += ']'.repeat(Math.max(0, openBrackets - closeBrackets));
+      repaired += '}'.repeat(Math.max(0, openBraces - closeBraces));
+      
+      // Remove any trailing commas before closing brackets
+      repaired = repaired.replace(/,\s*([}\]])/g, '$1');
+      
+      try {
+        parsed = JSON.parse(repaired);
+        console.warn('JSON repaired from truncated response');
+      } catch (repairErr) {
+        throw firstErr; // Throw original error if repair fails
+      }
+    }
+    
     const rankings = parsed.rankings || parsed;
     if (!Array.isArray(rankings)) {
       return { error: '回應格式錯誤：rankings 不是陣列', raw: content };
     }
-    return { success: true, rankings };
+    
+    // Validate each ranking item has required fields
+    const validRankings = rankings.filter(r => 
+      r && typeof r.response !== 'undefined' && typeof r.rank !== 'undefined'
+    );
+    
+    if (validRankings.length === 0) {
+      return { error: '無有效排名資料', raw: content };
+    }
+    
+    return { success: true, rankings: validRankings };
   } catch (e) {
     console.error('Failed to parse review:', e);
     return { error: `JSON 解析失敗: ${e.message}`, raw: content };
@@ -185,6 +244,7 @@ let enableReview = true;
 let enableImage = false;
 let enableSearchMode = false;
 let maxSearchIterations = 5;
+let maxCardDepth = 3; // 任務深度上限 (L0-L3)
 let searchIteration = 0;
 let currentSearchQueries = [];
 let customReviewPrompt = DEFAULT_REVIEW_PROMPT;
@@ -218,7 +278,17 @@ let pendingSearchKeyword = null; // Selected keyword waiting for prompt edit
 let isSearchIterationMode = false; // Whether we're in "edit prompt for next iteration" mode
 let originalQueryBeforeIteration = ''; // Store original query for AI suggestion context
 
-// Search strategy prompt suffix (appended when search mode is enabled)
+// Search suggestion suffix for COUNCIL models (Stage 1)
+const COUNCIL_SEARCH_SUFFIX = `
+
+## 搜尋建議
+若此問題需要更新資訊或深入探索，請在回答最後提供 1-2 個搜尋關鍵詞建議：
+\`\`\`json
+{"search_queries": ["具體搜尋關鍵詞"]}
+\`\`\`
+搜尋建議應該針對你回答中不確定或需要驗證的部分。若你認為不需要搜尋，可省略此區塊。`;
+
+// Search strategy prompt suffix for CHAIRMAN (Stage 3) - kept for backwards compatibility
 const SEARCH_STRATEGY_SUFFIX = `
 
 ## 搜尋策略
@@ -231,6 +301,973 @@ const SEARCH_STRATEGY_SUFFIX = `
 - 能夠補充目前回答中未涵蓋的面向
 - 探索相關但尚未深入的延伸議題
 即使你認為目前資訊已相當完整，仍請提供可延伸探索的方向。`;
+
+// Search consolidation prompt for Chairman (Stage 2.5)
+const SEARCH_CONSOLIDATION_PROMPT = `你是 AI Council 的主席。以下是各模型對用戶問題的回答及其搜尋建議。
+
+## 用戶問題
+{query}
+
+## 模型回答摘要與搜尋建議
+{modelSuggestions}
+
+## 你的任務
+分析各模型的搜尋建議，整合為 3-5 個最有價值的搜尋關鍵詞。只輸出以下 JSON 格式，不要其他文字：
+\`\`\`json
+{"consolidated_queries": ["關鍵詞1", "關鍵詞2", "關鍵詞3"]}
+\`\`\``;
+
+// Task decomposition suffix (appended to chairman prompt)
+const TASK_DECOMPOSITION_SUFFIX = `
+
+## 任務分解
+若此問題可拆解為多個可執行的子任務或延伸探索方向，請在回答最後提供：
+\`\`\`json
+{"tasks": [
+  {"content": "具體任務描述", "priority": "high", "suggestedFeatures": ["search"]},
+  {"content": "另一個任務", "priority": "medium", "suggestedFeatures": ["image"]}
+]}
+\`\`\`
+任務應該是：
+- 具體、可執行的行動項目
+- 能夠延伸或深化目前討論的主題
+- 標註優先級：high（核心必要）、medium（重要補充）、low（可選延伸）
+- suggestedFeatures 陣列（可選）：根據任務性質建議啟用的功能
+  - "search": 任務需要網路搜尋獲取最新資訊
+  - "image": 任務需要生成圖片/圖表
+  - "vision": 任務需要分析圖片內容
+若問題較簡單無需拆解，可省略此區塊。`;
+
+// Context summary prompt (for generating inheritable context)
+const CONTEXT_SUMMARY_PROMPT = `請將以下討論內容精簡為脈絡摘要（200字內），保留：
+1. 核心問題與目標
+2. 關鍵決策與結論
+3. 重要限制條件
+
+原始問題：{query}
+
+結論：{answer}
+
+請只輸出摘要內容，不要加任何前綴或標題。`;
+
+// Generate context summary for card inheritance
+async function generateContextSummary(query, finalAnswer) {
+  try {
+    const prompt = CONTEXT_SUMMARY_PROMPT
+      .replace('{query}', query)
+      .replace('{answer}', finalAnswer.slice(0, 2000)); // 限制長度避免 token 過多
+    
+    const summary = await queryModelNonStreaming(chairmanModel, prompt, false);
+    return summary.trim().slice(0, 500); // 限制摘要長度
+  } catch (err) {
+    console.error('Failed to generate context summary:', err);
+    return '';
+  }
+}
+
+// ============================================
+// Session & Card State (Task Planner)
+// ============================================
+let sessionState = {
+  id: null,
+  name: null,             // Session 名稱（AI 生成）
+  rootCardId: null,
+  cards: new Map(),       // cardId -> Card object
+  currentCardId: null,
+  breadcrumb: [],         // [cardId, ...]
+};
+
+// Enable task planner mode
+let enableTaskPlanner = true;
+
+// Generate session name using AI
+async function generateSessionName(rootQuery) {
+  try {
+    const prompt = `請為以下討論主題生成一個簡短的專案名稱（最多6個中文字，不要標點符號）：\n\n${rootQuery}\n\n只輸出名稱，不要其他文字。`;
+    const name = await queryModelNonStreaming(chairmanModel, prompt, false);
+    return name.trim().slice(0, 6);
+  } catch (err) {
+    console.error('Failed to generate session name:', err);
+    return null;
+  }
+}
+
+// Generate unique ID
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+}
+
+// Create a new card
+function createCard(parentId, query) {
+  const parentCard = parentId ? sessionState.cards.get(parentId) : null;
+  const depth = parentCard ? parentCard.depth + 1 : 0;
+  
+  // 繼承父卡片的 settings，或使用當前全域設定
+  const settings = parentCard?.settings 
+    ? { ...parentCard.settings }
+    : {
+        enableImage: enableImage,
+        enableSearchMode: enableSearchMode,
+        visionMode: visionMode
+      };
+  
+  const card = {
+    id: generateId(),
+    parentId: parentId,
+    query: query,
+    responses: [],
+    reviews: [],
+    finalAnswer: '',
+    tasks: [],           // [{ id, content, status, priority, cardId, suggestedFeatures }]
+    childCardIds: [],
+    depth: depth,
+    timestamp: Date.now(),
+    searchIteration: 0,
+    contextItemsSnapshot: [],
+    settings: settings,              // 卡片獨立的功能設定
+    inheritedContext: parentCard?.contextSummary || '',  // 繼承的上層脈絡摘要
+    contextSummary: ''               // 此卡片完成後的脈絡摘要
+  };
+  
+  sessionState.cards.set(card.id, card);
+  
+  // Update parent's childCardIds
+  if (parentCard) {
+    parentCard.childCardIds.push(card.id);
+  }
+  
+  return card;
+}
+
+// Initialize a new session
+function initSession() {
+  sessionState = {
+    id: generateId(),
+    name: null,
+    rootCardId: null,
+    cards: new Map(),
+    currentCardId: null,
+    breadcrumb: [],
+  };
+}
+
+// Get current card
+function getCurrentCard() {
+  if (!sessionState.currentCardId) return null;
+  return sessionState.cards.get(sessionState.currentCardId);
+}
+
+// Parse tasks from AI response
+function parseTasksFromResponse(content) {
+  try {
+    // 更精確的匹配：找到包含 tasks 但不包含 search_queries 的 JSON 區塊
+    const blocks = content.match(/```(?:json)?\s*(\{[^`]*?\})\s*```/g) || [];
+    for (const block of blocks) {
+      if (block.includes('"tasks"') && !block.includes('search_queries')) {
+        const jsonStr = block.replace(/```(?:json)?\s*|\s*```/g, '');
+        const parsed = JSON.parse(jsonStr);
+        
+        if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
+          continue;
+        }
+        
+        // Normalize tasks with suggestedFeatures
+        const validFeatures = ['search', 'image', 'vision'];
+        const tasks = parsed.tasks.map(t => ({
+          id: generateId(),
+          content: t.content || '',
+          priority: ['high', 'medium', 'low'].includes(t.priority) ? t.priority : 'medium',
+          status: 'pending',  // pending | in_progress | completed
+          cardId: null,       // Will be set when task becomes a card
+          suggestedFeatures: Array.isArray(t.suggestedFeatures) 
+            ? t.suggestedFeatures.filter(f => validFeatures.includes(f))
+            : []
+        })).filter(t => t.content.trim());
+        
+        return { success: true, tasks };
+      }
+    }
+    return { success: false, tasks: [] };
+  } catch (e) {
+    console.error('Failed to parse tasks:', e);
+    return { success: false, tasks: [], error: e.message };
+  }
+}
+
+// Extract final answer content (remove JSON blocks for display)
+function extractFinalAnswerDisplay(content) {
+  // Remove tasks JSON block for cleaner display
+  return content
+    .replace(/```(?:json)?\s*\{[\s\S]*?"tasks"[\s\S]*?\}\s*```/g, '')
+    .replace(/## 任務分解[\s\S]*$/g, '')
+    .trim();
+}
+
+// ============================================
+// Task Planner UI Functions
+// ============================================
+
+// Current tasks being displayed (for editing without card system)
+let displayedTasks = [];
+
+// Render the TODO section with tasks
+function renderTodoSection(tasks) {
+  if (!todoSection || !todoList) return;
+  
+  displayedTasks = tasks || [];
+  
+  // Update count
+  const pendingCount = displayedTasks.filter(t => t.status !== 'completed').length;
+  if (todoCount) {
+    todoCount.textContent = pendingCount;
+  }
+  
+  // Show section
+  todoSection.classList.remove('hidden');
+  
+  // Render tasks
+  if (displayedTasks.length === 0) {
+    todoList.innerHTML = '<div class="todo-empty">暫無任務，點擊上方按鈕新增</div>';
+    return;
+  }
+  
+  todoList.innerHTML = displayedTasks.map(task => {
+    // 狀態標籤：已展開 or 待處理
+    const statusLabel = task.cardId 
+      ? '<span class="todo-status expanded">已展開</span>' 
+      : '<span class="todo-status pending">待處理</span>';
+    
+    // 功能推薦 badges
+    const featureBadges = (task.suggestedFeatures || []).map(f => {
+      const featureMap = {
+        search: { icon: '🔍', label: '搜尋' },
+        image: { icon: '🎨', label: '製圖' },
+        vision: { icon: '👁', label: '視覺' }
+      };
+      const feature = featureMap[f];
+      return feature ? `<span class="todo-feature-badge" data-feature="${f}" title="${feature.label}">${feature.icon}</span>` : '';
+    }).join('');
+    
+    return `
+    <div class="todo-item ${task.cardId ? 'has-card' : ''}" data-task-id="${task.id}">
+      <div class="todo-branch-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="18" cy="18" r="3"></circle>
+          <circle cx="6" cy="6" r="3"></circle>
+          <path d="M6 21V9a6 6 0 0 0 6 6h3"></path>
+        </svg>
+      </div>
+      <div class="todo-body">
+        <div class="todo-content" data-task-id="${task.id}">${escapeHtml(task.content)}</div>
+        <div class="todo-meta">
+          <span class="todo-priority ${task.priority}">${task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}</span>
+          ${featureBadges}
+          ${statusLabel}
+        </div>
+      </div>
+      <div class="todo-actions">
+        <button class="todo-action-btn edit-btn" data-task-id="${task.id}" title="編輯">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+          </svg>
+        </button>
+        <button class="todo-action-btn delete-btn" data-task-id="${task.id}" title="刪除">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  `;
+  }).join('');
+  
+  // Add event listeners
+  setupTodoEventListeners();
+}
+
+// Setup event listeners for todo items
+function setupTodoEventListeners() {
+  // 點擊整個任務列展開討論（排除按鈕區域）
+  todoList.querySelectorAll('.todo-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      // 如果點擊的是按鈕區域，不觸發展開
+      if (e.target.closest('.todo-actions') || e.target.closest('.edit-btn') || e.target.closest('.delete-btn')) {
+        return;
+      }
+      const taskId = item.dataset.taskId;
+      expandTaskToCard(taskId);
+    });
+  });
+  
+  // Edit task
+  todoList.querySelectorAll('.edit-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const taskId = btn.dataset.taskId;
+      editTask(taskId);
+    });
+  });
+  
+  // Delete task
+  todoList.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const taskId = btn.dataset.taskId;
+      deleteTask(taskId);
+    });
+  });
+}
+
+// Toggle task completion status
+function toggleTaskStatus(taskId) {
+  const task = displayedTasks.find(t => t.id === taskId);
+  if (!task) return;
+  
+  task.status = task.status === 'completed' ? 'pending' : 'completed';
+  
+  // Update current card if exists
+  const currentCard = getCurrentCard();
+  if (currentCard) {
+    const cardTask = currentCard.tasks.find(t => t.id === taskId);
+    if (cardTask) cardTask.status = task.status;
+  }
+  
+  renderTodoSection(displayedTasks);
+}
+
+// Edit task content
+function editTask(taskId) {
+  const task = displayedTasks.find(t => t.id === taskId);
+  if (!task) return;
+  
+  const todoItem = todoList.querySelector(`[data-task-id="${taskId}"].todo-item`);
+  const contentEl = todoItem?.querySelector('.todo-content');
+  if (!contentEl) return;
+  
+  // Replace content with textarea
+  const currentContent = task.content;
+  contentEl.innerHTML = `<textarea class="todo-content-edit" data-task-id="${taskId}">${escapeHtml(currentContent)}</textarea>`;
+  
+  const textarea = contentEl.querySelector('textarea');
+  textarea.focus();
+  textarea.select();
+  
+  // Save on blur or Enter
+  const saveEdit = () => {
+    const newContent = textarea.value.trim();
+    if (newContent && newContent !== currentContent) {
+      task.content = newContent;
+      // Update current card if exists
+      const currentCard = getCurrentCard();
+      if (currentCard) {
+        const cardTask = currentCard.tasks.find(t => t.id === taskId);
+        if (cardTask) cardTask.content = newContent;
+      }
+    }
+    renderTodoSection(displayedTasks);
+  };
+  
+  textarea.addEventListener('blur', saveEdit);
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      saveEdit();
+    }
+    if (e.key === 'Escape') {
+      renderTodoSection(displayedTasks);
+    }
+  });
+}
+
+// Delete task
+function deleteTask(taskId) {
+  displayedTasks = displayedTasks.filter(t => t.id !== taskId);
+  
+  // Update current card if exists
+  const currentCard = getCurrentCard();
+  if (currentCard) {
+    currentCard.tasks = currentCard.tasks.filter(t => t.id !== taskId);
+  }
+  
+  renderTodoSection(displayedTasks);
+}
+
+// Add new task manually
+function addTaskManually(content, priority = 'medium') {
+  const newTask = {
+    id: generateId(),
+    content: content.trim(),
+    priority: priority,
+    status: 'pending',
+    cardId: null
+  };
+  
+  displayedTasks.push(newTask);
+  
+  // Update current card if exists
+  const currentCard = getCurrentCard();
+  if (currentCard) {
+    currentCard.tasks.push(newTask);
+  }
+  
+  renderTodoSection(displayedTasks);
+}
+
+// Expand task to a new card
+function expandTaskToCard(taskId) {
+  const task = displayedTasks.find(t => t.id === taskId);
+  if (!task) return;
+  
+  // 如果 task 已有關聯卡片，直接切換過去
+  if (task.cardId && sessionState.cards.has(task.cardId)) {
+    switchToCard(task.cardId, 'right');
+    showToast('已切換至任務卡片');
+    return;
+  }
+  
+  const currentCard = getCurrentCard();
+  
+  if (currentCard && enableTaskPlanner) {
+    // Create child card
+    const newCard = createChildCard(currentCard.id, taskId, task.content);
+    if (newCard) {
+      // 套用任務建議的功能設定
+      if (task.suggestedFeatures && task.suggestedFeatures.length > 0) {
+        const features = task.suggestedFeatures;
+        newCard.settings = {
+          enableSearchMode: features.includes('search'),
+          enableImage: features.includes('image'),
+          visionMode: features.includes('vision')
+        };
+        console.log('[expandTaskToCard] Applied suggested features:', features);
+      }
+      
+      // Switch to new card (this will sync settings to UI)
+      switchToCard(newCard.id, 'right');
+      
+      // Focus input for the new card
+      queryInput.value = task.content;
+      queryInput.focus();
+      
+      // 顯示已套用的功能提示
+      const featureNames = (task.suggestedFeatures || []).map(f => {
+        const map = { search: '網搜', image: '製圖', vision: '視覺' };
+        return map[f];
+      }).filter(Boolean);
+      
+      if (featureNames.length > 0) {
+        showToast(`已建立子卡片，已啟用：${featureNames.join('、')}`);
+      } else {
+        showToast('已建立子卡片，修改問題後按送出');
+      }
+    }
+  } else {
+    // Fallback: just put content in input
+    queryInput.value = task.content;
+    queryInput.focus();
+    task.status = 'in_progress';
+    renderTodoSection(displayedTasks);
+    showToast('已將任務帶入輸入框，按送出開始新對話');
+  }
+}
+
+// Hide todo section
+function hideTodoSection() {
+  if (todoSection) {
+    todoSection.classList.add('hidden');
+  }
+  displayedTasks = [];
+}
+
+// ============================================
+// Card System & Carousel Functions
+// ============================================
+
+// Current carousel state
+let carouselCurrentIndex = 0;
+let siblingCards = []; // All cards for carousel display
+
+// 追蹤每張卡片的執行狀態 (並行 Council 支援)
+const cardExecutionState = new Map(); // cardId -> { isRunning: boolean }
+
+// Switch to a specific card
+function switchToCard(cardId, direction = 'right') {
+  console.log('[switchToCard] Switching to card:', cardId);
+  const card = sessionState.cards.get(cardId);
+  if (!card) {
+    console.log('[switchToCard] Card not found!');
+    return;
+  }
+  
+  // Update session state
+  sessionState.currentCardId = cardId;
+  
+  // Update breadcrumb
+  updateBreadcrumb(cardId);
+  
+  // Load card data into UI
+  loadCardIntoUI(card);
+  
+  // Update carousel
+  updateSiblingCards();
+  renderCarousel();
+  
+  // 更新按鈕狀態（並行執行支援）
+  console.log('[switchToCard] Calling updateSendButtonForCurrentCard');
+  updateSendButtonForCurrentCard();
+  console.log('[switchToCard] Button state after update:', sendBtn.disabled, sendBtn.innerHTML);
+}
+
+// Update breadcrumb based on current card
+function updateBreadcrumb(cardId) {
+  const card = sessionState.cards.get(cardId);
+  if (!card) return;
+  
+  // Build path from root to current
+  const path = [];
+  let current = card;
+  while (current) {
+    path.unshift(current.id);
+    current = current.parentId ? sessionState.cards.get(current.parentId) : null;
+  }
+  
+  sessionState.breadcrumb = path;
+  renderBreadcrumb();
+}
+
+// Render breadcrumb navigation
+function renderBreadcrumb() {
+  if (!breadcrumbNav || !breadcrumbPath) return;
+  
+  // Show/hide breadcrumb based on card count
+  const cardCount = sessionState.cards.size;
+  if (cardCount <= 1) {
+    breadcrumbNav.classList.add('hidden');
+    return;
+  }
+  
+  breadcrumbNav.classList.remove('hidden');
+  
+  // Render path
+  const items = sessionState.breadcrumb.map((cardId, index) => {
+    const card = sessionState.cards.get(cardId);
+    if (!card) return '';
+    
+    const isLast = index === sessionState.breadcrumb.length - 1;
+    const isRoot = index === 0;
+    
+    // 根節點顯示 session 名稱（如果有），否則顯示截斷的 query
+    let title;
+    if (isRoot && sessionState.name) {
+      title = sessionState.name;
+    } else {
+      title = card.query.slice(0, 20) + (card.query.length > 20 ? '...' : '');
+    }
+    
+    return `
+      <div class="breadcrumb-item">
+        ${index > 0 ? '<span class="breadcrumb-separator">/</span>' : ''}
+        <button class="breadcrumb-link ${isLast ? 'current' : ''} ${isRoot ? 'root' : ''}" 
+                data-card-id="${cardId}" 
+                title="${escapeHtml(card.query)}">
+          ${escapeHtml(title)}
+        </button>
+      </div>
+    `;
+  }).join('');
+  
+  breadcrumbPath.innerHTML = items;
+  
+  // Update indicators
+  const currentCard = getCurrentCard();
+  if (cardDepthIndicator) {
+    cardDepthIndicator.textContent = `深度: ${currentCard?.depth || 0}`;
+  }
+  if (cardCountIndicator) {
+    const cardCountText = cardCountIndicator.querySelector('#cardCountText');
+    if (cardCountText) {
+      cardCountText.textContent = `${cardCount} 張卡片`;
+    }
+  }
+  
+  // Add click handlers
+  breadcrumbPath.querySelectorAll('.breadcrumb-link').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetCardId = btn.dataset.cardId;
+      if (targetCardId !== sessionState.currentCardId) {
+        switchToCard(targetCardId, 'left');
+      }
+    });
+  });
+}
+
+// Update sibling cards for carousel - now shows ALL cards with hierarchy
+function updateSiblingCards() {
+  const currentCard = getCurrentCard();
+  if (!currentCard) {
+    siblingCards = [];
+    return;
+  }
+  
+  // 取得所有卡片，按深度排序，同深度按時間排序
+  siblingCards = Array.from(sessionState.cards.values())
+    .sort((a, b) => a.depth - b.depth || a.timestamp - b.timestamp);
+  
+  // Find current index
+  carouselCurrentIndex = siblingCards.findIndex(c => c.id === currentCard.id);
+  if (carouselCurrentIndex === -1) carouselCurrentIndex = 0;
+}
+
+// Render carousel
+function renderCarousel() {
+  if (!cardCarousel || !carouselTrack) return;
+  
+  // Show/hide carousel
+  if (siblingCards.length <= 1) {
+    cardCarousel.classList.add('hidden');
+    return;
+  }
+  
+  cardCarousel.classList.remove('hidden');
+  
+  // 計算最大深度用於漸層底色
+  const maxDepth = Math.max(...siblingCards.map(c => c.depth), 0);
+  
+  // Render slides
+  carouselTrack.innerHTML = siblingCards.map((card, index) => {
+    const taskCount = card.tasks?.length || 0;
+    const isActive = index === carouselCurrentIndex;
+    const isRunning = cardExecutionState.get(card.id)?.isRunning;
+    
+    // 深度越淺底色越深：depth 0 = 0.15, 逐層變淺
+    const bgOpacity = maxDepth > 0 
+      ? 0.15 - (card.depth / (maxDepth + 1)) * 0.10 
+      : 0.15;
+    
+    return `
+      <div class="carousel-slide ${isActive ? 'active' : ''}" data-index="${index}">
+        <div class="carousel-card ${isActive ? 'active' : ''} ${isRunning ? 'running' : ''}" 
+             data-card-id="${card.id}"
+             data-depth="${card.depth}"
+             style="--depth-bg-opacity: ${bgOpacity}">
+          <div class="carousel-card-header">
+            <span class="carousel-card-title">${escapeHtml(card.query.slice(0, 30))}${card.query.length > 30 ? '...' : ''}</span>
+            <span class="carousel-card-depth">L${card.depth}</span>
+          </div>
+          ${card.finalAnswer ? `<div class="carousel-card-query">${escapeHtml(card.finalAnswer.slice(0, 50))}...</div>` : ''}
+          <div class="carousel-card-meta">
+            ${taskCount > 0 ? `<span class="carousel-card-tasks"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/></svg>${taskCount}</span>` : ''}
+            <span>${formatRelativeTime(card.timestamp)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // Update track position
+  carouselTrack.style.transform = `translateX(-${carouselCurrentIndex * 100}%)`;
+  
+  // Update navigation buttons
+  if (carouselPrev) carouselPrev.disabled = carouselCurrentIndex === 0;
+  if (carouselNext) carouselNext.disabled = carouselCurrentIndex >= siblingCards.length - 1;
+  
+  // Render indicators
+  if (carouselIndicators) {
+    carouselIndicators.innerHTML = siblingCards.map((_, index) => `
+      <button class="carousel-dot ${index === carouselCurrentIndex ? 'active' : ''}" 
+              data-index="${index}"></button>
+    `).join('');
+    
+    // Add indicator click handlers
+    carouselIndicators.querySelectorAll('.carousel-dot').forEach(dot => {
+      dot.addEventListener('click', () => {
+        const index = parseInt(dot.dataset.index);
+        navigateCarousel(index);
+      });
+    });
+  }
+  
+  // Add card click handlers
+  carouselTrack.querySelectorAll('.carousel-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const cardId = card.dataset.cardId;
+      if (cardId !== sessionState.currentCardId) {
+        switchToCard(cardId);
+      }
+    });
+  });
+}
+
+// Navigate carousel
+function navigateCarousel(targetIndex) {
+  if (targetIndex < 0 || targetIndex >= siblingCards.length) return;
+  
+  const direction = targetIndex > carouselCurrentIndex ? 'right' : 'left';
+  carouselCurrentIndex = targetIndex;
+  
+  const targetCard = siblingCards[targetIndex];
+  if (targetCard) {
+    switchToCard(targetCard.id, direction);
+  }
+}
+
+// Load card data into UI
+function loadCardIntoUI(card) {
+  if (!card) return;
+  
+  console.log('[loadCardIntoUI] Loading card:', card.id, 'hasAnswer:', !!card.finalAnswer);
+  
+  // Set query input
+  queryInput.value = card.query || '';
+  
+  // 同步卡片的功能設定到 UI toggles
+  if (card.settings) {
+    syncCardSettingsToUI(card.settings);
+  }
+  
+  // Render tasks
+  if (card.tasks && card.tasks.length > 0) {
+    renderTodoSection(card.tasks);
+  } else {
+    hideTodoSection();
+  }
+  
+  // 檢查卡片是否正在執行
+  const isRunning = cardExecutionState.get(card.id)?.isRunning;
+  
+  if (isRunning) {
+    // 卡片正在執行中，顯示執行中狀態
+    console.log('[loadCardIntoUI] Card is running, showing executing state');
+    emptyState.classList.add('hidden');
+    stage1Section.classList.remove('hidden');
+    stage3Section.classList.remove('hidden');
+    
+    // 顯示執行中提示
+    const finalAnswerEl = document.getElementById('finalAnswer');
+    if (finalAnswerEl) {
+      finalAnswerEl.innerHTML = `
+        <div class="loading-indicator">
+          <div class="loading-dots"><span></span><span></span><span></span></div>
+          <span class="loading-text">此卡片正在執行 Council...</span>
+        </div>
+      `;
+    }
+    return;
+  }
+  
+  // 根據卡片狀態更新 UI
+  if (card.finalAnswer) {
+    // === 已完成的卡片 ===
+    emptyState.classList.add('hidden');
+    
+    // Stage 1: 顯示已完成狀態
+    stage1Section.classList.remove('hidden');
+    stage1Section.classList.add('collapsed');
+    stage1Status.textContent = '完成';
+    stage1Status.className = 'stage-status done';
+    document.getElementById('stage1Content').classList.remove('expanded');
+    
+    // 如果有保存的 responses，渲染它們
+    if (card.responses && card.responses.length > 0) {
+      renderSavedResponses(card.responses);
+    }
+    
+    // Stage 2: 根據是否有審查結果顯示
+    if (enableReview) {
+      stage2Section.classList.remove('hidden', 'stage-skipped');
+      stage2Section.classList.add('collapsed');
+      stage2Status.textContent = '完成';
+      stage2Status.className = 'stage-status done';
+      document.getElementById('stage2Content').classList.remove('expanded');
+    } else {
+      stage2Section.classList.add('stage-skipped');
+      stage2Status.textContent = '已跳過';
+    }
+    
+    // Stage 3: 顯示結論
+    stage3Section.classList.remove('hidden');
+    stage3Section.classList.add('collapsed');
+    stage3Status.textContent = '完成';
+    stage3Status.className = 'stage-status done';
+    document.getElementById('stage3Content').classList.add('expanded');
+    
+    // Render final answer
+    const finalAnswerEl = document.getElementById('finalAnswer');
+    if (finalAnswerEl) {
+      const displayContent = enableTaskPlanner ? extractFinalAnswerDisplay(card.finalAnswer) : card.finalAnswer;
+      finalAnswerEl.innerHTML = `
+        <div class="chairman-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+          ${getModelName(chairmanModel)}
+        </div>
+        <div class="response-content">${parseMarkdown(displayContent)}</div>
+      `;
+    }
+    
+    // 更新 stepper
+    setAllStepsDone();
+    
+    // 顯示匯出按鈕
+    exportBtn.style.display = 'flex';
+    
+  } else {
+    // === 未完成的卡片（空白或新建） ===
+    emptyState.classList.remove('hidden');
+    
+    // 隱藏所有 stages
+    stage1Section.classList.add('hidden');
+    stage2Section.classList.add('hidden');
+    if (stage25Section) stage25Section.classList.add('hidden');
+    stage3Section.classList.add('hidden');
+    
+    // 重設 stage 狀態
+    stage1Status.textContent = '';
+    stage1Status.className = 'stage-status';
+    stage2Status.textContent = '';
+    stage2Status.className = 'stage-status';
+    stage3Status.textContent = '';
+    stage3Status.className = 'stage-status';
+    
+    // 清空內容
+    const finalAnswerEl = document.getElementById('finalAnswer');
+    if (finalAnswerEl) finalAnswerEl.innerHTML = '';
+    
+    // 隱藏 stepper
+    hideStepper();
+    
+    // 隱藏匯出按鈕
+    exportBtn.style.display = 'none';
+  }
+}
+
+// 渲染已保存的 responses（用於切換卡片時）
+function renderSavedResponses(savedResponses) {
+  if (!savedResponses || savedResponses.length === 0) return;
+  
+  // 重建 responses Map
+  responses.clear();
+  savedResponses.forEach(r => {
+    responses.set(r.model, { 
+      content: r.content, 
+      status: 'done', 
+      latency: r.latency || 0,
+      images: r.images || []
+    });
+  });
+  
+  // 渲染 tabs 和 panels
+  renderTabs();
+  renderResponsePanels();
+  
+  // 設定第一個 tab 為 active
+  if (savedResponses.length > 0) {
+    setActiveTab(savedResponses[0].model);
+  }
+}
+
+// Format relative time
+function formatRelativeTime(timestamp) {
+  const now = Date.now();
+  const diff = now - timestamp;
+  
+  if (diff < 60000) return '剛剛';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}分鐘前`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小時前`;
+  return new Date(timestamp).toLocaleDateString('zh-TW');
+}
+
+// Create child card from task
+function createChildCard(parentId, taskId, query) {
+  const parentCard = sessionState.cards.get(parentId);
+  if (!parentCard) return null;
+  
+  // 檢查深度限制
+  if (parentCard.depth >= maxCardDepth) {
+    showToast(`已達最大深度 L${maxCardDepth}，無法再展開子任務`);
+    return null;
+  }
+  
+  // Find and update task
+  const task = parentCard.tasks.find(t => t.id === taskId);
+  if (task) {
+    task.status = 'in_progress';
+  }
+  
+  // Create new card
+  const newCard = createCard(parentId, query);
+  
+  // Link task to card
+  if (task) {
+    task.cardId = newCard.id;
+  }
+  
+  // 如果這是第一個子卡片且 session 尚未命名，觸發 AI 命名
+  if (!sessionState.name && parentCard.id === sessionState.rootCardId) {
+    generateSessionName(parentCard.query).then(name => {
+      if (name) {
+        sessionState.name = name;
+        renderBreadcrumb(); // 更新顯示
+        saveSession(); // 儲存 session 名稱
+      }
+    });
+  }
+  
+  // Update displays
+  renderTodoSection(parentCard.tasks);
+  renderBreadcrumb();
+  renderCarousel();
+  
+  return newCard;
+}
+
+// Initialize card system event listeners
+function setupCardSystemListeners() {
+  // Breadcrumb home button
+  if (breadcrumbHome) {
+    breadcrumbHome.addEventListener('click', () => {
+      if (sessionState.rootCardId) {
+        switchToCard(sessionState.rootCardId, 'left');
+      }
+    });
+  }
+  
+  // Carousel navigation
+  if (carouselPrev) {
+    carouselPrev.addEventListener('click', () => {
+      navigateCarousel(carouselCurrentIndex - 1);
+    });
+  }
+  
+  if (carouselNext) {
+    carouselNext.addEventListener('click', () => {
+      navigateCarousel(carouselCurrentIndex + 1);
+    });
+  }
+  
+  // Card count indicator - click to open Canvas with tree view
+  if (cardCountIndicator) {
+    cardCountIndicator.addEventListener('click', () => {
+      openCanvasWithTreeView();
+    });
+  }
+}
+
+// Open Canvas with tree view auto-expanded
+function openCanvasWithTreeView() {
+  // 先儲存 session，確保 Canvas 能讀取最新資料
+  if (sessionState.id) {
+    saveSession();
+  }
+  
+  // 設定標記讓 Canvas 自動開啟樹狀圖
+  chrome.storage.local.set({ canvasOpenTreeView: true }, () => {
+    openCanvas(false);
+  });
+}
 
 // DOM Elements
 const queryInput = document.getElementById('queryInput');
@@ -295,6 +1332,29 @@ const branchImageBtn = document.getElementById('branchImageBtn');
 const branchVisionBtn = document.getElementById('branchVisionBtn');
 const branchCanvasBtn = document.getElementById('branchCanvasBtn');
 
+// Task Planner / TODO elements
+const todoSection = document.getElementById('todoSection');
+const todoCount = document.getElementById('todoCount');
+const todoList = document.getElementById('todoList');
+const addTaskBtn = document.getElementById('addTaskBtn');
+const addTaskForm = document.getElementById('addTaskForm');
+const newTaskInput = document.getElementById('newTaskInput');
+const newTaskPriority = document.getElementById('newTaskPriority');
+const confirmAddTask = document.getElementById('confirmAddTask');
+const cancelAddTask = document.getElementById('cancelAddTask');
+
+// Breadcrumb & Carousel elements
+const breadcrumbNav = document.getElementById('breadcrumbNav');
+const breadcrumbHome = document.getElementById('breadcrumbHome');
+const breadcrumbPath = document.getElementById('breadcrumbPath');
+const cardDepthIndicator = document.getElementById('cardDepthIndicator');
+const cardCountIndicator = document.getElementById('cardCountIndicator');
+const cardCarousel = document.getElementById('cardCarousel');
+const carouselPrev = document.getElementById('carouselPrev');
+const carouselNext = document.getElementById('carouselNext');
+const carouselTrack = document.getElementById('carouselTrack');
+const carouselIndicators = document.getElementById('carouselIndicators');
+
 // Vision Council elements
 const visionToggle = document.getElementById('visionToggle');
 const visionUploadSection = document.getElementById('visionUploadSection');
@@ -324,10 +1384,18 @@ const costImageGen = document.getElementById('costImageGen');
 // Stage elements
 const stage1Section = document.getElementById('stage1Section');
 const stage2Section = document.getElementById('stage2Section');
+const stage25Section = document.getElementById('stage25Section');
 const stage3Section = document.getElementById('stage3Section');
 const modelTabs = document.getElementById('modelTabs');
 const responseContainer = document.getElementById('responseContainer');
 const reviewResults = document.getElementById('reviewResults');
+
+// Stage 2.5 elements
+const stage25Status = document.getElementById('stage25Status');
+const stage25Summary = document.getElementById('stage25Summary');
+const searchSuggestionList = document.getElementById('searchSuggestionList');
+const executeSearchBtn = document.getElementById('executeSearchBtn');
+const skipSearchBtn = document.getElementById('skipSearchBtn');
 const finalAnswer = document.getElementById('finalAnswer');
 const stage1Status = document.getElementById('stage1Status');
 const stage2Status = document.getElementById('stage2Status');
@@ -623,6 +1691,7 @@ async function loadSettings() {
     chairmanModel: 'anthropic/claude-sonnet-4.5', 
     enableReview: true,
     maxSearchIterations: 5,
+    maxCardDepth: 3,
     reviewPrompt: DEFAULT_REVIEW_PROMPT,
     chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT,
     outputLength: 'standard',
@@ -632,6 +1701,7 @@ async function loadSettings() {
   chairmanModel = result.chairmanModel;
   enableReview = result.enableReview;
   maxSearchIterations = result.maxSearchIterations || 5;
+  maxCardDepth = result.maxCardDepth || 3;
   customReviewPrompt = result.reviewPrompt || DEFAULT_REVIEW_PROMPT;
   customChairmanPrompt = result.chairmanPrompt || DEFAULT_CHAIRMAN_PROMPT;
   outputLength = result.outputLength || 'standard';
@@ -684,7 +1754,10 @@ function setupEventListeners() {
   autoGrowTextarea(); // Initial sizing
 
   // Image toggle
-  imageToggle.addEventListener('change', () => { enableImage = imageToggle.checked; });
+  imageToggle.addEventListener('change', () => { 
+    enableImage = imageToggle.checked;
+    updateCurrentCardSettings();
+  });
 
   // Vision toggle
   if (visionToggle) {
@@ -705,6 +1778,7 @@ function setupEventListeners() {
         }
         clearUploadedImage();
       }
+      updateCurrentCardSettings();
     });
   }
 
@@ -789,6 +1863,7 @@ function setupEventListeners() {
     if (!enableSearchMode) {
       searchStrategySection.classList.add('hidden');
     }
+    updateCurrentCardSettings();
   });
 
   // Custom search button (用按鈕啟動，不用 enter)
@@ -831,6 +1906,55 @@ function setupEventListeners() {
     branchVisionBtn.addEventListener('click', handleBranchVision);
   }
   branchCanvasBtn.addEventListener('click', () => openCanvas(false));
+
+  // Task Planner buttons
+  if (addTaskBtn) {
+    addTaskBtn.addEventListener('click', () => {
+      addTaskForm.classList.remove('hidden');
+      newTaskInput.value = '';
+      newTaskInput.focus();
+    });
+  }
+  
+  if (confirmAddTask) {
+    confirmAddTask.addEventListener('click', () => {
+      const content = newTaskInput.value.trim();
+      if (content) {
+        const priority = newTaskPriority.value || 'medium';
+        addTaskManually(content, priority);
+        addTaskForm.classList.add('hidden');
+        newTaskInput.value = '';
+      }
+    });
+  }
+  
+  if (cancelAddTask) {
+    cancelAddTask.addEventListener('click', () => {
+      addTaskForm.classList.add('hidden');
+      newTaskInput.value = '';
+    });
+  }
+  
+  if (newTaskInput) {
+    newTaskInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        confirmAddTask?.click();
+      }
+      if (e.key === 'Escape') {
+        cancelAddTask?.click();
+      }
+    });
+  }
+
+  // Card system listeners
+  setupCardSystemListeners();
+  
+  // New conversation modal listeners
+  setupNewConvModalListeners();
+  
+  // Stage 2.5 search suggestion listeners
+  setupStage25Listeners();
 
   // Toggle stage sections (accordion mode - only one expanded at a time)
   document.querySelectorAll('.toggle-btn').forEach(btn => {
@@ -1072,13 +2196,59 @@ async function handleWebSearchFromContext() {
 // Search Strategy Functions
 // ============================================
 
+// Execute multiple searches and return results
+async function executeMultipleSearches(queries) {
+  const results = [];
+  
+  for (let i = 0; i < queries.length; i++) {
+    const query = queries[i];
+    
+    // 更新搜尋進度
+    if (stage25Status) {
+      stage25Status.textContent = `搜尋中 (${i + 1}/${queries.length})...`;
+    }
+    
+    // 非首次請求，等待 1.1 秒避免 Brave API rate limit (1 req/sec)
+    if (i > 0) {
+      await new Promise(resolve => setTimeout(resolve, 1100));
+    }
+    
+    try {
+      const searchResponse = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: query.trim() });
+      
+      if (searchResponse.error) {
+        console.warn(`Search failed for "${query}":`, searchResponse.error);
+        continue;
+      }
+      
+      if (searchResponse.results && searchResponse.results.length > 0) {
+        results.push({
+          query: query,
+          results: searchResponse.results.slice(0, 3).map(r => ({
+            title: r.title,
+            url: r.url,
+            snippet: r.description || r.snippet || ''
+          }))
+        });
+      }
+    } catch (err) {
+      console.error(`Search error for "${query}":`, err);
+    }
+  }
+  
+  return results;
+}
+
 function parseSearchQueries(content) {
   try {
-    // Look for JSON block with search_queries
-    const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?"search_queries"[\s\S]*?\})\s*```/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[1]);
-      return parsed.search_queries || [];
+    // 更精確的匹配：找到包含 search_queries 但不包含 tasks 的 JSON 區塊
+    const blocks = content.match(/```(?:json)?\s*(\{[^`]*?\})\s*```/g) || [];
+    for (const block of blocks) {
+      if (block.includes('search_queries') && !block.includes('"tasks"')) {
+        const jsonStr = block.replace(/```(?:json)?\s*|\s*```/g, '');
+        const parsed = JSON.parse(jsonStr);
+        return parsed.search_queries || [];
+      }
     }
     return [];
   } catch (e) {
@@ -1090,6 +2260,136 @@ function parseSearchQueries(content) {
 function extractFinalAnswer(content) {
   // Remove the search_queries JSON block from the content
   return content.replace(/```(?:json)?\s*\{[\s\S]*?"search_queries"[\s\S]*?\}\s*```/g, '').trim();
+}
+
+// ============================================
+// Stage 2.5: Search Suggestions Flow
+// ============================================
+
+// State for Stage 2.5
+let stage25SearchQueries = []; // Consolidated search queries
+let stage25Resolver = null;   // Promise resolver for user action
+
+// Extract search queries from all model responses
+function extractAllSearchSuggestions(responsesMap) {
+  const suggestions = [];
+  responsesMap.forEach((response, model) => {
+    const queries = parseSearchQueries(response.content || '');
+    if (queries.length > 0) {
+      suggestions.push({
+        model: model,
+        modelName: getModelName(model),
+        queries: queries
+      });
+    }
+  });
+  return suggestions;
+}
+
+// Render Stage 2.5 search suggestions UI
+function renderStage25Suggestions(allSuggestions) {
+  if (!searchSuggestionList) return;
+  
+  // Flatten and deduplicate queries
+  const queryMap = new Map();
+  allSuggestions.forEach(s => {
+    s.queries.forEach(q => {
+      if (!queryMap.has(q.toLowerCase())) {
+        queryMap.set(q.toLowerCase(), { query: q, sources: [s.modelName] });
+      } else {
+        queryMap.get(q.toLowerCase()).sources.push(s.modelName);
+      }
+    });
+  });
+  
+  const uniqueQueries = Array.from(queryMap.values());
+  stage25SearchQueries = uniqueQueries.map(q => q.query);
+  
+  if (uniqueQueries.length === 0) {
+    searchSuggestionList.innerHTML = '<div class="no-suggestions">各模型未提供搜尋建議</div>';
+    return;
+  }
+  
+  searchSuggestionList.innerHTML = uniqueQueries.map((item, i) => `
+    <div class="search-suggestion-item">
+      <input type="checkbox" id="searchSug${i}" value="${escapeAttr(item.query)}">
+      <label for="searchSug${i}">${escapeHtml(item.query)}</label>
+      <span class="search-suggestion-source">${item.sources.slice(0, 2).join(', ')}</span>
+    </div>
+  `).join('');
+}
+
+// Get selected search queries from Stage 2.5 UI
+function getSelectedSearchQueries() {
+  if (!searchSuggestionList) return [];
+  const checkboxes = searchSuggestionList.querySelectorAll('input[type="checkbox"]:checked');
+  return Array.from(checkboxes).map(cb => cb.value);
+}
+
+// Show Stage 2.5 and wait for user action
+async function showStage25AndWaitForAction(allSuggestions) {
+  return new Promise((resolve) => {
+    stage25Resolver = resolve;
+    
+    // Show stage 2.5
+    stage25Section.classList.remove('hidden');
+    stage25Status.textContent = '等待選擇';
+    stage25Status.className = 'stage-status';
+    
+    // Render suggestions
+    renderStage25Suggestions(allSuggestions);
+    
+    // Update summary
+    const totalQueries = allSuggestions.reduce((sum, s) => sum + s.queries.length, 0);
+    if (stage25Summary) {
+      stage25Summary.textContent = `${allSuggestions.length} 個模型提供 ${totalQueries} 個建議`;
+    }
+  });
+}
+
+// Handle Stage 3 execute search button
+function handleStage25ExecuteSearch() {
+  if (!stage25Resolver) return;
+  
+  const selectedQueries = getSelectedSearchQueries();
+  
+  // 驗證選擇數量
+  if (selectedQueries.length === 0) {
+    showToast('請至少選擇一個搜尋關鍵字');
+    return;
+  }
+  if (selectedQueries.length > 3) {
+    showToast('最多選擇 3 個關鍵字');
+    return;
+  }
+  
+  stage25Status.textContent = '搜尋中...';
+  stage25Status.className = 'stage-status loading';
+  
+  stage25Resolver({ action: 'search', queries: selectedQueries });
+  stage25Resolver = null;
+}
+
+// Handle Stage 2.5 skip button
+function handleStage25Skip() {
+  if (!stage25Resolver) return;
+  
+  stage25Status.textContent = '已跳過';
+  stage25Status.className = 'stage-status done';
+  stage25Section.classList.add('collapsed');
+  
+  stage25Resolver({ action: 'skip', queries: [] });
+  stage25Resolver = null;
+}
+
+// Setup Stage 2.5 event listeners
+function setupStage25Listeners() {
+  if (executeSearchBtn) {
+    executeSearchBtn.addEventListener('click', handleStage25ExecuteSearch);
+  }
+  if (skipSearchBtn) {
+    skipSearchBtn.addEventListener('click', handleStage25Skip);
+  }
 }
 
 function updateSearchIterationCounter() {
@@ -1420,6 +2720,9 @@ ${discussionContext.slice(0, 2000)}${discussionContext.length > 2000 ? '...(已�
 }
 
 async function runCouncilIteration() {
+  // 記錄執行開始時的卡片 ID
+  const iterationCardId = sessionState.currentCardId;
+  
   // Clear previous responses but keep context
   responses.clear();
   reviews.clear();
@@ -1534,7 +2837,8 @@ async function runCouncilIteration() {
     `;
     
     try {
-      finalAnswerContent = await runChairman(currentQuery, successfulResponses, aggregatedRanking, enableSearchMode);
+      // runCouncilIteration doesn't use Stage 2.5 search, so pass null
+      finalAnswerContent = await runChairman(currentQuery, successfulResponses, aggregatedRanking, enableSearchMode, iterationCardId, null);
       
       stage3Status.textContent = '完成';
       stage3Status.classList.remove('loading');
@@ -1741,7 +3045,20 @@ function buildPromptWithContext(query) {
   // Get output style instructions
   const styleInstructions = getOutputStyleInstructions();
   
+  // 取得當前卡片的繼承脈絡
+  const currentCard = getCurrentCard();
+  const inheritedContext = currentCard?.inheritedContext || '';
+  
+  // 構建脈絡前綴
+  let contextPrefix = '';
+  if (inheritedContext) {
+    contextPrefix = `[上層脈絡]\n${inheritedContext}\n\n---\n\n`;
+  }
+  
   if (contextItems.length === 0) {
+    if (inheritedContext) {
+      return `${contextPrefix}問題：${query}${styleInstructions}`;
+    }
     return query + styleInstructions;
   }
   
@@ -1757,7 +3074,7 @@ function buildPromptWithContext(query) {
     ? `\n\n**重要**: 回答時請使用 [1]、[2] 等編號標註引用來源。`
     : '';
   
-  return `以下是參考資料：
+  return `${contextPrefix}以下是參考資料：
 
 ${contextText}
 
@@ -2427,8 +3744,47 @@ async function copyImageToClipboard(src) {
 // ============================================
 // History Functions
 // ============================================
-// Start New Chat - Reset all state and clear context
-async function startNewChat() {
+
+// New Conversation Modal elements
+const newConvModal = document.getElementById('newConvModal');
+const closeNewConvModal = document.getElementById('closeNewConvModal');
+const cancelNewConv = document.getElementById('cancelNewConv');
+const confirmNewConv = document.getElementById('confirmNewConv');
+
+// Show new conversation modal
+function showNewConvModal() {
+  // 如果沒有正在進行的 session，直接開始新對話
+  if (!enableTaskPlanner || !sessionState.id || sessionState.cards.size === 0) {
+    executeNewChat('newSession');
+    return;
+  }
+  
+  newConvModal.classList.remove('hidden');
+}
+
+// Hide new conversation modal
+function hideNewConvModal() {
+  newConvModal.classList.add('hidden');
+}
+
+// Start New Chat - Show modal or execute directly
+function startNewChat() {
+  showNewConvModal();
+}
+
+// Execute new chat based on user choice
+async function executeNewChat(type) {
+  hideNewConvModal();
+  
+  if (type === 'newSession') {
+    await executeNewSession();
+  } else if (type === 'newRoot') {
+    executeNewRootCard();
+  }
+}
+
+// Create entirely new session
+async function executeNewSession() {
   // Reset conversation state
   currentConversation = null;
   currentQuery = '';
@@ -2458,12 +3814,21 @@ async function startNewChat() {
   // Reset session cost
   resetSessionCost();
   
+  // Reset task planner state
+  initSession();
+  hideTodoSection();
+  
+  // Reset breadcrumb and carousel
+  if (breadcrumbNav) breadcrumbNav.classList.add('hidden');
+  if (cardCarousel) cardCarousel.classList.add('hidden');
+  
   // Reset UI
   queryInput.value = '';
   autoGrowTextarea();
   emptyState.classList.remove('hidden');
   stage1Section.classList.add('hidden');
   stage2Section.classList.add('hidden');
+  if (stage25Section) stage25Section.classList.add('hidden');
   stage3Section.classList.add('hidden');
   canvasSection.classList.add('hidden');
   hideBranchActions();
@@ -2483,6 +3848,92 @@ async function startNewChat() {
   showToast('已開始新對話');
 }
 
+// Create new root card in current session
+function executeNewRootCard() {
+  // Reset UI for new card but keep session
+  currentConversation = null;
+  currentQuery = '';
+  responses.clear();
+  reviews.clear();
+  reviewFailures.clear();
+  activeTab = null;
+  
+  // Reset search mode state
+  searchIteration = 0;
+  currentSearchQueries = [];
+  searchStrategySection.classList.add('hidden');
+  
+  // Reset search iteration mode state
+  pendingSearchKeyword = null;
+  isSearchIterationMode = false;
+  originalQueryBeforeIteration = '';
+  searchIterationHint.classList.add('hidden');
+  sendBtn.classList.remove('next-iteration');
+  
+  // Reset session cost
+  resetSessionCost();
+  
+  // Hide todo section
+  hideTodoSection();
+  
+  // Clear current card reference (will create new root on send)
+  sessionState.currentCardId = null;
+  
+  // Reset UI
+  queryInput.value = '';
+  autoGrowTextarea();
+  emptyState.classList.remove('hidden');
+  stage1Section.classList.add('hidden');
+  stage2Section.classList.add('hidden');
+  if (stage25Section) stage25Section.classList.add('hidden');
+  stage3Section.classList.add('hidden');
+  canvasSection.classList.add('hidden');
+  hideBranchActions();
+  exportBtn.style.display = 'none';
+  errorBanner.classList.add('hidden');
+  hideStepper();
+  clearAllSummaries();
+  
+  // Update breadcrumb to show session name only
+  renderBreadcrumb();
+  updateSiblingCards();
+  renderCarousel();
+  
+  // Close history panel if open
+  if (historyVisible) {
+    historyPanel.classList.add('hidden');
+    historyVisible = false;
+  }
+  
+  // Focus input
+  queryInput.focus();
+  showToast('已準備新增 Root 卡片');
+}
+
+// Setup new conversation modal event listeners
+function setupNewConvModalListeners() {
+  if (closeNewConvModal) {
+    closeNewConvModal.addEventListener('click', hideNewConvModal);
+  }
+  if (cancelNewConv) {
+    cancelNewConv.addEventListener('click', hideNewConvModal);
+  }
+  if (confirmNewConv) {
+    confirmNewConv.addEventListener('click', () => {
+      const selectedType = document.querySelector('input[name="newConvType"]:checked')?.value || 'newSession';
+      executeNewChat(selectedType);
+    });
+  }
+  // Close modal when clicking backdrop
+  if (newConvModal) {
+    newConvModal.addEventListener('click', (e) => {
+      if (e.target === newConvModal) {
+        hideNewConvModal();
+      }
+    });
+  }
+}
+
 async function toggleHistory() {
   historyVisible = !historyVisible;
   if (historyVisible) {
@@ -2499,15 +3950,51 @@ function closeHistory() {
 }
 
 async function renderHistory() {
-  const result = await chrome.storage.local.get('conversations');
-  const conversations = result.conversations || [];
+  const [convResult, sessResult] = await Promise.all([
+    chrome.storage.local.get('conversations'),
+    chrome.storage.local.get('taskSessions')
+  ]);
+  const conversations = convResult.conversations || [];
+  const sessions = sessResult.taskSessions || [];
   
-  if (conversations.length === 0) {
+  if (conversations.length === 0 && sessions.length === 0) {
     historyList.innerHTML = '<div class="history-empty">尚無歷史紀錄</div>';
     return;
   }
 
-  historyList.innerHTML = conversations.map(conv => `
+  // Render sessions first (if any have multiple cards)
+  const sessionsHtml = sessions
+    .filter(s => s.cards && s.cards.length > 1)
+    .map(session => {
+      const rootCard = session.cards.find(c => c.id === session.rootCardId);
+      const query = rootCard?.query || 'Untitled Session';
+      return `
+        <div class="history-item session-item" data-session-id="${session.id}">
+          <div class="history-item-content">
+            <div class="history-query">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;vertical-align:-1px;">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="9" y1="3" x2="9" y2="21"></line>
+              </svg>
+              ${escapeHtml(query)}
+            </div>
+            <div class="history-meta">
+              <span>${formatDate(session.timestamp)}</span>
+              <span>${session.cards.length} 張卡片</span>
+            </div>
+          </div>
+          <button class="history-delete-btn" data-session-id="${session.id}" title="刪除此專案">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
+      `;
+    }).join('');
+
+  // Render regular conversations
+  const convsHtml = conversations.map(conv => `
     <div class="history-item" data-id="${conv.id}">
       <div class="history-item-content">
         <div class="history-query">${escapeHtml(conv.query)}</div>
@@ -2525,19 +4012,30 @@ async function renderHistory() {
     </div>
   `).join('');
 
+  historyList.innerHTML = sessionsHtml + convsHtml;
+
   // 綁定載入對話事件
   historyList.querySelectorAll('.history-item-content').forEach(content => {
+    const item = content.parentElement;
     content.addEventListener('click', () => {
-      const id = content.parentElement.dataset.id;
-      loadConversation(id);
+      if (item.dataset.sessionId) {
+        loadSessionFromHistory(item.dataset.sessionId);
+      } else {
+        loadConversation(item.dataset.id);
+      }
     });
   });
 
   // 綁定刪除事件
   historyList.querySelectorAll('.history-delete-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      deleteConversation(btn.dataset.id);
+      if (btn.dataset.sessionId) {
+        await deleteSession(btn.dataset.sessionId);
+        await renderHistory();
+      } else {
+        deleteConversation(btn.dataset.id);
+      }
     });
   });
 }
@@ -2644,6 +4142,21 @@ async function loadConversation(id) {
     
     stage3Status.textContent = '完成';
     stage3Status.className = 'stage-status done';
+    
+    // 解析並渲染 tasks
+    if (enableTaskPlanner) {
+      const parsedTasks = parseTasksFromResponse(conv.finalAnswer);
+      if (parsedTasks.success && parsedTasks.tasks.length > 0) {
+        renderTodoSection(parsedTasks.tasks);
+      } else {
+        hideTodoSection();
+      }
+    } else {
+      hideTodoSection();
+    }
+  } else {
+    // 沒有 finalAnswer 時也要隱藏 TODO 區塊
+    hideTodoSection();
   }
 
   // Expand all stages for viewing
@@ -2714,6 +4227,132 @@ async function saveCurrentConversation(data) {
     }
   }
   currentConversation = conv;
+  
+  // Also save session if task planner is enabled
+  if (enableTaskPlanner && sessionState.id) {
+    await saveSession();
+  }
+}
+
+// ============================================
+// Session Storage Functions
+// ============================================
+
+// Save current session to storage
+async function saveSession() {
+  if (!sessionState.id) return;
+  
+  // Convert Map to serializable object
+  const cardsArray = Array.from(sessionState.cards.entries()).map(([id, card]) => ({
+    ...card,
+    // Ensure all data is serializable
+  }));
+  
+  const sessionData = {
+    id: sessionState.id,
+    name: sessionState.name,  // 儲存 session 名稱
+    rootCardId: sessionState.rootCardId,
+    currentCardId: sessionState.currentCardId,
+    breadcrumb: sessionState.breadcrumb,
+    cards: cardsArray,
+    contextItemsSnapshot: JSON.parse(JSON.stringify(contextItems)),
+    timestamp: Date.now()
+  };
+  
+  // Save to sessions storage
+  const result = await chrome.storage.local.get('taskSessions');
+  let sessions = result.taskSessions || [];
+  
+  // Update existing or add new
+  const existingIndex = sessions.findIndex(s => s.id === sessionState.id);
+  if (existingIndex >= 0) {
+    sessions[existingIndex] = sessionData;
+  } else {
+    sessions.unshift(sessionData);
+  }
+  
+  // Keep only recent sessions (max 20)
+  if (sessions.length > 20) sessions.length = 20;
+  
+  await safeStorageSet({ taskSessions: sessions });
+}
+
+// Load session from storage
+async function loadSession(sessionId) {
+  const result = await chrome.storage.local.get('taskSessions');
+  const sessions = result.taskSessions || [];
+  const sessionData = sessions.find(s => s.id === sessionId);
+  
+  if (!sessionData) {
+    console.error('Session not found:', sessionId);
+    return false;
+  }
+  
+  // Restore session state
+  sessionState.id = sessionData.id;
+  sessionState.name = sessionData.name || null;  // 還原 session 名稱
+  sessionState.rootCardId = sessionData.rootCardId;
+  sessionState.currentCardId = sessionData.currentCardId;
+  sessionState.breadcrumb = sessionData.breadcrumb || [];
+  
+  // Restore cards Map
+  sessionState.cards.clear();
+  (sessionData.cards || []).forEach(card => {
+    sessionState.cards.set(card.id, card);
+  });
+  
+  // Restore context items
+  if (sessionData.contextItemsSnapshot) {
+    contextItems = sessionData.contextItemsSnapshot;
+    await saveContextItems();
+    renderContextItems();
+    updateContextBadge();
+  }
+  
+  // Switch to current card
+  if (sessionState.currentCardId) {
+    switchToCard(sessionState.currentCardId);
+  }
+  
+  return true;
+}
+
+// Get list of saved sessions for display
+async function getSavedSessions() {
+  const result = await chrome.storage.local.get('taskSessions');
+  return (result.taskSessions || []).map(s => ({
+    id: s.id,
+    rootQuery: s.cards?.find(c => c.id === s.rootCardId)?.query || 'Untitled',
+    cardCount: s.cards?.length || 0,
+    timestamp: s.timestamp
+  }));
+}
+
+// Delete a session
+async function deleteSession(sessionId) {
+  const result = await chrome.storage.local.get('taskSessions');
+  let sessions = result.taskSessions || [];
+  sessions = sessions.filter(s => s.id !== sessionId);
+  await safeStorageSet({ taskSessions: sessions });
+}
+
+// Load session from history panel
+async function loadSessionFromHistory(sessionId) {
+  // Close history panel
+  closeHistory();
+  
+  // Reset UI first
+  emptyState.classList.add('hidden');
+  stage1Section.classList.remove('hidden');
+  stage3Section.classList.remove('hidden');
+  
+  // Load session
+  const loaded = await loadSession(sessionId);
+  if (loaded) {
+    showToast('已載入專案');
+  } else {
+    showToast('載入專案失敗', true);
+  }
 }
 
 async function clearHistory() {
@@ -2870,6 +4509,49 @@ async function handleSend() {
   // Reset session cost for new conversation
   resetSessionCost();
   
+  // Card system: Create or update card
+  let activeCard = getCurrentCard();
+  if (enableTaskPlanner) {
+    if (!sessionState.id) {
+      // Initialize new session
+      initSession();
+    }
+    
+    if (!activeCard || activeCard.finalAnswer) {
+      // Create new card (either first card or new query on completed card)
+      const parentId = activeCard?.id || null;
+      activeCard = createCard(parentId, query);
+      sessionState.currentCardId = activeCard.id;
+      
+      // If this is root card, set it
+      if (!parentId) {
+        sessionState.rootCardId = activeCard.id;
+      }
+    } else {
+      // Update existing card's query
+      activeCard.query = query;
+    }
+    
+    // 防止同一張卡片重複執行
+    if (cardExecutionState.get(activeCard.id)?.isRunning) {
+      showToast('此卡片正在執行中，請等待完成或切換至其他卡片');
+      return;
+    }
+    
+    // 設定執行狀態
+    console.log('[handleSend] Setting execution state for card:', activeCard.id);
+    cardExecutionState.set(activeCard.id, { isRunning: true });
+    console.log('[handleSend] cardExecutionState:', Array.from(cardExecutionState.entries()));
+    updateSiblingCards();
+    renderCarousel(); // 更新 carousel 顯示執行中狀態
+  }
+  
+  // 記錄執行中的卡片 ID（用於 UI 更新檢查）
+  const targetCardId = activeCard?.id || null;
+  
+  // Hide todo section while processing
+  hideTodoSection();
+  
   // Reset search iteration for new query
   searchIteration = 0;
   currentSearchQueries = [];
@@ -2893,6 +4575,10 @@ async function handleSend() {
 
   stage1Section.classList.remove('hidden');
   stage2Section.classList.remove('hidden', 'stage-skipped');
+  if (stage25Section) {
+    stage25Section.classList.add('hidden');
+    stage25Section.classList.remove('collapsed');
+  }
   stage3Section.classList.remove('hidden');
   
   document.getElementById('stage1Content').classList.add('expanded');
@@ -2921,7 +4607,11 @@ async function handleSend() {
     if (councilModels.length > 0) setActiveTab(councilModels[0]);
 
     // Build prompt with context if available
-    const promptWithContext = buildPromptWithContext(query);
+    let promptWithContext = buildPromptWithContext(query);
+    
+    // 總是要求模型提供搜尋建議
+    promptWithContext += COUNCIL_SEARCH_SUFFIX;
+    
     await Promise.allSettled(councilModels.map(model => queryModel(model, promptWithContext)));
     
     const successfulResponses = Array.from(responses.entries())
@@ -2986,6 +4676,61 @@ async function handleSend() {
       setStepSkipped(2);
     }
 
+    // === STAGE 3: Search Suggestions (僅當有建議時顯示) ===
+    let searchResults = null;
+    // 提取所有模型的搜尋建議
+    const allSuggestions = extractAllSearchSuggestions(responses);
+    
+    if (allSuggestions.some(s => s.queries.length > 0)) {
+      // 有搜尋建議，顯示 Stage 3 讓用戶選擇
+      const userAction = await showStage25AndWaitForAction(allSuggestions);
+      
+      if (userAction.action === 'search' && userAction.queries.length > 0) {
+        // Execute search
+        stage25Status.textContent = '搜尋中...';
+        stage25Status.className = 'stage-status loading';
+        
+        try {
+          searchResults = await executeMultipleSearches(userAction.queries.slice(0, 3));
+          searchIteration++;
+          updateSearchIterationCounter();
+          
+          stage25Status.textContent = '完成';
+          stage25Status.className = 'stage-status done';
+          stage25Section.classList.add('collapsed');
+          
+          // Add search results to context
+          if (searchResults && searchResults.length > 0) {
+            const combinedResults = searchResults.map(r => ({
+              title: `搜尋: ${r.query}`,
+              content: r.results.map(item => `${item.title}\n${item.snippet}`).join('\n\n'),
+              url: '',
+              type: 'search'
+            }));
+            
+            combinedResults.forEach(result => {
+              if (contextItems.length < 20) {
+                contextItems.push(result);
+              }
+            });
+            renderContextItems();
+            updateContextBadge();
+          }
+        } catch (searchErr) {
+          console.error('Search failed:', searchErr);
+          stage25Status.textContent = '搜尋失敗';
+          stage25Status.className = 'stage-status error';
+          showToast('搜尋失敗，將繼續生成結論', true);
+        }
+      } else {
+        // User skipped search
+        stage25Section.classList.add('collapsed');
+      }
+    } else {
+      // No suggestions from models, hide stage 3
+      stage25Section.classList.add('hidden');
+    }
+
     // === STAGE 3 ===
     currentStage = 'stage3';
     // Update stepper: Stage 3 active
@@ -3009,7 +4754,7 @@ async function handleSend() {
     `;
 
     try {
-      finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking, enableSearchMode);
+      finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking, enableSearchMode, targetCardId, searchResults);
 
       stage3Status.textContent = '完成';
       stage3Status.classList.remove('loading');
@@ -3034,6 +4779,28 @@ async function handleSend() {
         finalAnswer: finalAnswerContent,
         generatedImages: []
       });
+      
+      // Update card with results
+      if (enableTaskPlanner && activeCard) {
+        activeCard.responses = savedResponses;
+        activeCard.finalAnswer = finalAnswerContent;
+        activeCard.timestamp = Date.now();
+        
+        // 生成脈絡摘要供子卡片繼承（非阻塞）
+        generateContextSummary(query, finalAnswerContent).then(summary => {
+          if (summary && activeCard) {
+            activeCard.contextSummary = summary;
+            console.log('[handleSend] Generated context summary for card:', activeCard.id);
+            // 儲存 session
+            saveSession();
+          }
+        });
+        
+        // Update breadcrumb and carousel
+        updateBreadcrumb(activeCard.id);
+        updateSiblingCards();
+        renderCarousel();
+      }
 
       exportBtn.style.display = 'flex';
     } catch (err) {
@@ -3109,6 +4876,13 @@ async function handleSend() {
     showError(err.message);
   }
 
+  // 清除執行狀態
+  if (targetCardId) {
+    cardExecutionState.delete(targetCardId);
+    updateSiblingCards();
+    renderCarousel();
+  }
+
   resetButton();
 }
 
@@ -3116,6 +4890,80 @@ function resetButton() {
   sendBtn.disabled = false;
   sendBtn.classList.remove('next-iteration');
   sendBtn.innerHTML = '<span>送出</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
+}
+
+// 同步卡片設定到 UI toggles
+function syncCardSettingsToUI(settings) {
+  if (!settings) return;
+  
+  // 更新全域變數
+  enableImage = settings.enableImage || false;
+  enableSearchMode = settings.enableSearchMode || false;
+  visionMode = settings.visionMode || false;
+  
+  // 更新 UI toggles
+  if (imageToggle) {
+    imageToggle.checked = enableImage;
+  }
+  if (searchModeToggle) {
+    searchModeToggle.checked = enableSearchMode;
+  }
+  if (visionToggle) {
+    visionToggle.checked = visionMode;
+    // 更新 vision upload section 顯示狀態
+    if (visionUploadSection) {
+      visionUploadSection.classList.toggle('hidden', !visionMode);
+    }
+  }
+  
+  console.log('[syncCardSettingsToUI] Settings synced:', settings);
+}
+
+// 從 UI toggles 獲取當前設定
+function getCurrentSettingsFromUI() {
+  return {
+    enableImage: enableImage,
+    enableSearchMode: enableSearchMode,
+    visionMode: visionMode
+  };
+}
+
+// 更新當前卡片的設定
+function updateCurrentCardSettings() {
+  if (!enableTaskPlanner) return;
+  
+  const currentCard = getCurrentCard();
+  if (currentCard) {
+    currentCard.settings = getCurrentSettingsFromUI();
+    console.log('[updateCurrentCardSettings] Updated card settings:', currentCard.id, currentCard.settings);
+  }
+}
+
+// 根據當前卡片的執行狀態更新按鈕
+function updateSendButtonForCurrentCard() {
+  // 檢查是否在 task planner 模式
+  if (!enableTaskPlanner) {
+    // 非 task planner 模式不處理
+    return;
+  }
+  
+  const currentCard = getCurrentCard();
+  if (!currentCard) {
+    resetButton();
+    return;
+  }
+  
+  const isRunning = cardExecutionState.get(currentCard.id)?.isRunning;
+  console.log('[CardSwitch] Card:', currentCard.id, 'isRunning:', isRunning);
+  
+  if (isRunning) {
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<span class="spinner"></span><span>此卡片執行中...</span>';
+  } else {
+    // 此卡片未執行，啟用按鈕
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = '<span>送出</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
+  }
 }
 
 function renderTabs() {
@@ -3524,11 +5372,20 @@ function renderReviewResults(ranking) {
   });
 }
 
-async function runChairman(query, allResponses, aggregatedRanking, withSearchMode = false) {
+async function runChairman(query, allResponses, aggregatedRanking, withSearchMode = false, executingCardId = null, searchResultsFromStage25 = null) {
   // Use vision-specific chairman prompt if in vision mode
   let prompt = visionMode && uploadedImage
     ? generateVisionChairmanPrompt(query, allResponses, aggregatedRanking)
     : generateChairmanPrompt(query, allResponses, aggregatedRanking);
+  
+  // Include search results from Stage 2.5 if available
+  if (searchResultsFromStage25 && searchResultsFromStage25.length > 0) {
+    const searchContext = searchResultsFromStage25.map(sr => 
+      `### 搜尋「${sr.query}」結果\n${sr.results.map((r, i) => `[${i + 1}] ${r.title}\n${r.snippet}`).join('\n\n')}`
+    ).join('\n\n---\n\n');
+    
+    prompt = prompt.replace('## Your Task', `## 網路搜尋結果\n以下是根據模型建議執行的網路搜尋結果，請參考這些最新資訊：\n\n${searchContext}\n\n## Your Task`);
+  }
   
   // Append search strategy suffix if search mode is enabled and not at max iterations
   if (withSearchMode && searchIteration < maxSearchIterations) {
@@ -3546,40 +5403,82 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
       let started = false;
       port.onMessage.addListener((msg) => {
         if (msg.type === 'CHUNK') {
+          // 只有當前顯示的卡片才更新 UI
+          const isCurrentCard = !executingCardId || executingCardId === sessionState.currentCardId;
           if (!started) { 
             started = true; 
-            const visionBadge = isVisionChairman ? '<span class="vision-stage-badge" style="margin-left: 0.5rem; font-size: 0.625rem;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>Vision</span>' : '';
-            finalAnswer.innerHTML = `<div class="chairman-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>${getModelName(chairmanModel)}${visionBadge}</div><div class="response-content"></div>`; 
+            if (isCurrentCard) {
+              const visionBadge = isVisionChairman ? '<span class="vision-stage-badge" style="margin-left: 0.5rem; font-size: 0.625rem;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>Vision</span>' : '';
+              finalAnswer.innerHTML = `<div class="chairman-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>${getModelName(chairmanModel)}${visionBadge}</div><div class="response-content"></div>`; 
+            }
           }
           content += msg.content;
-          finalAnswer.querySelector('.response-content').innerHTML = parser.append(msg.content) + '<span class="cursor"></span>';
+          if (isCurrentCard) {
+            const responseEl = finalAnswer.querySelector('.response-content');
+            if (responseEl) responseEl.innerHTML = parser.append(msg.content) + '<span class="cursor"></span>';
+          }
         } else if (msg.type === 'DONE') {
           finalContent = content;
-          const el = finalAnswer.querySelector('.response-content');
           
           // Track cost from usage data if available
           if (msg.usage) {
             addToSessionCost(chairmanModel, msg.usage.prompt_tokens || 0, msg.usage.completion_tokens || 0);
           }
           
-          // If search mode is enabled, extract and display search strategies
-          if (withSearchMode) {
-            const searchQueries = parseSearchQueries(content);
-            const cleanContent = extractFinalAnswer(content);
-            if (el) el.innerHTML = parseMarkdown(cleanContent);
-            
-            // 只要搜尋模式啟用且未達上限，就顯示搜尋模組（即使無建議也讓用戶可輸入自定義關鍵字）
-            if (searchIteration < maxSearchIterations) {
-              renderSearchStrategies(searchQueries);
+          // Parse tasks from response if task planner is enabled
+          let parsedTasks = { success: false, tasks: [] };
+          if (enableTaskPlanner) {
+            parsedTasks = parseTasksFromResponse(content);
+          }
+          
+          // 儲存 tasks 到執行中的卡片（不論是否為當前顯示卡片）
+          if (enableTaskPlanner && parsedTasks.success && parsedTasks.tasks.length > 0) {
+            const executingCard = executingCardId ? sessionState.cards.get(executingCardId) : null;
+            if (executingCard) {
+              executingCard.tasks = parsedTasks.tasks;
             }
-          } else {
-            if (el) el.innerHTML = parseMarkdown(content);
+          }
+          
+          // 只有當前顯示的卡片才更新 UI
+          const isCurrentCard = !executingCardId || executingCardId === sessionState.currentCardId;
+          
+          if (isCurrentCard) {
+            const el = finalAnswer.querySelector('.response-content');
+            
+            // If search mode is enabled, extract and display search strategies
+            if (withSearchMode) {
+              const searchQueries = parseSearchQueries(content);
+              let cleanContent = extractFinalAnswer(content);
+              // Also remove task JSON for display
+              if (enableTaskPlanner) {
+                cleanContent = extractFinalAnswerDisplay(cleanContent);
+              }
+              if (el) el.innerHTML = parseMarkdown(cleanContent);
+              
+              // 只要搜尋模式啟用且未達上限，就顯示搜尋模組
+              if (searchIteration < maxSearchIterations) {
+                renderSearchStrategies(searchQueries);
+              }
+            } else {
+              // Remove task JSON for display
+              let displayContent = enableTaskPlanner ? extractFinalAnswerDisplay(content) : content;
+              if (el) el.innerHTML = parseMarkdown(displayContent);
+            }
+            
+            // Render tasks section if tasks were parsed
+            if (enableTaskPlanner && parsedTasks.success && parsedTasks.tasks.length > 0) {
+              renderTodoSection(parsedTasks.tasks);
+            }
           }
           
           port.disconnect();
           resolve();
         } else if (msg.type === 'ERROR') {
-          finalAnswer.innerHTML = `<div class="error-state"><p>Chairman failed: ${escapeHtml(msg.error)}</p></div>`;
+          // 只有當前顯示的卡片才更新 UI
+          const isCurrentCard = !executingCardId || executingCardId === sessionState.currentCardId;
+          if (isCurrentCard) {
+            finalAnswer.innerHTML = `<div class="error-state"><p>Chairman failed: ${escapeHtml(msg.error)}</p></div>`;
+          }
           port.disconnect();
           reject(new Error(msg.error));
         }
@@ -3604,7 +5503,11 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
     });
   } catch (err) {
     console.error('Chairman error:', err);
-    finalAnswer.innerHTML = `<div class="error-state"><p>主席彙整失敗: ${escapeHtml(err.message)}</p></div>`;
+    // 只有當前顯示的卡片才更新 UI
+    const isCurrentCard = !executingCardId || executingCardId === sessionState.currentCardId;
+    if (isCurrentCard) {
+      finalAnswer.innerHTML = `<div class="error-state"><p>主席彙整失敗: ${escapeHtml(err.message)}</p></div>`;
+    }
     throw err;
   }
 

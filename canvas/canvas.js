@@ -633,6 +633,208 @@ function showToast(message, isError = false) {
   setTimeout(() => toast.remove(), 2500);
 }
 
+// ============================================
+// Tree View Functionality
+// ============================================
+
+const treeViewSidebar = document.getElementById('treeViewSidebar');
+const treeViewToggle = document.getElementById('treeViewToggle');
+const treeViewContent = document.getElementById('treeViewContent');
+const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+const refreshTreeBtn = document.getElementById('refreshTreeBtn');
+
+let treeViewVisible = false;
+let loadedSessions = [];
+
+// Toggle tree view sidebar
+function toggleTreeView() {
+  treeViewVisible = !treeViewVisible;
+  if (treeViewVisible) {
+    treeViewSidebar.classList.remove('hidden');
+    treeViewToggle.classList.add('active');
+    loadTreeData();
+  } else {
+    treeViewSidebar.classList.add('hidden');
+    treeViewToggle.classList.remove('active');
+  }
+}
+
+// Load sessions data from storage
+async function loadTreeData() {
+  try {
+    const result = await chrome.storage.local.get('taskSessions');
+    loadedSessions = result.taskSessions || [];
+    renderTree();
+  } catch (err) {
+    console.error('Failed to load tree data:', err);
+    showToast('載入任務樹失敗', true);
+  }
+}
+
+// Render tree view
+function renderTree() {
+  if (!treeViewContent) return;
+  
+  if (loadedSessions.length === 0) {
+    treeViewContent.innerHTML = `
+      <div class="tree-empty">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="9" y1="3" x2="9" y2="21"></line>
+        </svg>
+        <p>尚無任務卡片</p>
+        <span>從 Council 建立任務後，卡片階層將顯示於此</span>
+      </div>
+    `;
+    return;
+  }
+  
+  // Render sessions as root nodes
+  const treesHtml = loadedSessions.map(session => renderSessionTree(session)).join('');
+  treeViewContent.innerHTML = treesHtml;
+  
+  // Add event listeners
+  setupTreeEventListeners();
+}
+
+// Render a single session as a tree
+function renderSessionTree(session) {
+  if (!session.cards || session.cards.length === 0) return '';
+  
+  const rootCard = session.cards.find(c => c.id === session.rootCardId);
+  if (!rootCard) return '';
+  
+  // Build card lookup map
+  const cardMap = new Map();
+  session.cards.forEach(c => cardMap.set(c.id, c));
+  
+  // Render tree recursively
+  return renderTreeNode(rootCard, cardMap, session.id, 0);
+}
+
+// Render a single tree node
+function renderTreeNode(card, cardMap, sessionId, depth) {
+  const hasChildren = card.childCardIds && card.childCardIds.length > 0;
+  const taskCount = card.tasks?.filter(t => t.status !== 'completed').length || 0;
+  const label = card.query.slice(0, 25) + (card.query.length > 25 ? '...' : '');
+  
+  const childrenHtml = hasChildren
+    ? `<div class="tree-node-children" data-parent="${card.id}">
+         ${card.childCardIds.map(childId => {
+           const child = cardMap.get(childId);
+           return child ? renderTreeNode(child, cardMap, sessionId, depth + 1) : '';
+         }).join('')}
+       </div>`
+    : '';
+  
+  return `
+    <div class="tree-node" data-card-id="${card.id}" data-session-id="${sessionId}">
+      <div class="tree-node-content ${depth === 0 ? 'root' : ''}">
+        <span class="tree-node-toggle ${hasChildren ? 'expanded' : 'empty'}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </span>
+        <span class="tree-node-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            ${depth === 0 
+              ? '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line>'
+              : '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline>'}
+          </svg>
+        </span>
+        <span class="tree-node-label" title="${escapeHtml(card.query)}">${escapeHtml(label)}</span>
+        ${taskCount > 0 ? `<span class="tree-node-badge">${taskCount}</span>` : ''}
+      </div>
+      ${childrenHtml}
+    </div>
+  `;
+}
+
+// Setup tree event listeners
+function setupTreeEventListeners() {
+  // Toggle children visibility
+  treeViewContent.querySelectorAll('.tree-node-toggle:not(.empty)').forEach(toggle => {
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const node = toggle.closest('.tree-node');
+      const children = node.querySelector('.tree-node-children');
+      if (children) {
+        toggle.classList.toggle('expanded');
+        children.classList.toggle('collapsed');
+      }
+    });
+  });
+  
+  // Click on node content to load card
+  treeViewContent.querySelectorAll('.tree-node-content').forEach(content => {
+    content.addEventListener('click', () => {
+      const node = content.closest('.tree-node');
+      const sessionId = node.dataset.sessionId;
+      const cardId = node.dataset.cardId;
+      
+      // Highlight selected node
+      treeViewContent.querySelectorAll('.tree-node-content.active').forEach(n => n.classList.remove('active'));
+      content.classList.add('active');
+      
+      // Load card content into editor
+      loadCardContent(sessionId, cardId);
+    });
+  });
+}
+
+// Load card content into the editor
+function loadCardContent(sessionId, cardId) {
+  const session = loadedSessions.find(s => s.id === sessionId);
+  if (!session) return;
+  
+  const card = session.cards.find(c => c.id === cardId);
+  if (!card || !card.finalAnswer) {
+    showToast('此卡片尚無內容');
+    return;
+  }
+  
+  // Update editor content
+  editor.innerHTML = markdownToHtml(card.finalAnswer);
+  docTitle.textContent = card.query.slice(0, 30) || '任務卡片';
+  currentDocId = `session-${sessionId}-card-${cardId}`;
+  
+  showToast('已載入卡片內容');
+}
+
+// Initialize tree view event listeners
+async function initTreeView() {
+  if (treeViewToggle) {
+    treeViewToggle.addEventListener('click', toggleTreeView);
+  }
+  
+  if (closeSidebarBtn) {
+    closeSidebarBtn.addEventListener('click', () => {
+      treeViewSidebar.classList.add('hidden');
+      treeViewToggle.classList.remove('active');
+      treeViewVisible = false;
+    });
+  }
+  
+  if (refreshTreeBtn) {
+    refreshTreeBtn.addEventListener('click', loadTreeData);
+  }
+  
+  // 檢查是否需要自動開啟樹狀圖
+  const result = await chrome.storage.local.get('canvasOpenTreeView');
+  if (result.canvasOpenTreeView) {
+    // 清除標記
+    await chrome.storage.local.remove('canvasOpenTreeView');
+    // 自動開啟樹狀圖
+    toggleTreeView();
+  }
+}
+
+// Initialize everything
+async function initAll() {
+  await init();
+  initTreeView();
+}
+
 // Initialize
-init();
+initAll();
 
