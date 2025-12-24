@@ -498,8 +498,8 @@
             method: 'POST',
             headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': 'chrome-extension://AI-Council-extension',
+            'Authorization': `Bearer ${apiKey.trim()}`,
+            'HTTP-Referer': chrome.runtime.getURL('/'),
             'X-Title': 'AI Council Extension'
             },
             body: JSON.stringify({
@@ -538,8 +538,8 @@
             method: 'POST',
             headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': 'chrome-extension://AI-Council-extension',
+            'Authorization': `Bearer ${apiKey.trim()}`,
+            'HTTP-Referer': chrome.runtime.getURL('/'),
             'X-Title': 'AI-Council-Extension'
             },
             body: JSON.stringify({
@@ -676,8 +676,8 @@ async function handleStreamingQuery(port, payload) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': 'chrome-extension://AI-Council-extension',
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'HTTP-Referer': chrome.runtime.getURL('/'),
           'X-Title': 'AI-Council-Extension'
         },
         body: JSON.stringify({
@@ -723,8 +723,8 @@ async function handleStreamingQuery(port, payload) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'chrome-extension://AI-Council-extension',
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'HTTP-Referer': chrome.runtime.getURL('/'),
         'X-Title': 'AI-Council-Extension'
       },
       body: JSON.stringify({

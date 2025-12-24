@@ -1747,6 +1747,124 @@ body {
   max-width: 340px;
 }
 
+/* Paste Context Modal */
+.modal-paste {
+  max-width: 400px;
+  width: 95%;
+}
+
+.paste-modal-hint {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.paste-modal-textarea {
+  width: 100%;
+  min-height: 200px;
+  max-height: 400px;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  resize: vertical;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.paste-modal-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.paste-modal-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.paste-modal-meta {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0.5rem 0 1rem 0;
+}
+
+.paste-char-count {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Web Search Modal */
+.modal-search {
+  max-width: 400px;
+  width: 95%;
+}
+
+.modal-search .modal-header h3 {
+  display: flex;
+  align-items: center;
+}
+
+.modal-search .modal-header h3 svg {
+  color: #f97316;
+}
+
+.search-modal-hint {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.search-modal-input-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.search-modal-input {
+  flex: 1;
+  padding: 0.625rem 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.search-modal-input:focus {
+  outline: none;
+  border-color: #f97316;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+}
+
+.search-modal-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-modal-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.625rem 1rem;
+  background: #f97316;
+  border: none;
+  flex-shrink: 0;
+}
+
+.search-modal-btn:hover {
+  background: #ea580c;
+}
+
+.search-modal-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 .new-conv-options {
   display: flex;
   flex-direction: column;
@@ -1832,8 +1950,8 @@ body {
 }
 
 .btn-primary:hover {
-  background: var(--accent-dark);
-  border-color: var(--accent-dark);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 /* Toast notification */
@@ -3348,6 +3466,81 @@ body {
 .search-actions .btn-primary svg {
   width: 14px;
   height: 14px;
+}
+
+/* Custom Suggestion Input Row (Stage 2.5) */
+.custom-suggestion-row {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  padding: 0.625rem 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+}
+
+.custom-suggestion-input {
+  flex: 1;
+  padding: 0.5rem 0.625rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.custom-suggestion-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.custom-suggestion-input::placeholder {
+  color: var(--text-muted);
+}
+
+.add-suggestion-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.add-suggestion-btn:hover {
+  background: var(--accent-hover);
+}
+
+.add-suggestion-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.add-suggestion-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Custom added suggestion item style */
+.search-suggestion-item.custom-added {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.05));
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.search-suggestion-item.custom-added .search-suggestion-source {
+  background: var(--accent);
+  color: white;
 }
 
 /* Context item for search results */
@@ -4944,6 +5137,14 @@ body {
 
 .new-task-input::placeholder {
   color: var(--text-muted);
+}
+
+.add-task-hint {
+  display: block;
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
 }
 
 .add-task-actions {

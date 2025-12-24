@@ -23,12 +23,12 @@
       <h2>API 設定</h2>
       <div class="field">
         <label for="apiKey">OpenRouter API 金鑰</label>
-        <input type="password" id="apiKey" placeholder="sk-or-v1-..." autocomplete="off">
+        <input type="password" id="apiKey" placeholder="sk-or-v1-..."  spellcheck="false">
         <p class="hint">前往 <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> 取得金鑰</p>
       </div>
       <div class="field">
         <label for="braveApiKey">Brave Search API 金鑰（選填）</label>
-        <input type="password" id="braveApiKey" placeholder="BSA..." autocomplete="off">
+        <input type="password" id="braveApiKey" placeholder="BSA..." spellcheck="false">
         <p class="hint">前往 <a href="https://brave.com/search/api/" target="_blank">brave.com/search/api</a> 取得金鑰（免費額度 2000 次/月）</p>
       </div>
     </section>
@@ -36,10 +36,9 @@
     <section class="card">
       <div class="section-header">
         <h2>參與模型</h2>
-        <button type="button" id="refreshModelsBtn" class="btn-secondary">重新整理</button>
+        <button type="button" id="updateModelsBtn" class="btn-secondary">從 OpenRouter 更新</button>
       </div>
-      <p class="hint">選擇要參與討論的模型。<span class="vision-badge">VIS</span> 表示支援圖片分析，<span class="image-badge">IMG</span> 表示支援圖片生成</p>
-      <p class="hint cache-status" id="modelsCacheStatus"></p>
+      <p class="hint">選擇要參與討論的模型。<span class="vision-badge">VIS</span> 表示支援圖片分析，<span class="image-badge">IMG</span> 表示支援圖片生成。定價顯示為：$輸入/$輸出（每百萬 tokens）</p>
       <div class="model-list" id="modelList">
         <!-- Populated by JS -->
       </div>

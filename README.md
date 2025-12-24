@@ -7,6 +7,7 @@
 - **多模型並行查詢**：同時發送至多個 LLM，串流顯示回應
 - **匿名互評**（可選）：各模型評估其他回應，產出排名與評語
 - **主席綜合**：指定模型綜合所有回應，產出最終答案
+- **動態模型更新**：從 OpenRouter 自動抓取最新模型與定價，依條件篩選（context length、vision 支援等）
 - **Web Search**：Brave Search API 整合，支援 AI 延伸搜尋
 - **Image Generation**：Gemini 圖片生成
 - **Vision Mode**：支援圖片輸入分析
@@ -42,6 +43,7 @@
 - 選擇參與 Council 的模型（至少 2 個）
 - 選擇主席模型
 - 啟用/停用互評階段
+- **從 OpenRouter 更新模型**：點擊「從 OpenRouter 更新」按鈕自動抓取最新模型列表（需先設定 API Key）
 
 ## 使用
 

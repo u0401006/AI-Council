@@ -369,6 +369,17 @@
         <div id="searchSuggestions" class="search-suggestions">
           <p class="search-suggestions-intro">根據模型回答，以下是建議的搜尋關鍵詞（最多選擇 3 項）：</p>
           <div id="searchSuggestionList" class="search-suggestion-list"></div>
+          <!-- Custom search suggestion input -->
+          <div class="custom-suggestion-row">
+            <input type="text" id="customSuggestionInput" class="custom-suggestion-input" placeholder="輸入自訂關鍵字...">
+            <button id="addCustomSuggestionBtn" class="add-suggestion-btn" title="新增為選項">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              新增
+            </button>
+          </div>
           <div class="search-actions">
             <button id="executeSearchBtn" class="btn-primary">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -421,7 +432,8 @@
             <!-- Task items will be rendered here -->
           </div>
           <div id="addTaskForm" class="add-task-form hidden">
-            <input type="text" id="newTaskInput" class="new-task-input" placeholder="輸入新任務...">
+            <input type="text" id="newTaskInput" class="new-task-input" placeholder="輸入新任務... (Ctrl+Enter 確認)">
+            <span class="add-task-hint">按 Ctrl+Enter 或點擊右側 ✓ 確認新增</span>
             <div class="add-task-actions">
               <select id="newTaskPriority" class="task-priority-select">
                 <option value="high">高優先</option>
@@ -670,6 +682,59 @@
           <div class="modal-actions">
             <button id="cancelNewConv" class="btn-secondary">取消</button>
             <button id="confirmNewConv" class="btn-primary">確認</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Paste Context Modal -->
+    <div id="pasteModal" class="modal hidden">
+      <div class="modal-content modal-paste">
+        <div class="modal-header">
+          <h3>貼上參考資料</h3>
+          <button id="closePasteModal" class="dismiss-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="paste-modal-hint">請在下方貼上您要加入的參考資料內容：</p>
+          <textarea id="pasteModalTextarea" class="paste-modal-textarea" placeholder="在此貼上內容..."></textarea>
+          <div class="paste-modal-meta">
+            <span id="pasteCharCount" class="paste-char-count">0 字元</span>
+          </div>
+          <div class="modal-actions">
+            <button id="cancelPaste" class="btn-secondary">取消</button>
+            <button id="confirmPaste" class="btn-primary">確認貼上</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Web Search Modal -->
+    <div id="webSearchModal" class="modal hidden">
+      <div class="modal-content modal-search">
+        <div class="modal-header">
+          <h3>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            網路搜尋
+          </h3>
+          <button id="closeWebSearchModal" class="dismiss-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="search-modal-hint">輸入關鍵字搜尋網路資料，結果將加入參考資料：</p>
+          <div class="search-modal-input-row">
+            <input type="text" id="webSearchModalInput" class="search-modal-input" placeholder="輸入搜尋關鍵字...">
+            <button id="confirmWebSearch" class="btn-primary search-modal-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              搜尋
+            </button>
+          </div>
+          <div class="modal-actions">
+            <button id="cancelWebSearch" class="btn-secondary">取消</button>
           </div>
         </div>
       </div>

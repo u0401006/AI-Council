@@ -47,7 +47,8 @@ function createStreamingParser() {
 // ============================================
 // Inline: lib/models.js
 // ============================================
-const MODELS = {
+// Default model metadata (fallback if dynamic pricing not available)
+const DEFAULT_MODELS = {
   // OpenAI
   'openai/gpt-5.1': { name: 'GPT-5.1', provider: 'OpenAI', inputPrice: 5, outputPrice: 15, canVision: true },
   'openai/gpt-4o': { name: 'GPT-4o', provider: 'OpenAI', inputPrice: 2.5, outputPrice: 10, canVision: true },
@@ -69,6 +70,35 @@ const MODELS = {
   'deepseek/deepseek-r1': { name: 'DeepSeek R1', provider: 'DeepSeek', inputPrice: 0.55, outputPrice: 2.19 },
   'mistralai/mistral-large-2411': { name: 'Mistral Large', provider: 'Mistral', inputPrice: 2, outputPrice: 6 }
 };
+
+// Runtime model registry (merged from defaults + dynamic pricing)
+let MODELS = { ...DEFAULT_MODELS };
+
+// Load dynamic pricing from storage and merge with defaults
+async function loadDynamicPricing() {
+  try {
+    const result = await chrome.storage.local.get('availableModels');
+    const dynamicModels = result.availableModels || [];
+    
+    // Merge dynamic pricing into MODELS
+    for (const model of dynamicModels) {
+      if (model.inputPrice !== undefined && model.outputPrice !== undefined) {
+        // Update or add model with dynamic pricing
+        MODELS[model.id] = {
+          name: model.name,
+          provider: model.provider,
+          inputPrice: model.inputPrice,
+          outputPrice: model.outputPrice,
+          canVision: model.canVision || false,
+          canImage: model.canImage || false
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load dynamic pricing:', err);
+  }
+}
+
 function getModelInfo(modelId) { return MODELS[modelId] || { name: modelId.split('/').pop(), provider: modelId.split('/')[0], inputPrice: 0, outputPrice: 0 }; }
 function getModelName(modelId) { return getModelInfo(modelId).name; }
 function estimateTokens(text) { return Math.ceil(text.length / 4); }
@@ -695,10 +725,36 @@ function deleteTask(taskId) {
 }
 
 // Add new task manually
+// Track last added task to prevent duplicates
+let lastAddedTaskContent = '';
+let lastAddedTaskTime = 0;
+
 function addTaskManually(content, priority = 'medium') {
+  const trimmedContent = content.trim();
+  
+  // Debounce: prevent duplicate submissions within 500ms
+  const now = Date.now();
+  if (trimmedContent === lastAddedTaskContent && (now - lastAddedTaskTime) < 500) {
+    console.log('Duplicate task prevented (debounce)');
+    return;
+  }
+  
+  // Check if a pending task with the same content already exists
+  const existingTask = displayedTasks.find(
+    t => t.content.toLowerCase() === trimmedContent.toLowerCase() && t.status === 'pending'
+  );
+  if (existingTask) {
+    showToast('已存在相同的待辦任務');
+    return;
+  }
+  
+  // Update debounce tracker
+  lastAddedTaskContent = trimmedContent;
+  lastAddedTaskTime = now;
+  
   const newTask = {
     id: generateId(),
-    content: content.trim(),
+    content: trimmedContent,
     priority: priority,
     status: 'pending',
     cardId: null
@@ -1306,6 +1362,21 @@ const webSearchBtn = document.getElementById('webSearchBtn');
 const pasteContextBtn = document.getElementById('pasteContextBtn');
 const clearContextBtn = document.getElementById('clearContextBtn');
 
+// Paste modal elements
+const pasteModal = document.getElementById('pasteModal');
+const pasteModalTextarea = document.getElementById('pasteModalTextarea');
+const pasteCharCount = document.getElementById('pasteCharCount');
+const closePasteModal = document.getElementById('closePasteModal');
+const cancelPaste = document.getElementById('cancelPaste');
+const confirmPaste = document.getElementById('confirmPaste');
+
+// Web search modal elements
+const webSearchModal = document.getElementById('webSearchModal');
+const webSearchModalInput = document.getElementById('webSearchModalInput');
+const closeWebSearchModal = document.getElementById('closeWebSearchModal');
+const cancelWebSearch = document.getElementById('cancelWebSearch');
+const confirmWebSearch = document.getElementById('confirmWebSearch');
+
 // Search mode elements
 const searchModeToggle = document.getElementById('searchModeToggle');
 const searchStrategySection = document.getElementById('searchStrategySection');
@@ -1394,6 +1465,8 @@ const reviewResults = document.getElementById('reviewResults');
 const stage25Status = document.getElementById('stage25Status');
 const stage25Summary = document.getElementById('stage25Summary');
 const searchSuggestionList = document.getElementById('searchSuggestionList');
+const customSuggestionInput = document.getElementById('customSuggestionInput');
+const addCustomSuggestionBtn = document.getElementById('addCustomSuggestionBtn');
 const executeSearchBtn = document.getElementById('executeSearchBtn');
 const skipSearchBtn = document.getElementById('skipSearchBtn');
 const finalAnswer = document.getElementById('finalAnswer');
@@ -1636,6 +1709,7 @@ function updateSearchUIState(hasBrave) {
 // Initialize
 // ============================================
 async function init() {
+  await loadDynamicPricing();
   await loadSettings();
   await checkApiKeys();
   await loadContextItems();
@@ -1918,12 +1992,23 @@ function setupEventListeners() {
   
   if (confirmAddTask) {
     confirmAddTask.addEventListener('click', () => {
+      // Prevent double-click
+      if (confirmAddTask.disabled) return;
+      
       const content = newTaskInput.value.trim();
       if (content) {
+        // Temporarily disable button
+        confirmAddTask.disabled = true;
+        
         const priority = newTaskPriority.value || 'medium';
         addTaskManually(content, priority);
         addTaskForm.classList.add('hidden');
         newTaskInput.value = '';
+        
+        // Re-enable after short delay
+        setTimeout(() => {
+          confirmAddTask.disabled = false;
+        }, 300);
       }
     });
   }
@@ -1937,7 +2022,8 @@ function setupEventListeners() {
   
   if (newTaskInput) {
     newTaskInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      // Require Ctrl/Cmd+Enter to confirm (avoid accidental Enter)
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         confirmAddTask?.click();
       }
@@ -1952,6 +2038,12 @@ function setupEventListeners() {
   
   // New conversation modal listeners
   setupNewConvModalListeners();
+  
+  // Paste modal listeners
+  setupPasteModalListeners();
+  
+  // Web search modal listeners
+  setupWebSearchModalListeners();
   
   // Stage 2.5 search suggestion listeners
   setupStage25Listeners();
@@ -2111,25 +2203,112 @@ async function pasteContext() {
     let text = '';
     try {
       text = await navigator.clipboard.readText();
+      
+      // If clipboard has content, add directly
+      if (text && text.length > 0) {
+        addContextItem({
+          type: 'paste',
+          title: '貼上的內容',
+          content: text
+        });
+        showToast('已貼上內容');
+        return;
+      }
     } catch (clipboardErr) {
-      // Fallback: prompt user to paste manually
-      text = prompt('請在此貼上內容：');
+      // Clipboard API failed, show modal for manual paste
+      console.log('Clipboard API failed, showing paste modal');
     }
     
-    if (!text || text.length < 1) {
-      showToast('沒有內容可貼上', true);
-      return;
-    }
-    
-    addContextItem({
-      type: 'paste',
-      title: '貼上的內容',
-      content: text
-    });
-    
-    showToast('已貼上內容');
+    // Show paste modal for manual input
+    showPasteModal();
   } catch (err) {
     showToast('貼上失敗：' + err.message, true);
+  }
+}
+
+// Show paste modal
+function showPasteModal() {
+  if (!pasteModal) return;
+  
+  // Reset textarea
+  if (pasteModalTextarea) {
+    pasteModalTextarea.value = '';
+    updatePasteCharCount();
+  }
+  
+  pasteModal.classList.remove('hidden');
+  
+  // Focus textarea
+  setTimeout(() => {
+    pasteModalTextarea?.focus();
+  }, 100);
+}
+
+// Hide paste modal
+function hidePasteModal() {
+  if (!pasteModal) return;
+  pasteModal.classList.add('hidden');
+  if (pasteModalTextarea) {
+    pasteModalTextarea.value = '';
+  }
+}
+
+// Update character count in paste modal
+function updatePasteCharCount() {
+  if (!pasteCharCount || !pasteModalTextarea) return;
+  const count = pasteModalTextarea.value.length;
+  pasteCharCount.textContent = `${count.toLocaleString()} 字元`;
+}
+
+// Handle paste modal confirm
+function handlePasteConfirm() {
+  if (!pasteModalTextarea) return;
+  
+  const text = pasteModalTextarea.value.trim();
+  
+  if (!text || text.length < 1) {
+    showToast('請輸入內容', true);
+    return;
+  }
+  
+  addContextItem({
+    type: 'paste',
+    title: '貼上的內容',
+    content: text
+  });
+  
+  hidePasteModal();
+  showToast('已貼上內容');
+}
+
+// Setup paste modal listeners
+function setupPasteModalListeners() {
+  if (closePasteModal) {
+    closePasteModal.addEventListener('click', hidePasteModal);
+  }
+  if (cancelPaste) {
+    cancelPaste.addEventListener('click', hidePasteModal);
+  }
+  if (confirmPaste) {
+    confirmPaste.addEventListener('click', handlePasteConfirm);
+  }
+  if (pasteModalTextarea) {
+    pasteModalTextarea.addEventListener('input', updatePasteCharCount);
+    // Allow Ctrl+Enter to confirm
+    pasteModalTextarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handlePasteConfirm();
+      }
+    });
+  }
+  // Close modal when clicking outside
+  if (pasteModal) {
+    pasteModal.addEventListener('click', (e) => {
+      if (e.target === pasteModal) {
+        hidePasteModal();
+      }
+    });
   }
 }
 
@@ -2140,12 +2319,51 @@ async function handleWebSearchFromContext() {
     return;
   }
   
-  // Prompt user for search query
-  const query = prompt('請輸入搜尋關鍵字：');
-  if (!query || query.trim().length === 0) {
+  // Show web search modal instead of prompt
+  showWebSearchModal();
+}
+
+// Show web search modal
+function showWebSearchModal() {
+  if (!webSearchModal) return;
+  
+  // Reset input
+  if (webSearchModalInput) {
+    webSearchModalInput.value = '';
+  }
+  
+  webSearchModal.classList.remove('hidden');
+  
+  // Focus input
+  setTimeout(() => {
+    webSearchModalInput?.focus();
+  }, 100);
+}
+
+// Hide web search modal
+function hideWebSearchModal() {
+  if (!webSearchModal) return;
+  webSearchModal.classList.add('hidden');
+  if (webSearchModalInput) {
+    webSearchModalInput.value = '';
+  }
+}
+
+// Execute the actual web search
+async function executeWebSearchFromModal() {
+  if (!webSearchModalInput) return;
+  
+  const query = webSearchModalInput.value.trim();
+  
+  if (!query || query.length === 0) {
+    showToast('請輸入搜尋關鍵字', true);
     return;
   }
   
+  // Hide modal first
+  hideWebSearchModal();
+  
+  // Show loading state
   webSearchBtn.disabled = true;
   webSearchBtn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span>';
   
@@ -2153,7 +2371,7 @@ async function handleWebSearchFromContext() {
     showToast(`正在搜尋「${query}」...`);
     
     // Execute Brave Search
-    const searchResponse = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: query.trim() });
+    const searchResponse = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: query });
     
     if (searchResponse.error) {
       showToast(searchResponse.error, true);
@@ -2189,6 +2407,39 @@ async function handleWebSearchFromContext() {
   } finally {
     webSearchBtn.disabled = !hasBraveApiKey;
     webSearchBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><span>網搜</span>`;
+  }
+}
+
+// Setup web search modal listeners
+function setupWebSearchModalListeners() {
+  if (closeWebSearchModal) {
+    closeWebSearchModal.addEventListener('click', hideWebSearchModal);
+  }
+  if (cancelWebSearch) {
+    cancelWebSearch.addEventListener('click', hideWebSearchModal);
+  }
+  if (confirmWebSearch) {
+    confirmWebSearch.addEventListener('click', executeWebSearchFromModal);
+  }
+  if (webSearchModalInput) {
+    // Enter to search
+    webSearchModalInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        executeWebSearchFromModal();
+      }
+      if (e.key === 'Escape') {
+        hideWebSearchModal();
+      }
+    });
+  }
+  // Close modal when clicking outside
+  if (webSearchModal) {
+    webSearchModal.addEventListener('click', (e) => {
+      if (e.target === webSearchModal) {
+        hideWebSearchModal();
+      }
+    });
   }
 }
 
@@ -2390,6 +2641,59 @@ function setupStage25Listeners() {
   if (skipSearchBtn) {
     skipSearchBtn.addEventListener('click', handleStage25Skip);
   }
+  
+  // Custom suggestion input listeners
+  if (addCustomSuggestionBtn && customSuggestionInput) {
+    addCustomSuggestionBtn.addEventListener('click', addCustomSearchSuggestion);
+    customSuggestionInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addCustomSearchSuggestion();
+      }
+    });
+  }
+}
+
+// Add custom search suggestion to the list
+function addCustomSearchSuggestion() {
+  if (!customSuggestionInput || !searchSuggestionList) return;
+  
+  const keyword = customSuggestionInput.value.trim();
+  if (!keyword) {
+    showToast('請輸入關鍵字', true);
+    return;
+  }
+  
+  // Check if already exists
+  const existingCheckboxes = searchSuggestionList.querySelectorAll('input[type="checkbox"]');
+  for (const cb of existingCheckboxes) {
+    if (cb.value.toLowerCase() === keyword.toLowerCase()) {
+      cb.checked = true;
+      showToast('關鍵字已存在，已自動勾選');
+      customSuggestionInput.value = '';
+      return;
+    }
+  }
+  
+  // Generate unique ID
+  const newId = `searchSugCustom${Date.now()}`;
+  
+  // Create new suggestion item HTML
+  const newItem = document.createElement('div');
+  newItem.className = 'search-suggestion-item custom-added';
+  newItem.innerHTML = `
+    <input type="checkbox" id="${newId}" value="${escapeAttr(keyword)}" checked>
+    <label for="${newId}">${escapeHtml(keyword)}</label>
+    <span class="search-suggestion-source">自訂</span>
+  `;
+  
+  // Add to list
+  searchSuggestionList.appendChild(newItem);
+  
+  // Clear input
+  customSuggestionInput.value = '';
+  
+  showToast('已新增關鍵字');
 }
 
 function updateSearchIterationCounter() {
