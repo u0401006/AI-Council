@@ -54,8 +54,8 @@
             contexts: ['selection']
         });
         
-        // Initialize badge
-        updateContextBadge();
+        // Initialize badge (starts at 0, will be updated when sidepanel loads)
+        updateContextBadge(0);
         });
 
         // Handle context menu clicks
@@ -123,7 +123,14 @@
         }
         
         if (message.type === 'UPDATE_CONTEXT_BADGE') {
-            updateContextBadge()
+            // Legacy support - just respond success
+            sendResponse({ success: true });
+            return false;
+        }
+        
+        if (message.type === 'UPDATE_CONTEXT_BADGE_COUNT') {
+            // New approach: receive count directly from sidepanel
+            updateContextBadge(message.count || 0)
             .then(() => sendResponse({ success: true }))
             .catch(err => sendResponse({ error: err.message }));
             return true;
@@ -132,12 +139,7 @@
         return false;
         });
 
-        // Listen for storage changes to update badge
-        chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName === 'local' && changes.contextItems) {
-            updateContextBadge();
-        }
-        });
+        // Note: Storage listener for contextItems removed - badge is now updated via message
 
         // Handle streaming via port connection
         chrome.runtime.onConnect.addListener((port) => {
@@ -414,39 +416,33 @@
             return;
         }
         
-        // Create context item
+        // Create context item data
         const contextItem = {
-            id: crypto.randomUUID(),
             type: 'selection',
             title: tab?.title ? `來自：${tab.title.slice(0, 50)}` : '選取的文字',
             content: selectionText.trim(),
-            url: tab?.url || '',
-            timestamp: Date.now()
+            url: tab?.url || ''
         };
         
-        // Get existing context items
-        const result = await chrome.storage.local.get('contextItems');
-        const contextItems = result.contextItems || [];
-        
-        // Add new item
-        contextItems.push(contextItem);
-        
-        // Save back to storage
-        await chrome.storage.local.set({ contextItems });
-        
-        // Update badge
-        await updateContextBadge();
+        // Send to sidepanel instead of writing to global storage
+        try {
+            await chrome.runtime.sendMessage({
+            type: 'ADD_CONTEXT_ITEM',
+            item: contextItem
+            });
+        } catch (err) {
+            // Sidepanel might not be open, show error
+            console.log('[handleAddToContext] Sidepanel not open or message failed:', err.message);
+            await showToastInTab(tab.id, '請先開啟 AI Council 側邊欄');
+            return;
+        }
         
         // Show toast in the tab
         await showToastInTab(tab.id, '已加入 AI Council Context');
         }
 
-        // Update extension badge with context count
-        async function updateContextBadge() {
-        const result = await chrome.storage.local.get('contextItems');
-        const contextItems = result.contextItems || [];
-        const count = contextItems.length;
-        
+        // Update extension badge with context count (now receives count directly)
+        async function updateContextBadge(count = 0) {
         if (count > 0) {
             await chrome.action.setBadgeText({ text: String(count) });
             await chrome.action.setBadgeBackgroundColor({ color: '#6366f1' });
@@ -533,6 +529,13 @@
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+        // Add explicit image generation instruction for Gemini models
+        const imagePrompt = `請根據以下描述生成一張圖片：
+
+${prompt}
+
+請直接生成圖片，不要回覆文字描述。`;
+
         try {
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -545,10 +548,11 @@
             body: JSON.stringify({
             model,
             messages: [
-                LANGUAGE_SYSTEM_PROMPT,
-                { role: 'user', content: prompt }
+                { role: 'user', content: imagePrompt }
             ],
-            // Request image output
+            // Request image output - use response_modalities for Gemini
+            response_modalities: ['IMAGE', 'TEXT'],
+            // Also try modalities for compatibility
             modalities: ['text', 'image'],
             // Image configuration
             image_config: {
@@ -567,14 +571,19 @@
 
         const data = await response.json();
         
+        // Log response for debugging
+        console.log('[ImageGen] Response:', JSON.stringify(data, null, 2));
+        
         // Extract image from response
         const message = data.choices?.[0]?.message;
         const result = {
-            text: message?.content || '',
+            text: typeof message?.content === 'string' ? message.content : '',
             images: []
         };
 
-  // Check for images in the response
+  // Check for images in the response - multiple formats supported
+  
+  // Format 1: message.images array
   if (message?.images && Array.isArray(message.images)) {
     result.images = message.images.map(img => {
       // Handle different image formats
@@ -587,17 +596,61 @@
       if (img.url) {
         return img.url;
       }
+      if (img.b64_json) {
+        return `data:image/png;base64,${img.b64_json}`;
+      }
       return null;
     }).filter(Boolean);
   }
 
-  // Also check content array for inline images
+  // Format 2: content array with image_url items
   if (Array.isArray(message?.content)) {
     message.content.forEach(item => {
       if (item.type === 'image_url' && item.image_url?.url) {
         result.images.push(item.image_url.url);
       }
+      // Gemini format: inline_data
+      if (item.type === 'image' && item.source?.data) {
+        result.images.push(`data:${item.source.media_type || 'image/png'};base64,${item.source.data}`);
+      }
+      // Another Gemini format: inlineData
+      if (item.inlineData?.data) {
+        result.images.push(`data:${item.inlineData.mimeType || 'image/png'};base64,${item.inlineData.data}`);
+      }
     });
+  }
+  
+  // Format 3: Gemini parts array in content
+  if (message?.parts && Array.isArray(message.parts)) {
+    message.parts.forEach(part => {
+      if (part.inlineData?.data) {
+        result.images.push(`data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`);
+      }
+      if (part.inline_data?.data) {
+        result.images.push(`data:${part.inline_data.mime_type || 'image/png'};base64,${part.inline_data.data}`);
+      }
+    });
+  }
+  
+  // Format 4: Check data.images at top level (some providers)
+  if (data.images && Array.isArray(data.images)) {
+    data.images.forEach(img => {
+      if (typeof img === 'string') {
+        result.images.push(img);
+      } else if (img.url) {
+        result.images.push(img.url);
+      } else if (img.b64_json) {
+        result.images.push(`data:image/png;base64,${img.b64_json}`);
+      }
+    });
+  }
+  
+  console.log('[ImageGen] Extracted images:', result.images.length);
+
+  // If no images found but got text, include it for debugging
+  if (result.images.length === 0 && result.text) {
+    console.warn('[ImageGen] No images found. Model returned text:', result.text.substring(0, 200));
+    result.debugText = result.text.substring(0, 300);
   }
 
   // Include usage data for cost tracking
@@ -718,7 +771,38 @@ async function handleStreamingQuery(port, payload) {
   // Prepend language system prompt
   const messagesWithSystem = [LANGUAGE_SYSTEM_PROMPT, ...messages];
 
+  // Timeout configuration: 3 minutes for streaming requests
+  const STREAM_TIMEOUT_MS = 180000;
+  const controller = new AbortController();
+  let timeoutId = null;
+  let lastChunkTime = Date.now();
+  let hasReceivedContent = false;
+  
+  // Timeout handler
+  const setupTimeout = () => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      controller.abort();
+    }, STREAM_TIMEOUT_MS);
+  };
+  
+  // Reset timeout on each chunk (for idle detection)
+  const IDLE_TIMEOUT_MS = 60000; // 60 seconds without any chunk
+  const resetIdleTimeout = () => {
+    lastChunkTime = Date.now();
+  };
+  
+  // Idle check interval
+  const idleCheckInterval = setInterval(() => {
+    if (hasReceivedContent && Date.now() - lastChunkTime > IDLE_TIMEOUT_MS) {
+      clearInterval(idleCheckInterval);
+      controller.abort();
+    }
+  }, 5000);
+
   try {
+    setupTimeout();
+    
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -731,10 +815,13 @@ async function handleStreamingQuery(port, payload) {
         model,
         messages: messagesWithSystem,
         stream: true
-      })
+      }),
+      signal: controller.signal
     });
 
     if (!response.ok) {
+      clearTimeout(timeoutId);
+      clearInterval(idleCheckInterval);
       const error = await response.json();
       safePostMessage({ type: 'ERROR', error: error.error?.message || 'API request failed' });
       return;
@@ -756,6 +843,9 @@ async function handleStreamingQuery(port, payload) {
         break;
       }
 
+      // Reset idle timer on receiving data
+      resetIdleTimeout();
+
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
@@ -764,6 +854,8 @@ async function handleStreamingQuery(port, payload) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6);
           if (data === '[DONE]') {
+            clearTimeout(timeoutId);
+            clearInterval(idleCheckInterval);
             safePostMessage({ type: 'DONE', model });
             return;
           }
@@ -771,6 +863,7 @@ async function handleStreamingQuery(port, payload) {
             const parsed = JSON.parse(data);
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
+              hasReceivedContent = true;
               safePostMessage({ type: 'CHUNK', model, content });
             }
           } catch (e) {
@@ -780,8 +873,21 @@ async function handleStreamingQuery(port, payload) {
       }
     }
 
+    clearTimeout(timeoutId);
+    clearInterval(idleCheckInterval);
     safePostMessage({ type: 'DONE', model });
   } catch (err) {
-    safePostMessage({ type: 'ERROR', error: err.message });
+    clearTimeout(timeoutId);
+    clearInterval(idleCheckInterval);
+    if (err.name === 'AbortError') {
+      const elapsed = Date.now() - lastChunkTime;
+      if (elapsed > IDLE_TIMEOUT_MS) {
+        safePostMessage({ type: 'ERROR', error: `模型回應中斷：已超過 ${Math.round(IDLE_TIMEOUT_MS / 1000)} 秒未收到內容` });
+      } else {
+        safePostMessage({ type: 'ERROR', error: `請求超時：模型回應時間超過 ${Math.round(STREAM_TIMEOUT_MS / 60000)} 分鐘` });
+      }
+    } else {
+      safePostMessage({ type: 'ERROR', error: err.message });
+    }
   }
 }

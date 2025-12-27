@@ -108,6 +108,46 @@ function calculateCost(modelId, inputTokens, outputTokens) {
 }
 function formatCost(cost) { if (cost < 0.0001) return '<$0.0001'; if (cost < 0.01) return `$${cost.toFixed(4)}`; return `$${cost.toFixed(3)}`; }
 
+// Format API errors to user-friendly messages
+function formatApiError(error, modelName) {
+  const msg = error?.message || String(error);
+  
+  if (msg.includes('Failed to fetch')) {
+    return {
+      short: `${modelName} 暫時無法連線`,
+      detail: '網路問題或該模型暫時不可用',
+      actions: ['retry', 'switch-model']
+    };
+  }
+  if (msg.includes('timeout') || msg.includes('超時') || msg.includes('逾時')) {
+    return {
+      short: `${modelName} 回應超時`,
+      detail: '模型處理時間過長',
+      actions: ['retry']
+    };
+  }
+  if (msg.includes('API Key') || msg.includes('Unauthorized') || msg.includes('401')) {
+    return {
+      short: `${modelName} 認證失敗`,
+      detail: '請檢查 API Key 設定',
+      actions: ['check-settings']
+    };
+  }
+  if (msg.includes('rate limit') || msg.includes('429')) {
+    return {
+      short: `${modelName} 請求過於頻繁`,
+      detail: '請稍後再試',
+      actions: ['retry']
+    };
+  }
+  // Other errors
+  return {
+    short: `${modelName} 發生錯誤`,
+    detail: msg.slice(0, 80),
+    actions: ['retry']
+  };
+}
+
 // ============================================
 // Inline: lib/council.js
 // ============================================
@@ -285,7 +325,49 @@ let activeTab = null;
 let currentQuery = '';
 let currentConversation = null;
 let historyVisible = false;
-let contextItems = []; // Array of { id, type, title, content, timestamp }
+let contextItems = []; // Array of { id, type, title, content, timestamp, scope }
+let sessionContextItems = []; // Session-level context items (shared across all cards)
+
+// ============================================
+// Storage Abstraction Layer (for future IndexedDB expansion)
+// ============================================
+// Current implementation uses chrome.storage.local for sessions
+// This interface can be swapped to IndexedDB for larger storage needs
+const contextStorage = {
+  // Save session context data
+  async saveSession(sessionId, sessionData) {
+    // Currently saves via saveSession() to chrome.storage.local
+    // Future: IndexedDB implementation
+    return true;
+  },
+  
+  // Load session context data
+  async loadSession(sessionId) {
+    // Currently loads via loadSession() from chrome.storage.local
+    // Future: IndexedDB implementation
+    return null;
+  },
+  
+  // Clear session context data
+  async clearSession(sessionId) {
+    // Future: IndexedDB implementation
+    return true;
+  },
+  
+  // Get storage stats (for monitoring)
+  async getStats() {
+    try {
+      const usage = await navigator.storage?.estimate?.() || {};
+      return {
+        quota: usage.quota || 0,
+        usage: usage.usage || 0,
+        available: (usage.quota || 0) - (usage.usage || 0)
+      };
+    } catch {
+      return { quota: 0, usage: 0, available: 0 };
+    }
+  }
+};
 
 // Vision Council state
 let visionMode = false;
@@ -418,6 +500,8 @@ async function generateSessionName(rootQuery) {
     return name.trim().slice(0, 6);
   } catch (err) {
     console.error('Failed to generate session name:', err);
+    const formatted = formatApiError(err, '主席模型');
+    showToast(`專案名稱生成失敗（${formatted.detail}），使用預設名稱`, true);
     return null;
   }
 }
@@ -454,6 +538,7 @@ function createCard(parentId, query) {
     timestamp: Date.now(),
     searchIteration: 0,
     contextItemsSnapshot: [],
+    cardContextItems: [],            // Card-level context items (isolated per card)
     settings: settings,              // 卡片獨立的功能設定
     inheritedContext: parentCard?.contextSummary || '',  // 繼承的上層脈絡摘要
     contextSummary: ''               // 此卡片完成後的脈絡摘要
@@ -479,6 +564,8 @@ function initSession() {
     currentCardId: null,
     breadcrumb: [],
   };
+  // Clear session-level context items
+  sessionContextItems = [];
 }
 
 // Get current card
@@ -760,15 +847,17 @@ function addTaskManually(content, priority = 'medium') {
     cardId: null
   };
   
-  displayedTasks.push(newTask);
-  
-  // Update current card if exists
+  // Update current card's tasks (source of truth)
   const currentCard = getCurrentCard();
   if (currentCard) {
     currentCard.tasks.push(newTask);
+    // Re-render from card.tasks to ensure consistency
+    renderTodoSection(currentCard.tasks);
+  } else {
+    // No card context - just update displayedTasks directly
+    displayedTasks.push(newTask);
+    renderTodoSection(displayedTasks);
   }
-  
-  renderTodoSection(displayedTasks);
 }
 
 // Expand task to a new card
@@ -865,6 +954,11 @@ function switchToCard(cardId, direction = 'right') {
   
   // Load card data into UI
   loadCardIntoUI(card);
+  
+  // Update context items for the new card (session + card level)
+  updateVisibleContextItems();
+  renderContextItems();
+  updateContextBadge();
   
   // Update carousel
   updateSiblingCards();
@@ -1170,6 +1264,9 @@ function loadCardIntoUI(card) {
     // 顯示匯出按鈕
     exportBtn.style.display = 'flex';
     
+    // 顯示下一步選項（分析圖片、生成圖片、搜尋、畫布）
+    showBranchActions();
+    
   } else {
     // === 未完成的卡片（空白或新建） ===
     emptyState.classList.remove('hidden');
@@ -1197,6 +1294,9 @@ function loadCardIntoUI(card) {
     
     // 隱藏匯出按鈕
     exportBtn.style.display = 'none';
+    
+    // 隱藏下一步選項
+    hideBranchActions();
   }
 }
 
@@ -1376,6 +1476,9 @@ const webSearchModalInput = document.getElementById('webSearchModalInput');
 const closeWebSearchModal = document.getElementById('closeWebSearchModal');
 const cancelWebSearch = document.getElementById('cancelWebSearch');
 const confirmWebSearch = document.getElementById('confirmWebSearch');
+const webSearchStatus = document.getElementById('webSearchStatus');
+const webSearchStatusLabel = document.getElementById('webSearchStatusLabel');
+const webSearchStatusDetail = document.getElementById('webSearchStatusDetail');
 
 // Search mode elements
 const searchModeToggle = document.getElementById('searchModeToggle');
@@ -1720,30 +1823,29 @@ async function init() {
   await checkStorageQuota();
 }
 
-// Load context items from storage
+// Load context items - now session-based only, not from global storage
 async function loadContextItems() {
+  // Clear any legacy global storage (one-time migration)
   const result = await chrome.storage.local.get('contextItems');
-  contextItems = result.contextItems || [];
+  if (result.contextItems && result.contextItems.length > 0) {
+    console.log('[loadContextItems] Clearing legacy global contextItems:', result.contextItems.length);
+    await chrome.storage.local.remove('contextItems');
+  }
+  
+  // Context items are now loaded from session data, not global storage
+  // Session loading happens in loadSession(), here we just initialize empty
+  sessionContextItems = [];
+  
+  updateVisibleContextItems();
   renderContextItems();
   updateContextBadge();
+  notifyBadgeUpdate();
 }
 
-// Listen for storage changes (from context menu additions and settings)
+// Listen for storage changes (settings only) and messages from background
 function setupStorageListener() {
+  // Storage listener for settings only (not context items)
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    // Local storage changes (context items)
-    if (areaName === 'local' && changes.contextItems) {
-      contextItems = changes.contextItems.newValue || [];
-      renderContextItems();
-      updateContextBadge();
-      
-      // Auto-expand if items were added
-      if (contextItems.length > 0 && contextContent.classList.contains('hidden')) {
-        contextContent.classList.remove('hidden');
-        contextToggle.classList.add('expanded');
-      }
-    }
-    
     // Sync storage changes (API keys and settings)
     if (areaName === 'sync') {
       // Update Brave API key state
@@ -1753,6 +1855,27 @@ function setupStorageListener() {
       }
     }
   });
+  
+  // Listen for messages from background script (context menu additions)
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'ADD_CONTEXT_ITEM') {
+      handleAddContextFromBackground(message.item);
+      sendResponse({ success: true });
+    }
+    return false;
+  });
+}
+
+// Handle context item added from background script (right-click menu)
+async function handleAddContextFromBackground(item) {
+  await addContextItem({
+    type: item.type || 'selection',
+    title: item.title,
+    content: item.content,
+    url: item.url
+  }); // Uses 'auto' scope: root card → session, subtask → card
+  
+  showToast('已加入參考資料');
 }
 
 // Output style settings
@@ -2344,9 +2467,7 @@ function showWebSearchModal() {
 function hideWebSearchModal() {
   if (!webSearchModal) return;
   webSearchModal.classList.add('hidden');
-  if (webSearchModalInput) {
-    webSearchModalInput.value = '';
-  }
+  resetWebSearchModal();
 }
 
 // Execute the actual web search
@@ -2360,30 +2481,41 @@ async function executeWebSearchFromModal() {
     return;
   }
   
-  // Hide modal first
-  hideWebSearchModal();
+  // Disable input and button during search
+  webSearchModalInput.disabled = true;
+  confirmWebSearch.disabled = true;
+  cancelWebSearch.disabled = true;
   
-  // Show loading state
-  webSearchBtn.disabled = true;
-  webSearchBtn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span>';
+  // Show status: preparing
+  updateWebSearchStatus('loading', '準備搜尋中...', `關鍵字：${query}`);
   
   try {
-    showToast(`正在搜尋「${query}」...`);
+    // Status: searching
+    await sleep(300); // Brief delay for UX
+    updateWebSearchStatus('loading', '正在搜尋網路資料...', '連接 Brave Search API');
     
     // Execute Brave Search
     const searchResponse = await chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query: query });
     
     if (searchResponse.error) {
-      showToast(searchResponse.error, true);
+      updateWebSearchStatus('error', '搜尋失敗', searchResponse.error);
+      await sleep(1500);
+      resetWebSearchModal();
       return;
     }
     
     const { results } = searchResponse;
     
     if (!results || results.length === 0) {
-      showToast('找不到相關結果', true);
+      updateWebSearchStatus('error', '找不到結果', '請嘗試其他關鍵字');
+      await sleep(1500);
+      resetWebSearchModal();
       return;
     }
+    
+    // Status: processing results
+    updateWebSearchStatus('loading', '處理搜尋結果...', `找到 ${results.length} 筆資料`);
+    await sleep(300);
     
     // Format search results as context
     let content = '';
@@ -2401,13 +2533,63 @@ async function executeWebSearchFromModal() {
       results: results
     });
     
-    showToast('已加入搜尋結果');
+    // Status: complete
+    updateWebSearchStatus('success', '搜尋完成！', `已加入 ${Math.min(results.length, 5)} 筆結果至參考資料`);
+    
+    // Auto close after success
+    await sleep(1000);
+    hideWebSearchModal();
+    
   } catch (err) {
-    showToast('搜尋失敗：' + err.message, true);
-  } finally {
-    webSearchBtn.disabled = !hasBraveApiKey;
-    webSearchBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><span>網搜</span>`;
+    updateWebSearchStatus('error', '搜尋失敗', err.message);
+    await sleep(1500);
+    resetWebSearchModal();
   }
+}
+
+// Update web search status display
+function updateWebSearchStatus(state, label, detail) {
+  if (!webSearchStatus || !webSearchStatusLabel) return;
+  
+  // Show status
+  webSearchStatus.classList.remove('hidden', 'success', 'error');
+  const iconEl = webSearchStatus.querySelector('.search-status-icon');
+  
+  if (state === 'loading') {
+    iconEl?.classList.remove('success', 'error');
+  } else if (state === 'success') {
+    webSearchStatus.classList.add('success');
+    iconEl?.classList.add('success');
+  } else if (state === 'error') {
+    webSearchStatus.classList.add('error');
+    iconEl?.classList.add('error');
+  }
+  
+  webSearchStatusLabel.textContent = label;
+  if (webSearchStatusDetail) {
+    webSearchStatusDetail.textContent = detail || '';
+  }
+}
+
+// Reset web search modal to initial state
+function resetWebSearchModal() {
+  if (webSearchModalInput) {
+    webSearchModalInput.disabled = false;
+    webSearchModalInput.value = '';
+  }
+  if (confirmWebSearch) confirmWebSearch.disabled = false;
+  if (cancelWebSearch) cancelWebSearch.disabled = false;
+  if (webSearchStatus) {
+    webSearchStatus.classList.add('hidden');
+    webSearchStatus.classList.remove('success', 'error');
+    const iconEl = webSearchStatus.querySelector('.search-status-icon');
+    iconEl?.classList.remove('success', 'error');
+  }
+}
+
+// Helper sleep function
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // Setup web search modal listeners
@@ -3188,8 +3370,29 @@ async function runCouncilIteration() {
   }
 }
 
-async function addContextItem(item) {
+async function addContextItem(item, scope = 'auto') {
   const id = crypto.randomUUID();
+  const currentCard = getCurrentCard();
+  
+  // Determine effective scope:
+  // - 'auto': root card (depth 0) or no card → session; subtask → card
+  // - 'session': always session
+  // - 'card': always card (if possible)
+  let effectiveScope;
+  if (scope === 'session') {
+    effectiveScope = 'session';
+  } else if (scope === 'card' && currentCard) {
+    effectiveScope = 'card';
+  } else if (scope === 'auto') {
+    // At root card (depth 0) or no card → session level
+    // At subtask card (depth > 0) → card level
+    const isRootOrNoCard = !currentCard || currentCard.depth === 0;
+    effectiveScope = isRootOrNoCard ? 'session' : 'card';
+  } else {
+    // Fallback: no card exists
+    effectiveScope = 'session';
+  }
+  
   const contextItem = {
     id,
     type: item.type,
@@ -3197,11 +3400,19 @@ async function addContextItem(item) {
     content: item.content,
     url: item.url,
     timestamp: Date.now(),
+    scope: effectiveScope,
     // Store URL status for search results
     urlsWithStatus: item.urlsWithStatus || null
   };
   
-  contextItems.push(contextItem);
+  if (effectiveScope === 'session') {
+    sessionContextItems.push(contextItem);
+  } else {
+    // Add to current card's context items
+    currentCard.cardContextItems.push(contextItem);
+  }
+  
+  updateVisibleContextItems();
   await saveContextItems();
   renderContextItems();
   updateContextBadge();
@@ -3213,29 +3424,126 @@ async function addContextItem(item) {
   }
 }
 
+// Get combined visible context items (session + current card)
+function getVisibleContextItems() {
+  const currentCard = getCurrentCard();
+  const cardItems = currentCard?.cardContextItems || [];
+  // Session items first, then card items
+  return [...sessionContextItems, ...cardItems];
+}
+
+// Update the contextItems array from visible items
+function updateVisibleContextItems() {
+  contextItems = getVisibleContextItems();
+}
+
+// Promote a card-level context item to session level
+async function promoteToSession(id) {
+  const currentCard = getCurrentCard();
+  if (!currentCard) return;
+  
+  const itemIndex = currentCard.cardContextItems.findIndex(item => item.id === id);
+  if (itemIndex === -1) return;
+  
+  // Remove from card and add to session
+  const [item] = currentCard.cardContextItems.splice(itemIndex, 1);
+  item.scope = 'session';
+  sessionContextItems.push(item);
+  
+  updateVisibleContextItems();
+  await saveContextItems();
+  renderContextItems();
+  updateContextBadge();
+  showToast('已升級為 Session 級參考資料');
+}
+
 async function removeContextItem(id) {
-  contextItems = contextItems.filter(item => item.id !== id);
+  // Try to remove from session items first
+  const sessionIndex = sessionContextItems.findIndex(item => item.id === id);
+  if (sessionIndex !== -1) {
+    sessionContextItems.splice(sessionIndex, 1);
+  } else {
+    // Try to remove from current card's items
+    const currentCard = getCurrentCard();
+    if (currentCard) {
+      const cardIndex = currentCard.cardContextItems.findIndex(item => item.id === id);
+      if (cardIndex !== -1) {
+        currentCard.cardContextItems.splice(cardIndex, 1);
+      }
+    }
+  }
+  
+  updateVisibleContextItems();
   await saveContextItems();
   renderContextItems();
   updateContextBadge();
 }
 
 async function clearContext() {
-  contextItems = [];
+  const currentCard = getCurrentCard();
+  const isRootCard = currentCard && currentCard.depth === 0;
+  
+  if (isRootCard || !currentCard) {
+    // At root level or no card: can clear all, but ask for confirmation
+    const sessionCount = sessionContextItems.length;
+    const cardCount = currentCard?.cardContextItems?.length || 0;
+    const totalCount = sessionCount + cardCount;
+    
+    if (totalCount === 0) {
+      showToast('沒有參考資料可清除');
+      return;
+    }
+    
+    if (sessionCount > 0) {
+      const confirmed = confirm(`將清除所有參考資料（${sessionCount} 個 Session 級 + ${cardCount} 個 Card 級），確定？`);
+      if (!confirmed) return;
+    }
+    
+    sessionContextItems = [];
+    if (currentCard) {
+      currentCard.cardContextItems = [];
+    }
+    showToast('已清除所有參考資料');
+  } else {
+    // At subtask level: only clear card-level items
+    const cardCount = currentCard.cardContextItems?.length || 0;
+    
+    if (cardCount === 0) {
+      showToast('此卡片沒有 Card 級資料可清除（Session 級資料需在根卡片清除）');
+      return;
+    }
+    
+    currentCard.cardContextItems = [];
+    showToast(`已清除 ${cardCount} 個 Card 級參考資料`);
+  }
+  
+  updateVisibleContextItems();
   await saveContextItems();
   renderContextItems();
   updateContextBadge();
-  showToast('已清除參考資料');
 }
 
-// Save context items to storage
+// Save context items - now session-based only
 async function saveContextItems() {
-  const result = await safeStorageSet({ contextItems });
-  if (!result.success) {
-    console.error('Failed to save context items');
+  // Context items are saved within session data, not global storage
+  // Save session if it exists
+  if (sessionState.id) {
+    await saveSession();
   }
-  // Notify background to update badge
-  chrome.runtime.sendMessage({ type: 'UPDATE_CONTEXT_BADGE' });
+  
+  // Notify background to update badge with current count
+  notifyBadgeUpdate();
+}
+
+// Notify background script to update extension badge
+function notifyBadgeUpdate() {
+  const count = contextItems.length;
+  chrome.runtime.sendMessage({ 
+    type: 'UPDATE_CONTEXT_BADGE_COUNT', 
+    count: count 
+  }).catch(() => {
+    // Ignore errors if background script not ready
+  });
 }
 
 const contextCharCount = document.getElementById('contextCharCount');
@@ -3257,6 +3565,9 @@ function updateContextBadge() {
       contextCharCount.classList.add('hidden');
     }
   }
+  
+  // Also update extension badge
+  notifyBadgeUpdate();
 }
 
 function renderContextItems() {
@@ -3279,6 +3590,24 @@ function renderContextItems() {
       ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
       : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
     
+    // Scope indicator
+    const isSessionScope = item.scope === 'session';
+    const scopeClass = isSessionScope ? 'scope-session' : 'scope-card';
+    const scopeIcon = isSessionScope 
+      ? '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2C9.243 2 7 4.243 7 7v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7c0-2.757-2.243-5-5-5zm0 2c1.654 0 3 1.346 3 3v3H9V7c0-1.654 1.346-3 3-3z"/></svg>' // lock icon for session
+      : '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>'; // card icon
+    const scopeTitle = isSessionScope ? 'Session 級（所有卡片共用）' : 'Card 級（僅此卡片）';
+    
+    // Promote button (only for card-level items) - pushpin icon
+    const promoteBtn = !isSessionScope 
+      ? `<button class="context-item-promote" data-id="${item.id}" title="釘選為 Session 級（所有卡片共用）">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 17v5"></path>
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4.76z"></path>
+          </svg>
+        </button>`
+      : '';
+    
     // Build URL list for search items
     let urlListHtml = '';
     if (item.type === 'search' && item.urlsWithStatus && item.urlsWithStatus.length > 0) {
@@ -3300,7 +3629,8 @@ function renderContextItems() {
     }
     
     return `
-      <div class="context-item ${item.type === 'search' ? 'context-item-search' : ''}" data-id="${item.id}">
+      <div class="context-item ${item.type === 'search' ? 'context-item-search' : ''} ${scopeClass}" data-id="${item.id}">
+        <div class="context-item-scope" title="${scopeTitle}">${scopeIcon}</div>
         <div class="context-item-icon ${iconClass}">${iconSvg}</div>
         <div class="context-item-body">
           <div class="context-item-title">${escapeHtml(item.title)}</div>
@@ -3308,12 +3638,15 @@ function renderContextItems() {
           <div class="context-item-preview">${escapeHtml(preview)}${charCount > 150 ? '...' : ''}</div>
           <div class="context-item-meta">${formatCharCount(charCount)}</div>
         </div>
-        <button class="context-item-remove" data-id="${item.id}" title="移除此參考資料">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+        <div class="context-item-actions">
+          ${promoteBtn}
+          <button class="context-item-remove" data-id="${item.id}" title="移除此參考資料">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
       </div>
     `;
   }).join('');
@@ -3323,6 +3656,14 @@ function renderContextItems() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       removeContextItem(btn.dataset.id);
+    });
+  });
+  
+  // Add promote handlers
+  contextItemsEl.querySelectorAll('.context-item-promote').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      promoteToSession(btn.dataset.id);
     });
   });
 }
@@ -3469,6 +3810,18 @@ async function handleBranchImage() {
   branchImageBtn.disabled = true;
   branchImageBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px"></span><span>準備中...</span>';
   
+  const resetButton = () => {
+    branchImageBtn.disabled = false;
+    branchImageBtn.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+        <polyline points="21 15 16 10 5 21"></polyline>
+      </svg>
+      <span>生成圖片</span>
+    `;
+  };
+  
   try {
     const finalAnswerContent = currentConversation.finalAnswer;
     const query = currentConversation.query;
@@ -3485,7 +3838,7 @@ async function handleBranchImage() {
     `;
     finalAnswer.appendChild(promptLoadingEl);
     
-    // Generate prompts with AI
+    // Phase 1: Generate prompts with AI
     const aiResult = await generateImagePromptWithAI(query, finalAnswerContent, savedResponses);
     promptLoadingEl.remove();
     
@@ -3495,48 +3848,94 @@ async function handleBranchImage() {
       showToast(`AI 識別到 ${aiResult.imageCount} 張圖片規劃`);
     }
     
-    // Show multi-image editor
-    showMultiImageEditor(
-      aiResult,
-      async (generatedImages) => {
-        // Update saved conversation with image metadata
-        if (currentConversation && generatedImages.length > 0) {
-          currentConversation.imagePrompts = generatedImages.map(g => ({
-            title: g.title,
-            prompt: g.prompt
-          }));
+    resetButton();
+    
+    // Phase 2: Show style selection UI
+    const startStyleSelection = (result) => {
+      showStyleSelectionUI(
+        result,
+        async (selectedStyle, editedGlobalContext, paradigmSelections) => {
+          // Update result with edited global context and paradigm selections
+          const updatedResult = {
+            ...result,
+            globalContext: editedGlobalContext,
+            paradigmSelections: paradigmSelections || {}
+          };
           
-          const result = await chrome.storage.local.get('conversations');
-          const conversations = result.conversations || [];
-          const idx = conversations.findIndex(c => c.id === currentConversation.id);
-          if (idx >= 0) {
-            conversations[idx] = currentConversation;
-            await safeStorageSet({ conversations });
-          }
+          // Show loading for style integration
+          const integratingEl = document.createElement('div');
+          integratingEl.className = 'image-prompt-loading';
+          integratingEl.innerHTML = `
+            <div class="loading-indicator">
+              <div class="loading-dots"><span></span><span></span><span></span></div>
+              <span class="loading-text">正在將風格融入所有圖像 prompt...</span>
+            </div>
+          `;
+          finalAnswer.appendChild(integratingEl);
+          
+          // Phase 3: Integrate style into prompts
+          const integratedResult = await integrateStyleIntoPrompts(updatedResult, selectedStyle, editedGlobalContext);
+          integratingEl.remove();
+          
+          // Phase 4: Show preview textarea
+          showPromptPreview(
+            integratedResult,
+            (finalResult) => {
+              // Phase 5: Proceed to multi-image editor
+              showMultiImageEditor(
+                finalResult,
+                async (generatedImages) => {
+                  // Update saved conversation with image metadata
+                  if (currentConversation && generatedImages.length > 0) {
+                    currentConversation.imagePrompts = generatedImages.map(g => ({
+                      title: g.title,
+                      prompt: g.prompt
+                    }));
+                    
+                    const storageResult = await chrome.storage.local.get('conversations');
+                    const conversations = storageResult.conversations || [];
+                    const idx = conversations.findIndex(c => c.id === currentConversation.id);
+                    if (idx >= 0) {
+                      conversations[idx] = currentConversation;
+                      await safeStorageSet({ conversations });
+                    }
+                  }
+                  
+                  // Show Vision button now that images are generated
+                  if (branchVisionBtn && generatedImages.length > 0) {
+                    branchVisionBtn.classList.remove('hidden');
+                  }
+                },
+                () => {
+                  showToast('已關閉圖像編輯器');
+                },
+                () => {
+                  // Back to style selection from multi-image editor
+                  startStyleSelection(result);
+                }
+              );
+            },
+            () => {
+              // Back to style selection from preview
+              startStyleSelection(result);
+            },
+            () => {
+              showToast('已取消圖像生成');
+            }
+          );
+        },
+        () => {
+          showToast('已取消圖像生成');
         }
-        
-        // Show Vision button now that images are generated
-        if (branchVisionBtn && generatedImages.length > 0) {
-          branchVisionBtn.classList.remove('hidden');
-        }
-      },
-      () => {
-        showToast('已關閉圖像編輯器');
-      }
-    );
+      );
+    };
+    
+    startStyleSelection(aiResult);
+    
   } catch (err) {
     console.error('Branch image error:', err);
     showToast('製圖失敗：' + err.message, true);
-  } finally {
-    branchImageBtn.disabled = false;
-    branchImageBtn.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-        <circle cx="8.5" cy="8.5" r="1.5"></circle>
-        <polyline points="21 15 16 10 5 21"></polyline>
-      </svg>
-      <span>生成圖片</span>
-    `;
+    resetButton();
   }
 }
 
@@ -4109,7 +4508,8 @@ async function executeNewSession() {
   searchIterationHint.classList.add('hidden');
   sendBtn.classList.remove('next-iteration');
   
-  // Clear context items
+  // Clear context items (both session and card level)
+  sessionContextItems = [];
   contextItems = [];
   await saveContextItems();
   renderContextItems();
@@ -4118,7 +4518,7 @@ async function executeNewSession() {
   // Reset session cost
   resetSessionCost();
   
-  // Reset task planner state
+  // Reset task planner state (this also clears sessionContextItems)
   initSession();
   hideTodoSection();
   
@@ -4381,7 +4781,25 @@ async function loadConversation(id) {
   searchStrategySection.classList.add('hidden');
 
   // 載入並替換參考資料快照
-  contextItems = conv.contextItemsSnapshot ? JSON.parse(JSON.stringify(conv.contextItemsSnapshot)) : [];
+  const snapshotItems = conv.contextItemsSnapshot ? JSON.parse(JSON.stringify(conv.contextItemsSnapshot)) : [];
+  
+  // Migrate old format items to have scope
+  snapshotItems.forEach(item => {
+    if (!item.scope) {
+      item.scope = 'session'; // Old conversation items become session-level
+    }
+  });
+  
+  // For old conversations, treat all as session-level
+  sessionContextItems = snapshotItems.filter(item => item.scope === 'session');
+  
+  // Clear any card context (since this is a legacy conversation load)
+  const currentCard = getCurrentCard();
+  if (currentCard) {
+    currentCard.cardContextItems = snapshotItems.filter(item => item.scope === 'card');
+  }
+  
+  updateVisibleContextItems();
   await saveContextItems();
   renderContextItems();
   updateContextBadge();
@@ -4559,7 +4977,8 @@ async function saveSession() {
     currentCardId: sessionState.currentCardId,
     breadcrumb: sessionState.breadcrumb,
     cards: cardsArray,
-    contextItemsSnapshot: JSON.parse(JSON.stringify(contextItems)),
+    sessionContextItems: JSON.parse(JSON.stringify(sessionContextItems)), // Session-level items
+    contextItemsSnapshot: JSON.parse(JSON.stringify(contextItems)), // For backwards compatibility
     timestamp: Date.now()
   };
   
@@ -4602,16 +5021,31 @@ async function loadSession(sessionId) {
   // Restore cards Map
   sessionState.cards.clear();
   (sessionData.cards || []).forEach(card => {
+    // Ensure cardContextItems exists for each card (migration)
+    if (!card.cardContextItems) {
+      card.cardContextItems = [];
+    }
     sessionState.cards.set(card.id, card);
   });
   
-  // Restore context items
-  if (sessionData.contextItemsSnapshot) {
-    contextItems = sessionData.contextItemsSnapshot;
-    await saveContextItems();
-    renderContextItems();
-    updateContextBadge();
+  // Restore session-level context items
+  if (sessionData.sessionContextItems) {
+    sessionContextItems = sessionData.sessionContextItems;
+  } else if (sessionData.contextItemsSnapshot) {
+    // Migration: old format - treat all as session-level
+    sessionContextItems = sessionData.contextItemsSnapshot.map(item => ({
+      ...item,
+      scope: 'session'
+    }));
+  } else {
+    sessionContextItems = [];
   }
+  
+  // Update visible context items and UI
+  updateVisibleContextItems();
+  await saveContextItems();
+  renderContextItems();
+  updateContextBadge();
   
   // Switch to current card
   if (sessionState.currentCardId) {
@@ -5003,22 +5437,18 @@ async function handleSend() {
           stage25Status.className = 'stage-status done';
           stage25Section.classList.add('collapsed');
           
-          // Add search results to context
+          // Add search results to context (auto scope: root → session, subtask → card)
           if (searchResults && searchResults.length > 0) {
-            const combinedResults = searchResults.map(r => ({
-              title: `搜尋: ${r.query}`,
-              content: r.results.map(item => `${item.title}\n${item.snippet}`).join('\n\n'),
-              url: '',
-              type: 'search'
-            }));
-            
-            combinedResults.forEach(result => {
+            for (const r of searchResults) {
               if (contextItems.length < 20) {
-                contextItems.push(result);
+                await addContextItem({
+                  title: `搜尋: ${r.query}`,
+                  content: r.results.map(item => `${item.title}\n${item.snippet}`).join('\n\n'),
+                  url: '',
+                  type: 'search'
+                }); // Uses 'auto' scope
               }
-            });
-            renderContextItems();
-            updateContextBadge();
+            }
           }
         } catch (searchErr) {
           console.error('Search failed:', searchErr);
@@ -5130,7 +5560,7 @@ async function handleSend() {
       `;
       finalAnswer.appendChild(promptLoadingEl);
       
-      // Generate prompts with AI (now supports multiple images)
+      // Phase 1: Generate prompts with AI (now supports multiple images)
       const aiResult = await generateImagePromptWithAI(query, finalAnswerContent, savedResponses);
       promptLoadingEl.remove();
       
@@ -5140,39 +5570,91 @@ async function handleSend() {
         showToast(`AI 識別到 ${aiResult.imageCount} 張圖片規劃`);
       }
       
-      // Show multi-image editor
-      showMultiImageEditor(
-        aiResult,
-        // onImageGenerated callback - called each time an image is generated
-        async (generatedImages) => {
-          // Update saved conversation with image metadata (not base64 data to avoid quota)
-          if (currentConversation && generatedImages.length > 0) {
-            // Only store prompts and titles, not the actual image data
-            currentConversation.imagePrompts = generatedImages.map(g => ({
-              title: g.title,
-              prompt: g.prompt
-              // image data not stored to avoid storage quota exceeded
-            }));
-            
-            const result = await chrome.storage.local.get('conversations');
-            const conversations = result.conversations || [];
-            const idx = conversations.findIndex(c => c.id === currentConversation.id);
-            if (idx >= 0) {
-              conversations[idx] = currentConversation;
-              await safeStorageSet({ conversations });
-            }
-          }
+      // Helper function to handle image generation callbacks
+      const onImageGenComplete = async (generatedImages) => {
+        // Update saved conversation with image metadata (not base64 data to avoid quota)
+        if (currentConversation && generatedImages.length > 0) {
+          // Only store prompts and titles, not the actual image data
+          currentConversation.imagePrompts = generatedImages.map(g => ({
+            title: g.title,
+            prompt: g.prompt
+          }));
           
-          // Show Vision button now that images are generated
-          if (branchVisionBtn && generatedImages.length > 0) {
-            branchVisionBtn.classList.remove('hidden');
+          const result = await chrome.storage.local.get('conversations');
+          const conversations = result.conversations || [];
+          const idx = conversations.findIndex(c => c.id === currentConversation.id);
+          if (idx >= 0) {
+            conversations[idx] = currentConversation;
+            await safeStorageSet({ conversations });
           }
-        },
-        // onCancel
-        () => {
-          showToast('已關閉圖像編輯器');
         }
-      );
+        
+        // Show Vision button now that images are generated
+        if (branchVisionBtn && generatedImages.length > 0) {
+          branchVisionBtn.classList.remove('hidden');
+        }
+      };
+      
+      // Phase 2: Show style selection UI
+      const startImageStyleSelection = (result) => {
+        showStyleSelectionUI(
+          result,
+          async (selectedStyle, editedGlobalContext, paradigmSelections) => {
+            // Update result with edited global context and paradigm selections
+            const updatedResult = {
+              ...result,
+              globalContext: editedGlobalContext,
+              paradigmSelections: paradigmSelections || {}
+            };
+            
+            // Show loading for style integration
+            const integratingEl = document.createElement('div');
+            integratingEl.className = 'image-prompt-loading';
+            integratingEl.innerHTML = `
+              <div class="loading-indicator">
+                <div class="loading-dots"><span></span><span></span><span></span></div>
+                <span class="loading-text">正在將風格融入所有圖像 prompt...</span>
+              </div>
+            `;
+            finalAnswer.appendChild(integratingEl);
+            
+            // Phase 3: Integrate style into prompts
+            const integratedResult = await integrateStyleIntoPrompts(updatedResult, selectedStyle, editedGlobalContext);
+            integratingEl.remove();
+            
+            // Phase 4: Show preview textarea
+            showPromptPreview(
+              integratedResult,
+              (finalResult) => {
+                // Phase 5: Proceed to multi-image editor
+                showMultiImageEditor(
+                  finalResult, 
+                  onImageGenComplete, 
+                  () => {
+                    showToast('已關閉圖像編輯器');
+                  },
+                  () => {
+                    // Back to style selection from multi-image editor
+                    startImageStyleSelection(result);
+                  }
+                );
+              },
+              () => {
+                // Back to style selection from preview
+                startImageStyleSelection(result);
+              },
+              () => {
+                showToast('已取消圖像生成');
+              }
+            );
+          },
+          () => {
+            showToast('已取消圖像生成');
+          }
+        );
+      };
+      
+      startImageStyleSelection(aiResult);
     }
 
   } catch (err) {
@@ -5596,13 +6078,17 @@ async function runReview(reviewerModel, query, allResponses) {
     })));
   } catch (err) { 
     console.error(`Review by ${reviewerModel} failed:`, err);
+    const formatted = formatApiError(err, getModelName(reviewerModel));
     reviewFailures.set(reviewerModel, {
-      error: `API 呼叫失敗: ${err.message}`,
+      error: formatted.detail,
       raw: '',
       query,
       allResponses
     });
-    showToast(`${getModelName(reviewerModel)} 審查失敗: ${err.message}`, true);
+    const actionHint = formatted.actions.includes('switch-model') 
+      ? '，可重試或更換模型' 
+      : '，可稍後重試';
+    showToast(`${formatted.short}${actionHint}`, true);
   }
 }
 
@@ -5632,13 +6118,16 @@ function renderReviewResults(ranking) {
           <span class="failure-model">${getModelName(model)}</span>
           <span class="failure-error">${escapeHtml(info.error)}</span>
         </div>
-        <button class="retry-review-btn" data-model="${model}">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M23 4v6h-6M1 20v-6h6"/>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-          </svg>
-          重試
-        </button>
+        <div class="failure-actions">
+          <button class="retry-review-btn" data-model="${model}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6M1 20v-6h6"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            重試
+          </button>
+          <span class="failure-hint">或在設定中更換此模型</span>
+        </div>
       </div>
     `).join('');
     failuresHtml = `<div class="review-failures"><div class="review-failures-title">審查失敗 (${reviewFailures.size})</div>${failureItems}</div>`;
@@ -5838,76 +6327,190 @@ async function queryModelNonStreaming(model, prompt, trackCost = true) {
   });
 }
 
-// AI-based multi-image prompt generation
-const IMAGE_PROMPT_SYSTEM = `你是視覺設計專家和圖像生成 Prompt 工程師。根據提供的內容，分析主題並生成適合的圖像描述。
+// AI-based multi-image prompt generation with Paradigmatic Axes (符號學兩軸論)
+const IMAGE_PROMPT_SYSTEM = `你是視覺設計專家和圖像生成 Prompt 工程師。根據提供的內容，運用符號學兩軸論（索緒爾理論）分析主題並生成結構化的圖像描述。
 
-## 核心原則（必讀）
-1. **完整自然語句**：用完整句子描述，像對人類設計師溝通，不要只丟關鍵字
-2. **用途優先**：每張圖的 prompt 開頭先說明用途情境（如：用於財報簡報的資訊圖表、YouTube 縮圖、教學海報）
-3. **具體勝過抽象**：描述主體、場景、光影、材質，勝過「美麗的」「專業的」等形容詞
+## 符號學兩軸論核心概念
 
-## 分析規則
-1. 仔細分析內容是否規劃了多張圖片/圖卡/資訊圖表
-2. 如果內容明確規劃了多張圖，為每張圖生成獨立的 prompt
-3. 如果沒有明確規劃，根據內容複雜度決定是否需要多張圖（1-5張）
-4. 每張圖的選項應與該圖主題高度相關，而非通用選項
-5. 抽象概念應設計象徵性的視覺表達
+### 毗鄰軸（Syntagmatic Axis）
+完整的 prompt 是由多個系譜軸選項組合而成的橫向語意結構：
+角色描述 + 場景描述 + 物件描述 + 構圖指令 + 風格描述 = 完整 Prompt
 
-## Prompt 撰寫技巧（根據主題類型）
+### 系譜軸（Paradigmatic Axis）
+每個敘事元素（主體）都有垂直的替代選項可供選擇：
+- 主體：爸爸 → 屬性：{面貌: [方臉, 圓臉], 表情: [微笑, 沉思]}
+- 主體：櫻花樹 → 屬性：{花況: [盛開, 半開], 高度: [高聳, 中等]}
 
-### 資訊圖表/數據視覺化 (theme_type: data)
-- 明確指定版面風格：「科技感雜誌排版」「工程技術藍圖」「手繪白板風」「現代化資訊圖表」
-- 清楚列出必須出現的文字項目和數據標籤
-- 指定文字排版方向（橫式/直式）與層級
+## 動態分析原則（極重要）
 
-### 人物/角色場景 (theme_type: narrative)
-- 指定表情、姿勢、畫面位置（如「人在左側，驚訝表情，手指向右邊主題」）
-- 如需多張圖，註明「保持人物臉部特徵與服裝在所有圖片中一致」
-- 結合構圖元素：高飽和背景、粗體大標、箭頭/圈選（病毒式縮圖構圖）
+你必須根據使用者 prompt 內容**動態識別**敘事主體，而非使用固定模板：
+- 京都旅遊 → 識別：家庭成員、神社、庭園、和服
+- 科幻故事 → 識別：太空人、機器人、星艦、星球
+- 美食文章 → 識別：料理、食材、餐具、擺盤
+- 企業簡報 → 識別：圖表、數據標籤、版面區塊
 
-### 產品/物件 (theme_type: concrete)
-- 具體描述材質紋理（如「漢堡麵包焦脆裂紋、起司融化反光」）
-- 可用「4K 解析度」「high fidelity render」提升品質
-- 可加「解構視圖＋文字標註每一層的名稱與特性」
+## 系譜軸分類（兩層結構）
 
-### 抽象概念 (theme_type: abstract)
-- 設計象徵性視覺表達，用具體物件隱喻抽象概念
-- 指定光影風格（如「強烈邊光」「柔和自然光」）
-- 可用白板/流程圖呈現思考推理過程
+### 全局系譜軸（Global Paradigms）- 所有圖片共用
+跨圖片必須保持一致的元素：
 
-## 結構控制指令（可選）
-- 構圖位置：「主體置中」「三分法構圖」「對角線構圖」
-- 視角控制：「俯視45度」「正面平視」「廣角透視」
-- 比例指定：「16:9 橫幅」「1:1 方形」「9:16 直式」
-- 維度轉換：「2D 平面圖轉 3D 室內設計」「3D 轉像素風」
+1. **角色系譜軸（characters）**
+   識別所有角色，為每個角色生成 2-4 個屬性類別，每個屬性 2-4 個選項
+   
+2. **風格系譜軸（style）**
+   線條、質感、渲染方式等畫風屬性
+   
+3. **色彩氛圍系譜軸（color_atmosphere）**
+   色溫、飽和度、光線方向等色彩屬性
 
-你必須輸出 JSON 格式：
+### 單圖系譜軸（Image Paradigms）- 每張圖獨立
+依敘事需求變化的元素：
+
+1. **場景系譜軸（scene）**
+   該圖的場景元素及其屬性選項
+   
+2. **物件系譜軸（object）**
+   該圖的關鍵物件及其屬性選項
+   
+3. **構圖系譜軸（composition）**
+   視角、景深、主體位置等構圖選項
+
+## 風格推薦規則
+根據內容主題推薦 3-5 個適合的視覺風格，必須：
+1. **貼近主題**：寓言→童話風、科技→賽博龐克、旅遊→插畫風
+2. **具體描述**：「柔和水彩筆觸，色彩暈染邊緣，童話繪本質感」
+3. **多樣選擇**：提供寫實、插畫、抽象等不同取向
+
+## 輸出 JSON 格式
+
 \`\`\`json
 {
   "image_count": 3,
   "theme_type": "abstract|concrete|narrative|data",
-  "use_case": "用途說明（如：社群貼文、簡報配圖、教學素材）",
+  "use_case": "用途說明",
+  
+  "recommended_styles": [
+    {
+      "id": "style_id_snake_case",
+      "name": "風格名稱",
+      "description": "詳細風格描述（30-50字）",
+      "suitable_for": "適合場景"
+    }
+  ],
+  
+  "global_paradigms": {
+    "characters": {
+      "角色名稱": {
+        "屬性類別1": ["選項1", "選項2", "選項3"],
+        "屬性類別2": ["選項1", "選項2"]
+      }
+    },
+    "style": {
+      "線條": ["細膩手繪", "粗獷筆觸", "平滑向量"],
+      "質感": ["紙本紋理", "平滑數位", "水彩暈染"]
+    },
+    "color_atmosphere": {
+      "色溫": ["暖色調", "冷色調", "中性"],
+      "飽和度": ["低飽和日系", "標準", "高飽和鮮明"],
+      "光線": ["柔和自然光", "強烈側光", "逆光剪影"]
+    }
+  },
+  
+  "consistency_block": {
+    "characters": "所有角色的精確外觀描述，使用 {角色名.屬性} placeholder",
+    "style": "畫風描述，使用 {style.屬性} placeholder",
+    "scene_coherence": "場景連貫性要求"
+  },
+  
+  "global_context": "簡短全局說明",
+  
   "images": [
     {
       "title": "圖卡標題",
-      "use_case": "此圖的具體用途",
-      "description": "這張圖的目的和內容說明",
-      "scene_description": "詳細的場景描述，包含主體、環境、光線、氛圍",
-      "composition": "構圖與視角指令",
-      "text_elements": ["需要出現在圖中的文字項目（如有）"],
-      "material_detail": "材質與紋理描述",
-      "option_groups": [
-        {
-          "name": "選項組名稱",
-          "options": ["選項1", "選項2", "選項3"]
+      "use_case": "此圖用途",
+      "description": "圖片說明",
+      
+      "image_paradigms": {
+        "scene": {
+          "場景元素名": {
+            "屬性1": ["選項1", "選項2"],
+            "屬性2": ["選項1", "選項2"]
+          }
+        },
+        "object": {
+          "物件名": {
+            "屬性1": ["選項1", "選項2"]
+          }
+        },
+        "composition": {
+          "視角": ["平視", "俯視", "仰視"],
+          "景深": ["遠景全身", "中景半身", "近景特寫"],
+          "位置": ["主體置中", "三分法左", "三分法右"]
         }
-      ],
-      "style_options": ["風格1", "風格2", "風格3"],
-      "color_palette": ["色調1", "色調2", "色調3"],
-      "resolution_hint": "4K|高清|標準",
-      "final_prompt": "直接可用的完整圖像生成 prompt（150-250字，用完整自然語句，開頭先寫用途）"
+      },
+      
+      "base_prompt": "包含 {placeholder} 的圖像描述（150-200字）"
     }
   ]
+}
+\`\`\`
+
+## Placeholder 命名規則
+
+### 全局 placeholder（用於 consistency_block）
+- {角色名.屬性}：如 {爸爸.面貌}、{媽媽.表情}
+- {style.屬性}：如 {style.線條}、{style.質感}
+- {color.屬性}：如 {color.色溫}、{color.光線}
+
+### 單圖 placeholder（用於 base_prompt）
+- {scene.元素.屬性}：如 {scene.庭園.狀態}
+- {object.物件.屬性}：如 {object.燈籠.數量}
+- {comp.屬性}：如 {comp.視角}、{comp.景深}
+
+## 範例：京都親子旅遊
+
+\`\`\`json
+{
+  "global_paradigms": {
+    "characters": {
+      "爸爸": {
+        "面貌": ["方臉", "圓臉"],
+        "表情": ["微笑", "沉穩", "驚喜"]
+      },
+      "媽媽": {
+        "面貌": ["鵝蛋臉", "瓜子臉"],
+        "表情": ["溫柔微笑", "開心大笑"]
+      },
+      "女童": {
+        "髮型": ["雙馬尾", "單馬尾", "短髮"],
+        "表情": ["天真笑容", "好奇張望"]
+      }
+    },
+    "color_atmosphere": {
+      "色溫": ["冷灰藍冬季調", "溫暖米色調"],
+      "飽和度": ["低飽和日系", "中等飽和"]
+    }
+  },
+  "images": [{
+    "title": "貴船神社",
+    "image_paradigms": {
+      "scene": {
+        "神社階梯": {
+          "狀態": ["積雪覆蓋", "乾淨整潔", "落葉點綴"],
+          "長度": ["延伸至遠方", "短階數層"]
+        },
+        "燈籠": {
+          "數量": ["成排綿延", "零星點綴"],
+          "狀態": ["點亮", "未亮"]
+        }
+      },
+      "composition": {
+        "視角": ["仰視", "平視"],
+        "景深": ["遠景", "中景"]
+      }
+    },
+    "base_prompt": "一家四口站在{scene.神社階梯.狀態}的石階前，{scene.燈籠.數量}的朱紅燈籠沿階而上。{comp.視角}構圖下，{爸爸.表情}的爸爸..."
+  }]
 }
 \`\`\``;
 
@@ -5974,8 +6577,44 @@ ${finalContent.slice(0, 2500)}
     const imageCount = parsed.image_count || 1;
     const images = parsed.images || [];
     
+    // Parse recommended styles
+    const recommendedStyles = (parsed.recommended_styles || []).map(style => ({
+      id: style.id || style.name?.toLowerCase().replace(/\s+/g, '_') || 'default',
+      name: style.name || '預設風格',
+      description: style.description || '',
+      suitableFor: style.suitable_for || ''
+    }));
+    
+    // Fallback styles if AI didn't provide any
+    if (recommendedStyles.length === 0) {
+      recommendedStyles.push(
+        { id: 'realistic', name: '寫實攝影', description: '高解析度攝影風格，自然光影，真實質感', suitableFor: '產品、人像、場景' },
+        { id: 'illustration', name: '插畫風格', description: '手繪插畫質感，柔和線條，藝術感色彩', suitableFor: '故事、教學、概念圖' },
+        { id: 'minimalist', name: '極簡現代', description: '簡潔俐落，大量留白，幾何元素', suitableFor: '資訊圖表、UI 設計、商業' }
+      );
+    }
+    
+    // Get global context for multi-image consistency
+    const globalContext = parsed.global_context || '';
+    
+    // Parse consistency block (new structure for detailed character/style consistency)
+    const consistencyBlock = parsed.consistency_block || {};
+    const parsedConsistencyBlock = {
+      characters: consistencyBlock.characters || '',
+      style: consistencyBlock.style || '',
+      sceneCoherence: consistencyBlock.scene_coherence || ''
+    };
+    
+    // Parse global paradigms (符號學系譜軸 - 全局)
+    const globalParadigms = parsed.global_paradigms || {};
+    const parsedGlobalParadigms = {
+      characters: globalParadigms.characters || {},
+      style: globalParadigms.style || {},
+      colorAtmosphere: globalParadigms.color_atmosphere || {}
+    };
+    
     // If old single-image format, convert to array
-    if (images.length === 0 && parsed.final_prompt) {
+    if (images.length === 0 && (parsed.final_prompt || parsed.base_prompt)) {
       images.push({
         title: '圖像',
         use_case: parsed.use_case || '',
@@ -5984,11 +6623,10 @@ ${finalContent.slice(0, 2500)}
         composition: parsed.composition || '',
         text_elements: parsed.text_elements || [],
         material_detail: parsed.material_detail || '',
-        option_groups: parsed.option_groups || [],
-        style_options: parsed.style_options || [],
-        color_palette: parsed.color_palette || [],
+        placeholders: parsed.placeholders || {},
+        image_paradigms: {},
         resolution_hint: parsed.resolution_hint || '高清',
-        final_prompt: parsed.final_prompt
+        base_prompt: parsed.base_prompt || parsed.final_prompt || ''
       });
     }
     
@@ -5997,6 +6635,10 @@ ${finalContent.slice(0, 2500)}
       imageCount: images.length || imageCount,
       themeType: parsed.theme_type || 'concrete',
       useCase: parsed.use_case || '',
+      recommendedStyles: recommendedStyles,
+      consistencyBlock: parsedConsistencyBlock,
+      globalParadigms: parsedGlobalParadigms,
+      globalContext: globalContext,
       images: images.map((img, idx) => ({
         id: `img-${idx}`,
         title: img.title || `圖像 ${idx + 1}`,
@@ -6006,12 +6648,26 @@ ${finalContent.slice(0, 2500)}
         composition: img.composition || '',
         textElements: img.text_elements || [],
         materialDetail: img.material_detail || '',
-        optionGroups: img.option_groups || [],
-        styleOptions: img.style_options || [],
-        colorPalette: img.color_palette || [],
+        // Legacy placeholders support
+        placeholders: Object.entries(img.placeholders || {}).reduce((acc, [key, val]) => {
+          acc[key] = {
+            default: val?.default || '',
+            options: val?.options || [],
+            currentValue: val?.default || ''
+          };
+          return acc;
+        }, {}),
+        // New: image paradigms (符號學系譜軸 - 單圖)
+        imageParadigms: {
+          scene: img.image_paradigms?.scene || {},
+          object: img.image_paradigms?.object || {},
+          composition: img.image_paradigms?.composition || {}
+        },
         resolutionHint: img.resolution_hint || '高清',
-        finalPrompt: img.final_prompt || '',
-        status: 'pending', // pending | generating | done | error
+        basePrompt: img.base_prompt || img.final_prompt || '',
+        // These will be populated after style selection
+        finalPrompt: '',
+        status: 'pending',
         generatedImage: null,
         error: null
       }))
@@ -6023,6 +6679,22 @@ ${finalContent.slice(0, 2500)}
       error: err.message,
       imageCount: 1,
       useCase: '',
+      recommendedStyles: [
+        { id: 'realistic', name: '寫實攝影', description: '高解析度攝影風格，自然光影，真實質感', suitableFor: '產品、人像、場景' },
+        { id: 'illustration', name: '插畫風格', description: '手繪插畫質感，柔和線條，藝術感色彩', suitableFor: '故事、教學、概念圖' },
+        { id: 'minimalist', name: '極簡現代', description: '簡潔俐落，大量留白，幾何元素', suitableFor: '資訊圖表、UI 設計、商業' }
+      ],
+      consistencyBlock: {
+        characters: '',
+        style: '',
+        sceneCoherence: ''
+      },
+      globalParadigms: {
+        characters: {},
+        style: {},
+        colorAtmosphere: {}
+      },
+      globalContext: '',
       images: [{
         id: 'img-0',
         title: '圖像',
@@ -6032,10 +6704,14 @@ ${finalContent.slice(0, 2500)}
         composition: '',
         textElements: [],
         materialDetail: '',
-        optionGroups: [],
-        styleOptions: ['寫實攝影風格', '油畫風', '水彩', '動畫風', '電影感'],
-        colorPalette: ['暖色調', '冷色調', '高對比', '柔和'],
+        placeholders: {},
+        imageParadigms: {
+          scene: {},
+          object: {},
+          composition: {}
+        },
         resolutionHint: '高清',
+        basePrompt: '',
         finalPrompt: '',
         status: 'pending',
         generatedImage: null,
@@ -6045,29 +6721,813 @@ ${finalContent.slice(0, 2500)}
   }
 }
 
+// Helper: Build paradigm axis HTML for a subject with attributes
+function buildParadigmSubjectHtml(subjectName, attributes, axisType, subjectIdx) {
+  const attributeRows = Object.entries(attributes).map(([attrName, options]) => {
+    const optionChips = options.map((opt, optIdx) => 
+      `<button class="paradigm-chip" data-axis="${escapeAttr(axisType)}" data-subject="${escapeAttr(subjectName)}" data-attr="${escapeAttr(attrName)}" data-value="${escapeAttr(opt)}" data-idx="${optIdx}">${escapeHtml(opt)}</button>`
+    ).join('');
+    return `
+      <div class="paradigm-attribute-row">
+        <span class="paradigm-attr-label">${escapeHtml(attrName)}</span>
+        <div class="paradigm-chips-row">${optionChips}</div>
+      </div>
+    `;
+  }).join('');
+  
+  return `
+    <div class="paradigm-subject" data-subject="${escapeAttr(subjectName)}">
+      <div class="paradigm-subject-header">
+        <span class="paradigm-subject-icon">📌</span>
+        <span class="paradigm-subject-name">${escapeHtml(subjectName)}</span>
+      </div>
+      <div class="paradigm-attributes">${attributeRows}</div>
+    </div>
+  `;
+}
+
+// Helper: Build full paradigm axis section HTML
+function buildParadigmAxisHtml(axisName, axisLabel, subjects, icon = '🎨') {
+  if (!subjects || Object.keys(subjects).length === 0) return '';
+  
+  const subjectsHtml = Object.entries(subjects).map(([name, attrs], idx) => 
+    buildParadigmSubjectHtml(name, attrs, axisName, idx)
+  ).join('');
+  
+  return `
+    <div class="paradigm-axis-section" data-axis="${escapeAttr(axisName)}">
+      <div class="paradigm-axis-header">
+        <span class="paradigm-axis-icon">${icon}</span>
+        <span class="paradigm-axis-label">${escapeHtml(axisLabel)}</span>
+      </div>
+      <div class="paradigm-subjects">${subjectsHtml}</div>
+    </div>
+  `;
+}
+
+// Compose a prompt from paradigmatic selections (毗鄰軸組合)
+function composePromptFromParadigms(basePrompt, globalSelections, imageSelections) {
+  let prompt = basePrompt;
+  
+  // Replace global paradigm placeholders
+  if (globalSelections) {
+    // Characters: {角色名.屬性}
+    if (globalSelections.characters) {
+      Object.entries(globalSelections.characters).forEach(([charName, attrs]) => {
+        Object.entries(attrs).forEach(([attrName, value]) => {
+          const patterns = [
+            `{${charName}.${attrName}}`,
+            `{characters.${charName}.${attrName}}`
+          ];
+          patterns.forEach(pattern => {
+            prompt = prompt.split(pattern).join(value);
+          });
+        });
+      });
+    }
+    
+    // Style: {style.屬性}
+    if (globalSelections.style) {
+      Object.entries(globalSelections.style).forEach(([styleName, attrs]) => {
+        Object.entries(attrs).forEach(([attrName, value]) => {
+          const patterns = [
+            `{style.${attrName}}`,
+            `{${styleName}.${attrName}}`
+          ];
+          patterns.forEach(pattern => {
+            prompt = prompt.split(pattern).join(value);
+          });
+        });
+      });
+    }
+    
+    // Color atmosphere: {color.屬性}
+    if (globalSelections.colorAtmosphere) {
+      Object.entries(globalSelections.colorAtmosphere).forEach(([colorName, attrs]) => {
+        Object.entries(attrs).forEach(([attrName, value]) => {
+          const patterns = [
+            `{color.${attrName}}`,
+            `{${colorName}.${attrName}}`
+          ];
+          patterns.forEach(pattern => {
+            prompt = prompt.split(pattern).join(value);
+          });
+        });
+      });
+    }
+  }
+  
+  // Replace image-level paradigm placeholders
+  if (imageSelections) {
+    // Scene: {scene.元素.屬性}
+    if (imageSelections.scene) {
+      Object.entries(imageSelections.scene).forEach(([element, value]) => {
+        if (typeof value === 'string') {
+          const patterns = [
+            `{scene.${element}}`,
+            `{${element}}`
+          ];
+          patterns.forEach(pattern => {
+            prompt = prompt.split(pattern).join(value);
+          });
+        } else if (typeof value === 'object') {
+          Object.entries(value).forEach(([attr, attrValue]) => {
+            const patterns = [
+              `{scene.${element}.${attr}}`,
+              `{${element}.${attr}}`
+            ];
+            patterns.forEach(pattern => {
+              prompt = prompt.split(pattern).join(attrValue);
+            });
+          });
+        }
+      });
+    }
+    
+    // Object: {object.物件.屬性}
+    if (imageSelections.object) {
+      Object.entries(imageSelections.object).forEach(([objName, value]) => {
+        if (typeof value === 'string') {
+          const patterns = [
+            `{object.${objName}}`,
+            `{${objName}}`
+          ];
+          patterns.forEach(pattern => {
+            prompt = prompt.split(pattern).join(value);
+          });
+        } else if (typeof value === 'object') {
+          Object.entries(value).forEach(([attr, attrValue]) => {
+            const patterns = [
+              `{object.${objName}.${attr}}`,
+              `{${objName}.${attr}}`
+            ];
+            patterns.forEach(pattern => {
+              prompt = prompt.split(pattern).join(attrValue);
+            });
+          });
+        }
+      });
+    }
+    
+    // Composition: {comp.屬性}
+    if (imageSelections.composition) {
+      Object.entries(imageSelections.composition).forEach(([compAttr, value]) => {
+        const patterns = [
+          `{comp.${compAttr}}`,
+          `{composition.${compAttr}}`,
+          `{${compAttr}}`
+        ];
+        patterns.forEach(pattern => {
+          prompt = prompt.split(pattern).join(value);
+        });
+      });
+    }
+  }
+  
+  return prompt;
+}
+
+// Helper: Build image-level paradigm axis HTML (for scene/object/composition)
+function buildImageParadigmAxisHtml(axisType, axisLabel, subjects, imageIdx, icon = '📍') {
+  if (!subjects || Object.keys(subjects).length === 0) return '';
+  
+  const subjectsHtml = Object.entries(subjects).map(([subjectName, attributes]) => {
+    // Handle two structures: direct options array or nested attributes object
+    if (Array.isArray(attributes)) {
+      // Direct options: composition.視角 = ["平視", "俯視"]
+      const optionChips = attributes.map((opt, optIdx) => 
+        `<button class="image-paradigm-chip" data-image-idx="${imageIdx}" data-axis="${escapeAttr(axisType)}" data-subject="${escapeAttr(subjectName)}" data-value="${escapeAttr(opt)}" data-idx="${optIdx}">${escapeHtml(opt)}</button>`
+      ).join('');
+      return `
+        <div class="image-paradigm-row">
+          <span class="image-paradigm-label">${escapeHtml(subjectName)}</span>
+          <div class="image-paradigm-chips">${optionChips}</div>
+        </div>
+      `;
+    } else {
+      // Nested attributes: scene.櫻花樹 = { 花況: [...], 高度: [...] }
+      const attrRows = Object.entries(attributes).map(([attrName, options]) => {
+        if (!Array.isArray(options)) return '';
+        const optionChips = options.map((opt, optIdx) => 
+          `<button class="image-paradigm-chip" data-image-idx="${imageIdx}" data-axis="${escapeAttr(axisType)}" data-subject="${escapeAttr(subjectName)}" data-attr="${escapeAttr(attrName)}" data-value="${escapeAttr(opt)}" data-idx="${optIdx}">${escapeHtml(opt)}</button>`
+        ).join('');
+        return `
+          <div class="image-paradigm-attr-row">
+            <span class="image-paradigm-attr-label">${escapeHtml(attrName)}</span>
+            <div class="image-paradigm-chips">${optionChips}</div>
+          </div>
+        `;
+      }).join('');
+      
+      return `
+        <div class="image-paradigm-subject">
+          <span class="image-paradigm-subject-name">${escapeHtml(subjectName)}</span>
+          ${attrRows}
+        </div>
+      `;
+    }
+  }).join('');
+  
+  return `
+    <div class="image-paradigm-axis" data-axis="${escapeAttr(axisType)}" data-image-idx="${imageIdx}">
+      <div class="image-paradigm-axis-header">
+        <span class="image-paradigm-icon">${icon}</span>
+        <span class="image-paradigm-axis-label">${escapeHtml(axisLabel)}</span>
+      </div>
+      <div class="image-paradigm-content">${subjectsHtml}</div>
+    </div>
+  `;
+}
+
+// Style selection UI - Phase 1 of the new flow (with Global Paradigmatic Axes)
+function showStyleSelectionUI(aiResult, onStyleSelected, onCancel) {
+  const styles = aiResult.recommendedStyles || [];
+  const globalContext = aiResult.globalContext || '';
+  const globalParadigms = aiResult.globalParadigms || {};
+  const imageCount = aiResult.images?.length || 1;
+  
+  // Track selected paradigm values
+  const paradigmSelections = {
+    characters: {},
+    style: {},
+    colorAtmosphere: {}
+  };
+  
+  const styleCardsHtml = styles.map((style, idx) => `
+    <div class="style-card" data-style-id="${escapeAttr(style.id)}" data-style-idx="${idx}">
+      <div class="style-card-header">
+        <span class="style-card-name">${escapeHtml(style.name)}</span>
+      </div>
+      <p class="style-card-desc">${escapeHtml(style.description)}</p>
+      ${style.suitableFor ? `<span class="style-card-suitable">適合：${escapeHtml(style.suitableFor)}</span>` : ''}
+    </div>
+  `).join('');
+  
+  // Build global paradigm axes HTML
+  const characterParadigmHtml = buildParadigmAxisHtml('characters', '角色系譜軸', globalParadigms.characters, '👤');
+  const colorParadigmHtml = buildParadigmAxisHtml('colorAtmosphere', '色彩氛圍系譜軸', globalParadigms.colorAtmosphere, '🎨');
+  const styleParadigmHtml = buildParadigmAxisHtml('style', '風格系譜軸', globalParadigms.style, '✏️');
+  
+  const hasParadigms = characterParadigmHtml || colorParadigmHtml || styleParadigmHtml;
+  
+  const globalParadigmsHtml = hasParadigms ? `
+    <div class="global-paradigms-container">
+      <div class="global-paradigms-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+        <span>全局系譜軸設定</span>
+        <span class="global-paradigms-hint">選擇的屬性將套用至所有圖片</span>
+      </div>
+      ${characterParadigmHtml}
+      ${colorParadigmHtml}
+      ${styleParadigmHtml}
+    </div>
+  ` : '';
+  
+  const globalContextHtml = `
+    <div class="global-context-preview">
+      <div class="global-context-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+        <span>一致性描述</span>
+        <span class="global-context-hint">可編輯調整，上方選擇會自動更新此區</span>
+      </div>
+      <textarea id="globalContextTextarea" class="global-context-textarea" rows="4" placeholder="描述多張圖片間需要保持一致的元素（如人物外觀、場景風格等）">${escapeHtml(globalContext)}</textarea>
+    </div>
+  `;
+  
+  const html = `
+    <div class="style-selection-container">
+      <div class="style-selection-header">
+        <div class="style-selection-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          選擇統一視覺風格
+        </div>
+        <span class="style-selection-hint">${imageCount} 張圖片將套用相同風格</span>
+      </div>
+      
+      ${globalParadigmsHtml}
+      
+      ${globalContextHtml}
+      
+      <div class="style-cards-grid">
+        ${styleCardsHtml}
+      </div>
+      
+      <div class="style-selection-footer">
+        <button class="prompt-editor-btn secondary" id="cancelStyleSelection">取消</button>
+        <button class="prompt-editor-btn primary" id="confirmStyleSelection" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          確認風格並預覽
+        </button>
+      </div>
+    </div>
+  `;
+  
+  const container = document.createElement('div');
+  container.className = 'style-selection-section';
+  container.innerHTML = html;
+  finalAnswer.appendChild(container);
+  
+  let selectedStyle = null;
+  const globalContextTextarea = container.querySelector('#globalContextTextarea');
+  
+  // Paradigm chip click handlers
+  container.querySelectorAll('.paradigm-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const axis = chip.dataset.axis;
+      const subject = chip.dataset.subject;
+      const attr = chip.dataset.attr;
+      const value = chip.dataset.value;
+      
+      // Toggle selection
+      const isSelected = chip.classList.contains('selected');
+      
+      // Deselect siblings in same attribute row
+      chip.closest('.paradigm-chips-row').querySelectorAll('.paradigm-chip').forEach(c => c.classList.remove('selected'));
+      
+      if (!isSelected) {
+        chip.classList.add('selected');
+        // Store selection
+        if (!paradigmSelections[axis]) paradigmSelections[axis] = {};
+        if (!paradigmSelections[axis][subject]) paradigmSelections[axis][subject] = {};
+        paradigmSelections[axis][subject][attr] = value;
+      } else {
+        // Remove selection
+        if (paradigmSelections[axis]?.[subject]) {
+          delete paradigmSelections[axis][subject][attr];
+        }
+      }
+      
+      // Update global context textarea with selections
+      updateGlobalContextFromSelections();
+    });
+  });
+  
+  // Function to update global context textarea based on paradigm selections
+  function updateGlobalContextFromSelections() {
+    const parts = [];
+    
+    // Characters
+    if (Object.keys(paradigmSelections.characters || {}).length > 0) {
+      const charDescs = Object.entries(paradigmSelections.characters).map(([name, attrs]) => {
+        const attrStr = Object.entries(attrs).map(([k, v]) => `${k}:${v}`).join('，');
+        return attrStr ? `${name}（${attrStr}）` : null;
+      }).filter(Boolean);
+      if (charDescs.length > 0) {
+        parts.push(`【角色】${charDescs.join('；')}`);
+      }
+    }
+    
+    // Color atmosphere
+    if (Object.keys(paradigmSelections.colorAtmosphere || {}).length > 0) {
+      const colorDescs = Object.entries(paradigmSelections.colorAtmosphere).flatMap(([name, attrs]) => 
+        Object.entries(attrs).map(([k, v]) => v)
+      );
+      if (colorDescs.length > 0) {
+        parts.push(`【色彩】${colorDescs.join('，')}`);
+      }
+    }
+    
+    // Style
+    if (Object.keys(paradigmSelections.style || {}).length > 0) {
+      const styleDescs = Object.entries(paradigmSelections.style).flatMap(([name, attrs]) => 
+        Object.entries(attrs).map(([k, v]) => v)
+      );
+      if (styleDescs.length > 0) {
+        parts.push(`【畫風】${styleDescs.join('，')}`);
+      }
+    }
+    
+    if (parts.length > 0 && globalContextTextarea) {
+      const existingText = globalContextTextarea.value.trim();
+      // Append to existing or replace paradigm sections
+      const newText = parts.join('\n');
+      if (!existingText) {
+        globalContextTextarea.value = newText;
+      } else {
+        // Check if existing has paradigm markers
+        const hasMarkers = existingText.includes('【角色】') || existingText.includes('【色彩】') || existingText.includes('【畫風】');
+        if (hasMarkers) {
+          // Replace existing markers
+          let updated = existingText;
+          parts.forEach(part => {
+            const marker = part.match(/^【.+?】/)?.[0];
+            if (marker) {
+              const regex = new RegExp(`${marker}[^【]*`, 'g');
+              if (updated.match(regex)) {
+                updated = updated.replace(regex, part);
+              } else {
+                updated += '\n' + part;
+              }
+            }
+          });
+          globalContextTextarea.value = updated.trim();
+        } else {
+          globalContextTextarea.value = newText + '\n\n' + existingText;
+        }
+      }
+    }
+  }
+  
+  // Style card click handlers
+  container.querySelectorAll('.style-card').forEach(card => {
+    card.addEventListener('click', () => {
+      container.querySelectorAll('.style-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      selectedStyle = {
+        id: card.dataset.styleId,
+        idx: parseInt(card.dataset.styleIdx),
+        ...styles[parseInt(card.dataset.styleIdx)]
+      };
+      container.querySelector('#confirmStyleSelection').disabled = false;
+    });
+  });
+  
+  // Confirm button
+  container.querySelector('#confirmStyleSelection').addEventListener('click', () => {
+    if (selectedStyle) {
+      const editedGlobalContext = globalContextTextarea?.value?.trim() || '';
+      container.remove();
+      onStyleSelected(selectedStyle, editedGlobalContext, paradigmSelections);
+    }
+  });
+  
+  // Cancel button
+  container.querySelector('#cancelStyleSelection').addEventListener('click', () => {
+    container.remove();
+    if (onCancel) onCancel();
+  });
+}
+
+// System prompt for style integration
+const STYLE_INTEGRATION_PROMPT = `你是圖像 Prompt 整合專家。將指定的視覺風格融入每張圖的 prompt 中，保持內容描述不變但加入風格元素。
+
+## 任務
+將選定的風格自然地融入每張圖的 prompt，而非簡單地前置風格名稱。
+
+## 融入原則
+1. **風格融合**：將風格元素（筆觸、質感、色調）融入場景描述中
+2. **保持一致**：所有圖片必須使用相同的風格語言
+3. **全局上下文**：將 global_context（人物一致性等）融入每張 prompt 開頭
+4. **自然語句**：用完整句子，不要只是堆疊關鍵字
+5. **保留 Placeholder**：如果 prompt 中有 {placeholder}（如 {angle}、{background_detail}），必須原封不動保留，不要替換
+
+## 範例
+原始 prompt: "一隻狐狸以{angle}站在樹下，{background_detail}，看著遠方"
+風格: "水彩童話風格，柔和筆觸，暈染邊緣"
+全局上下文: "保持狐狸的外觀一致：棕色毛皮，圓眼睛，短尾巴"
+
+融入後:
+"水彩童話風格的插畫，柔和筆觸與暈染邊緣。一隻棕色毛皮、圓眼睛、短尾巴的小狐狸以{angle}站在大樹下，{background_detail}，目光望向遠方。畫面色調溫暖，光線柔和，帶有手繪繪本的質感。"
+
+你必須輸出 JSON：
+\`\`\`json
+{
+  "integrated_prompts": [
+    {
+      "title": "圖片標題",
+      "prompt": "融入風格後的完整 prompt（150-250字），保留所有 {placeholder}"
+    }
+  ]
+}
+\`\`\``;
+
+// Integrate selected style into all prompts via AI
+async function integrateStyleIntoPrompts(aiResult, selectedStyle, editedGlobalContext) {
+  const images = aiResult.images || [];
+  const consistencyBlock = aiResult.consistencyBlock || {};
+  const globalContext = editedGlobalContext || aiResult.globalContext || '';
+  
+  // Build consistency block text
+  const consistencyText = [
+    consistencyBlock.characters ? `【角色】${consistencyBlock.characters}` : '',
+    consistencyBlock.style ? `【畫風】${consistencyBlock.style}` : '',
+    consistencyBlock.sceneCoherence ? `【場景】${consistencyBlock.sceneCoherence}` : ''
+  ].filter(Boolean).join('\n');
+  
+  // Build the integration request
+  const imagesInfo = images.map((img, idx) => ({
+    index: idx + 1,
+    title: img.title,
+    base_prompt: img.basePrompt || img.finalPrompt || ''
+  }));
+  
+  const integrationPrompt = `## 選定風格
+名稱：${selectedStyle.name}
+描述：${selectedStyle.description}
+
+## 一致性區塊（每張圖必須包含這些描述）
+${consistencyText || '（無）'}
+
+## 全局上下文
+${globalContext || '（無特定要求）'}
+
+## 各圖片的基礎 prompt
+${imagesInfo.map(img => `### 圖 ${img.index}: ${img.title}\n${img.base_prompt}`).join('\n\n')}
+
+請將風格融入每張圖的 prompt 中。注意：保留 prompt 中的 {placeholder} 標記（如 {angle}、{background_detail}），不要替換它們。`;
+
+  try {
+    const result = await queryModelNonStreaming(chairmanModel, STYLE_INTEGRATION_PROMPT + '\n\n' + integrationPrompt);
+    
+    // Parse JSON
+    const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+    let jsonStr = jsonMatch ? jsonMatch[1] : result;
+    const jsonObjMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonObjMatch) jsonStr = jsonObjMatch[0];
+    
+    // Clean up JSON
+    jsonStr = jsonStr
+      .trim()
+      .replace(/,\s*([}\]])/g, '$1');
+    
+    const parsed = JSON.parse(jsonStr);
+    const integratedPrompts = parsed.integrated_prompts || [];
+    
+    // Update aiResult images with integrated prompts, preserving placeholders
+    const updatedImages = images.map((img, idx) => {
+      const integrated = integratedPrompts[idx];
+      return {
+        ...img,
+        finalPrompt: integrated?.prompt || img.basePrompt || img.finalPrompt || '',
+        integratedStyle: selectedStyle.name,
+        // Preserve placeholders structure
+        placeholders: img.placeholders || {}
+      };
+    });
+    
+    return {
+      ...aiResult,
+      selectedStyle: selectedStyle,
+      consistencyBlock: consistencyBlock,
+      images: updatedImages
+    };
+  } catch (err) {
+    console.error('Style integration failed:', err);
+    // Fallback: manually prepend style to each prompt
+    const updatedImages = images.map(img => {
+      const stylePrefix = `${selectedStyle.name}風格。${globalContext ? globalContext + '。' : ''}`;
+      return {
+        ...img,
+        finalPrompt: stylePrefix + (img.basePrompt || img.finalPrompt || ''),
+        integratedStyle: selectedStyle.name,
+        placeholders: img.placeholders || {}
+      };
+    });
+    
+    return {
+      ...aiResult,
+      selectedStyle: selectedStyle,
+      consistencyBlock: consistencyBlock,
+      images: updatedImages
+    };
+  }
+}
+
+// Preview and edit integrated prompts before generation
+function showPromptPreview(integratedResult, onConfirm, onBack, onCancel) {
+  const images = integratedResult.images || [];
+  const selectedStyle = integratedResult.selectedStyle;
+  const globalContext = integratedResult.globalContext || '';
+  
+  // Build preview content for textarea
+  const previewContent = buildPreviewContent(globalContext, selectedStyle, images);
+  
+  const html = `
+    <div class="prompt-preview-container">
+      <div class="prompt-preview-header">
+        <div class="prompt-preview-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          預覽與編輯
+        </div>
+        <div class="prompt-preview-badges">
+          <span class="style-badge">${escapeHtml(selectedStyle?.name || '預設風格')}</span>
+          <span class="count-badge">${images.length} 張圖</span>
+        </div>
+      </div>
+      
+      <div class="prompt-preview-hint">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 16v-4"/>
+          <path d="M12 8h.01"/>
+        </svg>
+        <span>風格已融入各圖 prompt，可直接編輯下方內容。確認後進入生成介面。</span>
+      </div>
+      
+      <div class="prompt-preview-textarea-wrapper">
+        <textarea id="promptPreviewTextarea" class="prompt-preview-textarea" rows="16">${escapeHtml(previewContent)}</textarea>
+      </div>
+      
+      <div class="prompt-preview-footer">
+        <button class="prompt-editor-btn secondary" id="backToStyleSelection">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          重選風格
+        </button>
+        <div class="prompt-preview-footer-right">
+          <button class="prompt-editor-btn secondary" id="cancelPromptPreview">取消</button>
+          <button class="prompt-editor-btn primary" id="confirmPromptPreview">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            確認並生成
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  const container = document.createElement('div');
+  container.className = 'prompt-preview-section';
+  container.innerHTML = html;
+  finalAnswer.appendChild(container);
+  
+  const textarea = container.querySelector('#promptPreviewTextarea');
+  
+  // Confirm button - parse edited content and proceed
+  container.querySelector('#confirmPromptPreview').addEventListener('click', () => {
+    const editedContent = textarea.value;
+    const parsedImages = parsePreviewContent(editedContent, images);
+    
+    // Update integratedResult with edited prompts
+    const updatedResult = {
+      ...integratedResult,
+      images: parsedImages
+    };
+    
+    container.remove();
+    onConfirm(updatedResult);
+  });
+  
+  // Back button - return to style selection
+  container.querySelector('#backToStyleSelection').addEventListener('click', () => {
+    container.remove();
+    if (onBack) onBack();
+  });
+  
+  // Cancel button
+  container.querySelector('#cancelPromptPreview').addEventListener('click', () => {
+    container.remove();
+    if (onCancel) onCancel();
+  });
+}
+
+// Build formatted preview content for textarea
+function buildPreviewContent(globalContext, selectedStyle, images) {
+  let content = '';
+  
+  // Global section
+  content += `[全局設定]\n`;
+  content += `統一風格：${selectedStyle?.name || '預設'}\n`;
+  if (globalContext) {
+    content += `一致性要求：${globalContext}\n`;
+  }
+  content += '\n';
+  
+  // Each image
+  images.forEach((img, idx) => {
+    content += `[圖 ${idx + 1}] ${img.title}\n`;
+    content += `${img.finalPrompt || img.basePrompt || ''}\n\n`;
+  });
+  
+  return content.trim();
+}
+
+// Parse edited preview content back to image array
+function parsePreviewContent(content, originalImages) {
+  const lines = content.split('\n');
+  const parsedImages = [...originalImages];
+  
+  let currentImageIdx = -1;
+  let currentPromptLines = [];
+  
+  for (const line of lines) {
+    // Check for image header: [圖 N] Title
+    const imageMatch = line.match(/^\[圖\s*(\d+)\]\s*(.*)$/);
+    if (imageMatch) {
+      // Save previous image's prompt if any
+      if (currentImageIdx >= 0 && currentImageIdx < parsedImages.length) {
+        parsedImages[currentImageIdx] = {
+          ...parsedImages[currentImageIdx],
+          finalPrompt: currentPromptLines.join('\n').trim()
+        };
+      }
+      
+      currentImageIdx = parseInt(imageMatch[1]) - 1;
+      currentPromptLines = [];
+      
+      // Update title if changed
+      const newTitle = imageMatch[2].trim();
+      if (newTitle && currentImageIdx >= 0 && currentImageIdx < parsedImages.length) {
+        parsedImages[currentImageIdx].title = newTitle;
+      }
+    } else if (currentImageIdx >= 0 && !line.startsWith('[全局設定]') && !line.startsWith('統一風格：') && !line.startsWith('一致性要求：')) {
+      currentPromptLines.push(line);
+    }
+  }
+  
+  // Save last image's prompt
+  if (currentImageIdx >= 0 && currentImageIdx < parsedImages.length) {
+    parsedImages[currentImageIdx] = {
+      ...parsedImages[currentImageIdx],
+      finalPrompt: currentPromptLines.join('\n').trim()
+    };
+  }
+  
+  return parsedImages;
+}
+
+// System prompt for refining image prompts
+const REFINE_PROMPT_SYSTEM = `你是圖像 Prompt 精煉專家。將用戶編輯後的 prompt 進行潤色，確保品質。
+
+## 精煉原則
+1. **去除重複**：刪除重複的描述（如角色描述出現兩次）
+2. **融合一致性區塊**：確保一致性描述自然融入 prompt，不是生硬的前置
+3. **語句流暢**：調整語序使描述更自然
+4. **保持完整**：不要刪除重要細節
+5. **填補 placeholder**：如果還有未置換的 {placeholder}，用合理的預設值填入
+
+## 輸出要求
+只輸出精煉後的 prompt，不要加任何說明或 markdown 格式。
+字數控制在 150-250 字。`;
+
+// Refine a single image prompt with AI
+async function refinePromptWithAI(prompt, consistencyBlock) {
+  const refineRequest = `## 一致性描述
+${consistencyBlock || '（無）'}
+
+## 原始 Prompt
+${prompt}
+
+請精煉上述 prompt，確保一致性描述自然融入，移除重複內容，使語句流暢。`;
+
+  try {
+    const result = await queryModelNonStreaming(chairmanModel, REFINE_PROMPT_SYSTEM + '\n\n' + refineRequest);
+    // Clean up the result - remove any markdown formatting
+    return result
+      .replace(/^```[\s\S]*?\n/, '')
+      .replace(/\n```$/, '')
+      .trim();
+  } catch (err) {
+    console.error('Prompt refinement failed:', err);
+    throw err;
+  }
+}
+
+// Helper function to format placeholder key to readable label
+function formatPlaceholderLabel(key) {
+  const labels = {
+    'angle': '取景角度',
+    'background_detail': '背景細節',
+    'character_action': '角色動作',
+    'lighting': '光線',
+    'mood': '氛圍',
+    'clothing_style': '服裝風格',
+    'weather': '天氣',
+    'time_of_day': '時段'
+  };
+  return labels[key] || key.replace(/_/g, ' ');
+}
+
 // Multi-image editor state
 let multiImageState = null;
 
-function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
+function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSelection) {
   const hasAIResult = aiResult && aiResult.success;
   const images = aiResult?.images || [];
   const imageCount = images.length;
+  const selectedStyle = aiResult.selectedStyle;
+  const consistencyBlock = aiResult.consistencyBlock || {};
   
-  // Collect all unique style and color options from all images
-  const allStyleOptions = new Set(['寫實攝影風格', '油畫風', '水彩', '動畫風', '電影感', '賽博龐克', '極簡風格', '插畫風']);
-  const allColorOptions = new Set(['暖色調', '冷色調', '高對比', '柔和', '復古色調', '霓虹色', '單色調']);
-  images.forEach(img => {
-    (img.styleOptions || []).forEach(s => allStyleOptions.add(s));
-    (img.colorPalette || []).forEach(c => allColorOptions.add(c));
-  });
+  // Build consistency block text for display
+  const consistencyText = [
+    consistencyBlock.characters ? `【角色】${consistencyBlock.characters}` : '',
+    consistencyBlock.style ? `【畫風】${consistencyBlock.style}` : '',
+    consistencyBlock.sceneCoherence ? `【場景】${consistencyBlock.sceneCoherence}` : ''
+  ].filter(Boolean).join('\n\n');
   
-  // Initialize state for tracking each image + global style
+  // Initialize state for tracking each image (style is already integrated)
   multiImageState = {
     images: images.map(img => ({ ...img })),
     completedCount: 0,
     generatedImages: [],
-    globalStyle: null,  // Will be set when user selects
-    globalColor: null   // Will be set when user selects
+    integratedStyle: selectedStyle?.name || null,
+    consistencyBlock: consistencyText // Track editable consistency block
   };
   
   // Theme type badge
@@ -6079,41 +7539,62 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
       }</span>` 
     : '';
   
-  // Global style section HTML
-  const globalStyleHtml = `
-    <div class="global-style-section">
-      <div class="global-style-header">
+  // Selected style badge (style is already integrated, just show info)
+  const styleInfoHtml = selectedStyle ? `
+    <div class="integrated-style-info">
+      <div class="integrated-style-header">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          <polyline points="20 6 9 17 4 12"/>
         </svg>
-        <span>統一風格設定</span>
-        <span class="global-style-hint">套用至所有圖卡（各圖卡可覆寫）</span>
+        <span>已套用風格：${escapeHtml(selectedStyle.name)}</span>
       </div>
-      <div class="global-style-options">
-        <div class="quick-option-group">
-          <label class="quick-option-label">畫風</label>
-          <div class="quick-option-chips global-chips" data-global-category="style">
-            ${[...allStyleOptions].map(s => `<button class="option-chip global-chip" data-value="${escapeAttr(s)}">${escapeHtml(s)}</button>`).join('')}
-          </div>
-        </div>
-        <div class="quick-option-group">
-          <label class="quick-option-label">色調</label>
-          <div class="quick-option-chips global-chips" data-global-category="color">
-            ${[...allColorOptions].map(c => `<button class="option-chip global-chip" data-value="${escapeAttr(c)}">${escapeHtml(c)}</button>`).join('')}
-          </div>
-        </div>
+      <p class="integrated-style-desc">${escapeHtml(selectedStyle.description || '')}</p>
+    </div>
+  ` : '';
+  
+  // Consistency block UI (editable, shown above all image cards)
+  const consistencyBlockHtml = `
+    <div class="consistency-block-section">
+      <div class="consistency-block-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+        <span>一致性描述</span>
+        <span class="consistency-block-hint">此區塊會套用至所有圖片的 prompt 前面</span>
       </div>
+      <textarea id="consistencyBlockTextarea" class="consistency-block-textarea" rows="4" placeholder="角色外觀、畫風、場景連貫性描述...">${escapeHtml(consistencyText)}</textarea>
     </div>
   `;
   
-  // Build image cards HTML (without style/color options - they use global)
+  // Build image cards HTML with paradigmatic axes and placeholder options
   const imageCardsHtml = images.map((img, idx) => {
-    const optionGroupsHtml = (img.optionGroups || []).map(group => `
-      <div class="quick-option-group">
-        <label class="quick-option-label">${escapeHtml(group.name)}</label>
-        <div class="quick-option-chips" data-category="${escapeAttr(group.name)}" data-image-idx="${idx}">
-          ${group.options.map(opt => `<button class="option-chip" data-value="${escapeAttr(opt)}">${escapeHtml(opt)}</button>`).join('')}
+    // Build image paradigms UI (scene, object, composition axes)
+    const imageParadigms = img.imageParadigms || {};
+    
+    // Scene paradigm axis
+    const sceneParadigmHtml = buildImageParadigmAxisHtml('scene', '場景系譜軸', imageParadigms.scene, idx, '🏞️');
+    // Object paradigm axis  
+    const objectParadigmHtml = buildImageParadigmAxisHtml('object', '物件系譜軸', imageParadigms.object, idx, '📦');
+    // Composition paradigm axis
+    const compositionParadigmHtml = buildImageParadigmAxisHtml('composition', '構圖系譜軸', imageParadigms.composition, idx, '📐');
+    
+    const hasImageParadigms = sceneParadigmHtml || objectParadigmHtml || compositionParadigmHtml;
+    
+    const imageParadigmsHtml = hasImageParadigms ? `
+      <div class="image-paradigms-container">
+        ${sceneParadigmHtml}
+        ${objectParadigmHtml}
+        ${compositionParadigmHtml}
+      </div>
+    ` : '';
+    
+    // Legacy: Build placeholder option chips (fallback for old format)
+    const placeholderChipsHtml = Object.entries(img.placeholders || {}).map(([key, ph]) => `
+      <div class="placeholder-option-group" data-placeholder-key="${escapeAttr(key)}">
+        <label class="placeholder-option-label">${escapeHtml(formatPlaceholderLabel(key))}</label>
+        <div class="placeholder-option-chips" data-image-idx="${idx}" data-placeholder="${escapeAttr(key)}">
+          ${ph.options.map(opt => `<button class="placeholder-chip${opt === ph.currentValue ? ' selected' : ''}" data-value="${escapeAttr(opt)}">${escapeHtml(opt)}</button>`).join('')}
         </div>
       </div>
     `).join('');
@@ -6132,14 +7613,22 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
         </div>
         
         <div class="image-card-content">
-          ${optionGroupsHtml ? `<div class="prompt-quick-options compact">${optionGroupsHtml}</div>` : ''}
+          ${imageParadigmsHtml}
+          ${placeholderChipsHtml && !hasImageParadigms ? `<div class="placeholder-options-container">${placeholderChipsHtml}</div>` : ''}
           
           <div class="prompt-editor-textarea-wrapper">
             <textarea class="prompt-editor-textarea image-prompt-textarea" data-image-idx="${idx}" rows="5">${escapeHtml(img.finalPrompt || '')}</textarea>
-            <div class="textarea-hint">統一風格會自動套用，此處僅需編輯內容描述</div>
+            <div class="textarea-hint">選擇上方系譜軸選項會置換 prompt 中對應的 {placeholder}</div>
           </div>
           
           <div class="image-card-actions">
+            <button class="refine-prompt-btn" data-image-idx="${idx}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+              </svg>
+              潤色
+            </button>
             <button class="generate-single-btn" data-image-idx="${idx}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -6176,13 +7665,21 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
         </div>
       </div>
       
-      ${globalStyleHtml}
+      ${styleInfoHtml}
+      
+      ${consistencyBlockHtml}
       
       <div class="image-cards-container">
         ${imageCardsHtml}
       </div>
       
       <div class="multi-image-footer">
+        <button class="prompt-editor-btn secondary" id="backToStyleSelection">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          重選風格
+        </button>
         <button class="prompt-editor-btn secondary" id="cancelAllImageGen">關閉</button>
       </div>
     </div>
@@ -6193,85 +7690,190 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
   container.innerHTML = editorHtml;
   finalAnswer.appendChild(container);
 
-  // Setup global style chip handlers
-  container.querySelectorAll('.global-chips').forEach(chipsContainer => {
-    const category = chipsContainer.dataset.globalCategory;
-    chipsContainer.querySelectorAll('.global-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const value = chip.dataset.value;
-        const currentValue = category === 'style' ? multiImageState.globalStyle : multiImageState.globalColor;
-        
-        // Toggle selection
-        if (currentValue === value) {
-          // Deselect
-          if (category === 'style') multiImageState.globalStyle = null;
-          else multiImageState.globalColor = null;
-          chip.classList.remove('selected');
-        } else {
-          // Select new value
-          if (category === 'style') multiImageState.globalStyle = value;
-          else multiImageState.globalColor = value;
-          chipsContainer.querySelectorAll('.global-chip').forEach(c => c.classList.remove('selected'));
-          chip.classList.add('selected');
-        }
-        
-        // Update display showing current global style
-        updateGlobalStyleDisplay();
-      });
+  // Back to style selection button
+  if (onBackToStyleSelection) {
+    container.querySelector('#backToStyleSelection').addEventListener('click', () => {
+      container.remove();
+      multiImageState = null;
+      onBackToStyleSelection();
     });
-  });
-  
-  // Function to update global style display
-  function updateGlobalStyleDisplay() {
-    const styleText = [];
-    if (multiImageState.globalStyle) styleText.push(multiImageState.globalStyle);
-    if (multiImageState.globalColor) styleText.push(multiImageState.globalColor);
-    
-    const hint = container.querySelector('.global-style-hint');
-    if (hint) {
-      hint.textContent = styleText.length > 0 
-        ? `已選：${styleText.join(' + ')}` 
-        : '套用至所有圖卡（各圖卡可覆寫）';
-      hint.classList.toggle('has-selection', styleText.length > 0);
-    }
+  } else {
+    // Hide the button if no callback provided
+    container.querySelector('#backToStyleSelection').style.display = 'none';
+  }
+
+  // Track consistency block changes
+  const consistencyTextarea = container.querySelector('#consistencyBlockTextarea');
+  if (consistencyTextarea) {
+    consistencyTextarea.addEventListener('input', () => {
+      multiImageState.consistencyBlock = consistencyTextarea.value;
+    });
   }
 
   // Setup event handlers for each image card
   container.querySelectorAll('.image-card').forEach(card => {
     const idx = parseInt(card.dataset.imageIdx);
     const textarea = card.querySelector('.image-prompt-textarea');
-    const selectedOptions = new Map();
     
-    // Option chip click handler
-    card.querySelectorAll('.option-chip').forEach(chip => {
+    // Placeholder chip click handler - REPLACEMENT instead of append
+    card.querySelectorAll('.placeholder-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         const value = chip.dataset.value;
-        const category = chip.closest('.quick-option-chips').dataset.category;
+        const placeholderKey = chip.closest('.placeholder-option-chips').dataset.placeholder;
         const currentText = textarea.value;
-        const prevValue = selectedOptions.get(category);
         
-        if (prevValue === value) {
-          selectedOptions.delete(category);
+        // Get the placeholder info
+        const placeholderInfo = multiImageState.images[idx]?.placeholders?.[placeholderKey];
+        if (!placeholderInfo) return;
+        
+        const previousValue = placeholderInfo.currentValue;
+        
+        // Toggle: if clicking the same value, deselect
+        if (previousValue === value) {
+          // Reset to default or placeholder
+          const defaultValue = placeholderInfo.default;
+          
+          // Replace the current value with the placeholder marker or default
+          if (previousValue) {
+            textarea.value = currentText.replace(previousValue, `{${placeholderKey}}`);
+          }
+          
+          placeholderInfo.currentValue = '';
           chip.classList.remove('selected');
-          const removePattern = new RegExp(`，?${escapeRegex(value)}|${escapeRegex(value)}，?`, 'g');
-          textarea.value = currentText.replace(removePattern, '').trim();
-          return;
-        }
-        
-        if (prevValue) {
-          textarea.value = currentText.replace(prevValue, value);
         } else {
-          const separator = currentText.endsWith('。') || currentText.endsWith('\n') || currentText === '' ? '' : '，';
-          textarea.value = currentText + separator + value;
+          // Replace: either the placeholder marker or the previous value
+          let newText = currentText;
+          
+          if (previousValue) {
+            // Replace previous value with new value
+            newText = currentText.replace(previousValue, value);
+          } else {
+            // Replace placeholder marker with new value
+            newText = currentText.replace(`{${placeholderKey}}`, value);
+          }
+          
+          textarea.value = newText;
+          placeholderInfo.currentValue = value;
+          
+          // Update UI - deselect siblings, select this one
+          chip.closest('.placeholder-option-chips').querySelectorAll('.placeholder-chip').forEach(c => c.classList.remove('selected'));
+          chip.classList.add('selected');
         }
         
-        selectedOptions.set(category, value);
-        chip.closest('.quick-option-chips').querySelectorAll('.option-chip').forEach(c => c.classList.remove('selected'));
-        chip.classList.add('selected');
+        // Update state
+        multiImageState.images[idx].finalPrompt = textarea.value;
       });
     });
     
-    // Generate button handler
+    // Image paradigm chip click handler - for scene/object/composition axes
+    card.querySelectorAll('.image-paradigm-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const value = chip.dataset.value;
+        const axis = chip.dataset.axis;
+        const subject = chip.dataset.subject;
+        const attr = chip.dataset.attr || subject; // Use subject as key if no attr
+        const currentText = textarea.value;
+        
+        // Toggle selection
+        const isSelected = chip.classList.contains('selected');
+        
+        // Find sibling chips (same row)
+        const siblingContainer = chip.closest('.image-paradigm-chips');
+        siblingContainer.querySelectorAll('.image-paradigm-chip').forEach(c => c.classList.remove('selected'));
+        
+        if (!isSelected) {
+          chip.classList.add('selected');
+          
+          // Build placeholder key based on axis type
+          let placeholderKey;
+          if (attr && attr !== subject) {
+            placeholderKey = `${axis}.${subject}.${attr}`;
+          } else {
+            placeholderKey = `${axis}.${subject}`;
+          }
+          // Also try shorter forms
+          const shortKey = `comp.${subject}`;
+          const sceneKey = `scene.${subject}.${attr}`;
+          
+          // Try to replace placeholder in prompt
+          let newText = currentText;
+          const patterns = [
+            `{${placeholderKey}}`,
+            `{${shortKey}}`,
+            `{${sceneKey}}`,
+            `{${subject}.${attr}}`,
+            `{${subject}}`
+          ];
+          
+          let replaced = false;
+          for (const pattern of patterns) {
+            if (newText.includes(pattern)) {
+              newText = newText.replace(pattern, value);
+              replaced = true;
+              break;
+            }
+          }
+          
+          // If no placeholder found, note the selection for composition
+          if (!replaced && axis === 'composition') {
+            // Store for later use in prompt composition
+            if (!multiImageState.images[idx].paradigmSelections) {
+              multiImageState.images[idx].paradigmSelections = {};
+            }
+            multiImageState.images[idx].paradigmSelections[subject] = value;
+          }
+          
+          textarea.value = newText;
+        }
+        
+        // Update state
+        multiImageState.images[idx].finalPrompt = textarea.value;
+      });
+    });
+    
+    // Refine button handler - use AI to polish the prompt
+    const refineBtn = card.querySelector('.refine-prompt-btn');
+    if (refineBtn) {
+      refineBtn.addEventListener('click', async function() {
+        const btn = this;
+        const prompt = textarea.value.trim();
+        
+        if (!prompt) {
+          showToast('請先輸入 Prompt 再進行潤色', true);
+          return;
+        }
+        
+        // Update UI to refining state
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span> 潤色中...';
+        
+        try {
+          const consistencyBlock = multiImageState.consistencyBlock?.trim() || '';
+          const refinedPrompt = await refinePromptWithAI(prompt, consistencyBlock);
+          
+          // Update textarea with refined prompt
+          textarea.value = refinedPrompt;
+          multiImageState.images[idx].finalPrompt = refinedPrompt;
+          
+          showToast('Prompt 已精煉完成');
+        } catch (err) {
+          console.error('Refine failed:', err);
+          showToast('潤色失敗：' + err.message, true);
+        } finally {
+          // Reset button
+          btn.disabled = false;
+          btn.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 20h9"/>
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+            </svg>
+            潤色
+          `;
+        }
+      });
+    }
+    
+    // Generate button handler - prepend consistency block to prompt
     card.querySelector('.generate-single-btn').addEventListener('click', async function() {
       const btn = this;
       let prompt = textarea.value.trim();
@@ -6281,13 +7883,10 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel) {
         return;
       }
       
-      // Prepend global style if set
-      const stylePrefix = [];
-      if (multiImageState.globalStyle) stylePrefix.push(`畫風：${multiImageState.globalStyle}`);
-      if (multiImageState.globalColor) stylePrefix.push(`色調：${multiImageState.globalColor}`);
-      
-      if (stylePrefix.length > 0) {
-        prompt = stylePrefix.join('，') + '。\n\n' + prompt;
+      // Prepend consistency block if available
+      const consistencyBlock = multiImageState.consistencyBlock?.trim();
+      if (consistencyBlock) {
+        prompt = consistencyBlock + '\n\n' + prompt;
       }
       
       // Update UI to generating state
@@ -6469,7 +8068,11 @@ async function runImageGeneration(prompt, timeoutMs = 240000) {
         return;
       }
       if (response?.error) reject(new Error(response.error));
-      else if (!response?.images?.length) reject(new Error('未收到圖片，請重試'));
+      else if (!response?.images?.length) {
+        // Include debug info if model returned text instead of images
+        const debugInfo = response?.debugText ? `\n模型回覆：${response.debugText}...` : '';
+        reject(new Error(`未收到圖片${debugInfo}\n請重試或檢查 prompt`));
+      }
       else {
         // Track image generation cost
         if (response.usage && response.model) {
