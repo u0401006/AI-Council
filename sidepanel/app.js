@@ -169,18 +169,31 @@ function generateChairmanPrompt(query, responses, aggregatedRanking = null) {
     rankingInfo = `## Peer Review Ranking\nBased on peer evaluation: ${aggregatedRanking.map((r, i) => `${i + 1}. ${getModelName(r.model)}`).join(', ')}`;
   }
   
+  // Select prompt based on learner mode
+  let promptTemplate = customChairmanPrompt;
+  if (learnerMode !== 'standard' && LEARNER_CHAIRMAN_PROMPTS[learnerMode]) {
+    promptTemplate = LEARNER_CHAIRMAN_PROMPTS[learnerMode];
+  }
+  
   // Use custom prompt with placeholders replaced
-  const basePrompt = customChairmanPrompt
+  const basePrompt = promptTemplate
     .replace('{query}', query)
     .replace('{responses}', responsesText)
     .replace('{ranking}', rankingInfo);
   
-  // Append output style instructions from settings
-  let finalPrompt = basePrompt + getOutputStyleInstructions();
+  // Append output style instructions from settings (skip for learner mode - they have their own format)
+  let finalPrompt = learnerMode === 'standard' 
+    ? basePrompt + getOutputStyleInstructions()
+    : basePrompt;
   
   // Append task decomposition suffix if task planner is enabled
   if (enableTaskPlanner) {
-    finalPrompt += TASK_DECOMPOSITION_SUFFIX;
+    // Use learner-specific task suffix if in learner mode
+    if (learnerMode !== 'standard' && LEARNER_TASK_SUFFIXES[learnerMode]) {
+      finalPrompt += LEARNER_TASK_SUFFIXES[learnerMode];
+    } else {
+      finalPrompt += TASK_DECOMPOSITION_SUFFIX;
+    }
   }
   
   return finalPrompt;
@@ -266,7 +279,7 @@ const DEFAULT_IMAGE_MODEL = 'google/gemini-3-pro-image-preview';
 // Default prompts (same as options.js)
 const DEFAULT_REVIEW_PROMPT = `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
 
-**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文). Simplified Chinese is strictly prohibited.**
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited.**
 
 ## User's Question
 {query}
@@ -289,7 +302,7 @@ Be objective. Focus on factual accuracy and helpfulness. Write all reasons in Tr
 
 const DEFAULT_CHAIRMAN_PROMPT = `You are the Chairman of an AI Council. Synthesize the expert responses into a single, comprehensive final answer.
 
-**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文). Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
 
 ## User's Question
 {query}
@@ -308,8 +321,211 @@ Create a single authoritative answer that:
 
 Provide your answer directly in Traditional Chinese (繁體中文), without meta-commentary.`;
 
+// ============================================
+// Learner Mode Prompts (Age-based)
+// ============================================
+const LEARNER_CHAIRMAN_PROMPTS = {
+  '9-10': `你是一位會說故事的學習夥伴，正在和一位 9-10 歲的學生探索問題。
+
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
+
+## 學生的問題
+{query}
+
+## 專家們的回答
+{responses}
+
+{ranking}
+
+## 回答原則（非常重要）
+1. **不要給完整答案**：解釋約 70%，留 30% 讓探索任務來揭曉
+2. 用簡單的詞彙，像在說故事一樣
+3. 句子要短，容易理解
+4. 用生活中的例子來解釋抽象概念
+5. 語氣親切但不幼稚，像一個大哥哥/大姐姐
+6. 結尾說：「還有一些有趣的發現等著你！看看下面的探索任務吧～」
+7. **不要在回答中直接問問題**（問題會放到探索任務裡）
+
+## 格式
+- 分成清楚的小段落
+- 重點用 **粗體** 標出
+- 可以用有趣的小標題`,
+
+  '11-12': `你是一位引導式的學習教練，正在和一位 11-12 歲的學生探索問題。
+
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
+
+## 學生的問題
+{query}
+
+## 專家們的回答
+{responses}
+
+{ranking}
+
+## 回答原則（非常重要）
+1. **不要給完整答案**：解釋約 50%，給線索讓學生推導其餘部分
+2. 用清楚的句子，適度引入新詞彙並簡要解釋
+3. 可以用比喻來解釋複雜概念
+4. 培養邏輯推理：展示「因為...所以...」的思考方式
+5. 結尾說：「這裡面還有一些值得探索的地方！看看下面的任務，試著自己找出答案吧！」
+6. **不要在回答中直接問問題**（問題會放到探索任務裡）
+
+## 格式
+- 分成「已知線索」和「待探索」兩個方向
+- 重點用 **粗體**
+- 可以用「提示框」標出關鍵概念`,
+
+  '13-15': `你是一位注重方法論的學習顧問，正在和一位 13-15 歲的學生討論問題。
+
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
+
+## 學生的問題
+{query}
+
+## 專家們的回答
+{responses}
+
+{ranking}
+
+## 回答原則（非常重要）
+1. **給框架，不給結論**：展示如何拆解問題，但讓學生自己推導結論
+2. 使用標準語言，引入專業術語並簡要解釋
+3. 介紹相關的分析方法或思考框架
+4. 提出不同觀點：「有人認為...但也有人認為...」
+5. 結尾說：「理解了這些框架後，你可以試著自己分析看看。下面的任務會引導你驗證自己的想法。」
+6. **不要在回答中直接問問題**（問題會放到探索任務裡）
+
+## 格式
+- 包含「問題拆解」「思考框架」「已知資訊」三個區塊
+- 可以用表格比較不同觀點
+- 專業術語用括號加註解釋`,
+
+  '16-18': `你是一位學術研究導向的學習夥伴，正在和一位 16-18 歲的學生討論問題。
+
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
+
+## 學生的問題
+{query}
+
+## 專家們的回答
+{responses}
+
+{ranking}
+
+## 回答原則（非常重要）
+1. **給多元觀點，不下定論**：呈現該領域的主要論點和爭議，讓學生形成自己的判斷
+2. 使用學術語言，專業術語可直接使用
+3. 介紹主要學派或理論框架
+4. 指出爭議點和未解問題
+5. 示範如何評估資料來源的可信度
+6. 結尾說：「這個議題還有許多值得深入研究的面向。下方的任務會引導你進一步批判分析。」
+7. **不要在回答中直接問問題**（問題會放到探索任務裡）
+
+## 格式
+- 包含「背景脈絡」「主要論點」「不同觀點」「待驗證假設」
+- 標註資訊來源的類型（理論、實證研究、專家意見等）
+- 區分「已有共識」vs「仍有爭議」的部分`
+};
+
+// Learner Mode Task Suffixes (Age-based)
+const LEARNER_TASK_SUFFIXES = {
+  '9-10': `
+
+## 探索任務
+請為這位 9-10 歲的學習者設計 2-3 個探索任務，幫助他們自己發現你剛才保留的那 30% 內容：
+\`\`\`json
+{"tasks": [
+  {"content": "任務描述（用疑問句）", "type": "explore", "hint": "小提示，給一個線索"},
+  {"content": "任務描述", "type": "apply", "hint": "小提示"}
+]}
+\`\`\`
+
+任務類型（必須標註 type）：
+- "explore": 繼續探索（「為什麼會這樣呢？」「如果...會怎樣？」）
+- "verify": 驗證想法（「這個說法對嗎？來查查看！」）
+- "apply": 動手試試（「用這個方法來...」）
+- "connect": 連結知識（「這跟...有什麼關係？」）
+
+任務要求：
+- 用疑問句或邀請句，激發好奇心
+- 難度適合 9-10 歲，用簡單詞彙
+- hint 給一個小線索，不要直接說答案
+- 至少有一個任務要揭露你保留的內容`,
+
+  '11-12': `
+
+## 探索任務
+請為這位 11-12 歲的學習者設計 2-3 個探索任務，引導他們推導出你保留的那 50% 內容：
+\`\`\`json
+{"tasks": [
+  {"content": "任務描述（用疑問句）", "type": "explore", "hint": "思考線索"},
+  {"content": "任務描述", "type": "verify", "hint": "驗證方向"}
+]}
+\`\`\`
+
+任務類型（必須標註 type）：
+- "explore": 深入探索（「為什麼...？」「...的原理是什麼？」）
+- "verify": 驗證推理（「如果這個假設正確，那麼...？」）
+- "apply": 實際應用（「試著用這個概念解釋...」）
+- "connect": 連結延伸（「這跟你學過的...有什麼關聯？」）
+
+任務要求：
+- 任務要有推理性，讓學生連結已知和未知
+- hint 給思考方向，不給答案
+- 至少有一個任務引導學生推導出關鍵結論
+- 可以有一個較有挑戰性的延伸任務`,
+
+  '13-15': `
+
+## 探索任務
+請為這位 13-15 歲的學習者設計 2-3 個探索任務，引導他們運用框架自行得出結論：
+\`\`\`json
+{"tasks": [
+  {"content": "任務描述", "type": "verify", "hint": "方法提示"},
+  {"content": "任務描述", "type": "explore", "hint": "分析角度"}
+]}
+\`\`\`
+
+任務類型（必須標註 type）：
+- "explore": 方法探究（「用...方法分析這個問題」）
+- "verify": 假設驗證（「如何驗證這個論點？」）
+- "apply": 框架應用（「套用...框架來分析」）
+- "connect": 跨領域連結（「從...角度來看這個問題」）
+
+任務要求：
+- 強調「如何思考」而非「記住什麼」
+- hint 提供方法論提示
+- 至少有一個任務要求學生提出自己的論點
+- 可以有一個需要查找資料來驗證的任務`,
+
+  '16-18': `
+
+## 探索任務
+請為這位 16-18 歲的學習者設計 2-3 個探索任務，引導他們進行批判分析和獨立研究：
+\`\`\`json
+{"tasks": [
+  {"content": "任務描述", "type": "verify", "hint": "研究方向"},
+  {"content": "任務描述", "type": "connect", "hint": "比較框架"}
+]}
+\`\`\`
+
+任務類型（必須標註 type）：
+- "explore": 深度研究（「探討...的深層原因」）
+- "verify": 批判驗證（「評估這個論點的證據強度」）
+- "apply": 實證應用（「設計一個方法來測試...」）
+- "connect": 理論整合（「比較不同學派對此的看法」）
+
+任務要求：
+- 強調批判思考和證據評估
+- hint 提供研究方法或學術資源方向
+- 至少有一個任務鼓勵質疑現有觀點
+- 可以有一個需要綜合多個來源的任務`
+};
+
 let councilModels = [];
 let chairmanModel = '';
+const REVIEW_WINNER_VALUE = '__review_winner__'; // 互評勝者選項的特殊值
 let enableReview = true;
 let enableImage = false;
 let enableSearchMode = false;
@@ -319,6 +535,7 @@ let searchIteration = 0;
 let currentSearchQueries = [];
 let customReviewPrompt = DEFAULT_REVIEW_PROMPT;
 let customChairmanPrompt = DEFAULT_CHAIRMAN_PROMPT;
+let learnerMode = 'standard'; // 'standard', '9-10', '11-12', '13-15', '16-18'
 let responses = new Map();
 let reviews = new Map();
 let activeTab = null;
@@ -469,7 +686,7 @@ async function generateContextSummary(query, finalAnswer) {
       .replace('{query}', query)
       .replace('{answer}', finalAnswer.slice(0, 2000)); // 限制長度避免 token 過多
     
-    const summary = await queryModelNonStreaming(chairmanModel, prompt, false);
+    const summary = await queryModelNonStreaming(getAvailableHelperModel(), prompt, false);
     return summary.trim().slice(0, 500); // 限制摘要長度
   } catch (err) {
     console.error('Failed to generate context summary:', err);
@@ -496,7 +713,7 @@ let enableTaskPlanner = true;
 async function generateSessionName(rootQuery) {
   try {
     const prompt = `請為以下討論主題生成一個簡短的專案名稱（最多6個中文字，不要標點符號）：\n\n${rootQuery}\n\n只輸出名稱，不要其他文字。`;
-    const name = await queryModelNonStreaming(chairmanModel, prompt, false);
+    const name = await queryModelNonStreaming(getAvailableHelperModel(), prompt, false);
     return name.trim().slice(0, 6);
   } catch (err) {
     console.error('Failed to generate session name:', err);
@@ -588,8 +805,9 @@ function parseTasksFromResponse(content) {
           continue;
         }
         
-        // Normalize tasks with suggestedFeatures
+        // Normalize tasks with suggestedFeatures and learner mode fields
         const validFeatures = ['search', 'image', 'vision'];
+        const validTypes = ['explore', 'verify', 'apply', 'connect'];
         const tasks = parsed.tasks.map(t => ({
           id: generateId(),
           content: t.content || '',
@@ -598,7 +816,10 @@ function parseTasksFromResponse(content) {
           cardId: null,       // Will be set when task becomes a card
           suggestedFeatures: Array.isArray(t.suggestedFeatures) 
             ? t.suggestedFeatures.filter(f => validFeatures.includes(f))
-            : []
+            : [],
+          // Learner mode fields
+          type: validTypes.includes(t.type) ? t.type : null,  // explore | verify | apply | connect
+          hint: t.hint || null  // Hint for learner mode tasks
         })).filter(t => t.content.trim());
         
         return { success: true, tasks };
@@ -613,10 +834,11 @@ function parseTasksFromResponse(content) {
 
 // Extract final answer content (remove JSON blocks for display)
 function extractFinalAnswerDisplay(content) {
-  // Remove tasks JSON block for cleaner display
+  // Remove tasks JSON block for cleaner display (both standard and learner mode)
   return content
     .replace(/```(?:json)?\s*\{[\s\S]*?"tasks"[\s\S]*?\}\s*```/g, '')
     .replace(/## 任務分解[\s\S]*$/g, '')
+    .replace(/## 探索任務[\s\S]*$/g, '')  // Learner mode task section
     .trim();
 }
 
@@ -665,8 +887,30 @@ function renderTodoSection(tasks) {
       return feature ? `<span class="todo-feature-badge" data-feature="${f}" title="${feature.label}">${feature.icon}</span>` : '';
     }).join('');
     
+    // Learner mode type icon (if in learner mode)
+    const typeIconMap = {
+      explore: { icon: '🔍', label: '探索' },
+      verify: { icon: '✓', label: '驗證' },
+      apply: { icon: '🛠', label: '試試看' },
+      connect: { icon: '🔗', label: '連結' }
+    };
+    const typeInfo = task.type ? typeIconMap[task.type] : null;
+    const typeIcon = typeInfo 
+      ? `<span class="todo-type-icon" data-type="${task.type}" title="${typeInfo.label}">${typeInfo.icon}</span>` 
+      : '';
+    
+    // Hint display for learner mode
+    const hintHtml = task.hint 
+      ? `<div class="todo-hint">${escapeHtml(task.hint)}</div>` 
+      : '';
+    
+    // Use type icon instead of priority for learner mode tasks
+    const priorityOrType = task.type 
+      ? typeIcon 
+      : `<span class="todo-priority ${task.priority}">${task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}</span>`;
+    
     return `
-    <div class="todo-item ${task.cardId ? 'has-card' : ''}" data-task-id="${task.id}">
+    <div class="todo-item ${task.cardId ? 'has-card' : ''} ${task.type ? 'learner-task' : ''}" data-task-id="${task.id}">
       <div class="todo-branch-icon">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="18" cy="18" r="3"></circle>
@@ -676,8 +920,9 @@ function renderTodoSection(tasks) {
       </div>
       <div class="todo-body">
         <div class="todo-content" data-task-id="${task.id}">${escapeHtml(task.content)}</div>
+        ${hintHtml}
         <div class="todo-meta">
-          <span class="todo-priority ${task.priority}">${task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}</span>
+          ${priorityOrType}
           ${featureBadges}
           ${statusLabel}
         </div>
@@ -889,6 +1134,22 @@ function expandTaskToCard(taskId) {
         console.log('[expandTaskToCard] Applied suggested features:', features);
       }
       
+      // For learner mode tasks with hints, add hint as context
+      if (task.hint && learnerMode !== 'standard') {
+        // Add hint as a temporary context item for this card
+        const hintContext = {
+          id: generateId(),
+          type: 'hint',
+          title: '探索提示',
+          content: task.hint,
+          timestamp: Date.now(),
+          scope: 'card'  // Card-level context
+        };
+        newCard.contextItems = newCard.contextItems || [];
+        newCard.contextItems.push(hintContext);
+        console.log('[expandTaskToCard] Added learner hint as context:', task.hint);
+      }
+      
       // Switch to new card (this will sync settings to UI)
       switchToCard(newCard.id, 'right');
       
@@ -904,6 +1165,8 @@ function expandTaskToCard(taskId) {
       
       if (featureNames.length > 0) {
         showToast(`已建立子卡片，已啟用：${featureNames.join('、')}`);
+      } else if (task.hint && learnerMode !== 'standard') {
+        showToast('已建立探索卡片，提示已加入脈絡');
       } else {
         showToast('已建立子卡片，修改問題後按送出');
       }
@@ -1247,12 +1510,14 @@ function loadCardIntoUI(card) {
     const finalAnswerEl = document.getElementById('finalAnswer');
     if (finalAnswerEl) {
       const displayContent = enableTaskPlanner ? extractFinalAnswerDisplay(card.finalAnswer) : card.finalAnswer;
+      // 使用卡片儲存的 chairmanModel，或 fallback 到當前設定
+      const cardChairman = card.chairmanModel || chairmanModel;
       finalAnswerEl.innerHTML = `
         <div class="chairman-badge">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
           </svg>
-          ${getModelName(chairmanModel)}
+          ${getModelName(cardChairman)}
         </div>
         <div class="response-content">${parseMarkdown(displayContent)}</div>
       `;
@@ -1693,6 +1958,44 @@ function updateStage3Summary(chairModel) {
   stage3Summary.innerHTML = `主席：<span class="highlight">${getModelName(chairModel)}</span>`;
 }
 
+/**
+ * 決定實際使用的主席模型
+ * @param {Array} ranking - aggregatedRanking 結果
+ * @param {Array} successfulResponses - 成功的回應列表
+ * @returns {string} 實際使用的主席模型 ID
+ */
+function resolveChairmanModel(ranking, successfulResponses) {
+  // 如果不是「互評勝者」模式，直接使用設定的主席模型
+  if (chairmanModel !== REVIEW_WINNER_VALUE) {
+    return chairmanModel;
+  }
+  
+  // 互評勝者模式：從排名取得第一名
+  if (ranking && ranking.length > 0) {
+    return ranking[0].model;
+  }
+  
+  // Fallback：沒有互評結果時，使用第一個成功回應的模型
+  if (successfulResponses && successfulResponses.length > 0) {
+    return successfulResponses[0].model;
+  }
+  
+  // 最終 fallback：使用第一個議會模型
+  return councilModels[0] || '';
+}
+
+/**
+ * 獲取可用的輔助模型（用於圖片生成等輔助功能）
+ * 如果主席設定為互評勝者，則 fallback 到第一個議會模型
+ * @returns {string} 可用的模型 ID
+ */
+function getAvailableHelperModel() {
+  if (chairmanModel !== REVIEW_WINNER_VALUE) {
+    return chairmanModel;
+  }
+  return councilModels[0] || '';
+}
+
 function clearAllSummaries() {
   if (stage1Summary) stage1Summary.innerHTML = '';
   if (stage2Summary) stage2Summary.innerHTML = '';
@@ -1892,7 +2195,8 @@ async function loadSettings() {
     reviewPrompt: DEFAULT_REVIEW_PROMPT,
     chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT,
     outputLength: 'standard',
-    outputFormat: 'mixed'
+    outputFormat: 'mixed',
+    learnerMode: 'standard'
   });
   councilModels = result.councilModels;
   chairmanModel = result.chairmanModel;
@@ -1903,6 +2207,7 @@ async function loadSettings() {
   customChairmanPrompt = result.chairmanPrompt || DEFAULT_CHAIRMAN_PROMPT;
   outputLength = result.outputLength || 'standard';
   outputFormat = result.outputFormat || 'mixed';
+  learnerMode = result.learnerMode || 'standard';
   updateModelCount();
 }
 
@@ -2221,6 +2526,7 @@ function setupEventListeners() {
     if (changes.chairmanPrompt) customChairmanPrompt = changes.chairmanPrompt.newValue || DEFAULT_CHAIRMAN_PROMPT;
     if (changes.outputLength) outputLength = changes.outputLength.newValue || 'standard';
     if (changes.outputFormat) outputFormat = changes.outputFormat.newValue || 'mixed';
+    if (changes.learnerMode) learnerMode = changes.learnerMode.newValue || 'standard';
     if (changes.braveApiKey) {
       hasBraveApiKey = !!changes.braveApiKey.newValue;
       updateSearchUIState(hasBraveApiKey);
@@ -3197,7 +3503,7 @@ ${discussionContext.slice(0, 2000)}${discussionContext.length > 2000 ? '...(已�
 請生成一個針對「${selectedKeyword}」方向的深入問題：`;
 
   try {
-    const result = await queryModelNonStreaming(chairmanModel, PROMPT_SUGGESTION_SYSTEM + '\n\n' + userPrompt);
+    const result = await queryModelNonStreaming(getAvailableHelperModel(), PROMPT_SUGGESTION_SYSTEM + '\n\n' + userPrompt);
     return result.trim();
   } catch (err) {
     console.error('Prompt suggestion failed:', err);
@@ -3306,7 +3612,10 @@ async function runCouncilIteration() {
     // === STAGE 3 ===
     currentStage = 'stage3';
     setStepActive(3);
-    updateStage3Summary(chairmanModel);
+    
+    // 決定實際使用的主席模型
+    const actualChairman = resolveChairmanModel(aggregatedRanking, successfulResponses);
+    updateStage3Summary(actualChairman);
     
     stage3Status.textContent = '彙整中...';
     stage3Status.classList.add('loading');
@@ -3317,7 +3626,7 @@ async function runCouncilIteration() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
         </svg>
-        ${getModelName(chairmanModel)}
+        ${getModelName(actualChairman)}
       </div>
       <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
     `;
@@ -3352,6 +3661,7 @@ async function runCouncilIteration() {
       currentConversation.ranking = aggregatedRanking;
       currentConversation.finalAnswer = finalAnswerContent;
       currentConversation.searchIteration = searchIteration;
+      currentConversation.chairmanModel = actualChairman; // 更新實際使用的主席模型
       currentConversation.contextItemsSnapshot = JSON.parse(JSON.stringify(contextItems)); // 更新參考資料快照
       
       // 保存更新後的 conversation 到 storage
@@ -4290,7 +4600,7 @@ function generateVisionReviewPrompt(query, responses, currentModel, includeImage
   
   const prompt = `你是一位公正的圖像分析評審。請評估以下各個 AI 對圖片的分析結果。
 
-**重要：你必須使用繁體中文回答。禁止使用簡體中文。**
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
 
 ## 原始問題
 ${query}
@@ -4331,7 +4641,7 @@ function generateVisionChairmanPrompt(query, responses, aggregatedRanking = null
   
   const prompt = `你是 AI Council 的主席。請綜合各位專家對圖像的分析，提供一個完整且權威的最終分析報告。
 
-**重要：你必須使用繁體中文回答。禁止使用簡體中文。英文和日文專有名詞可保留原文。**
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
 
 ## 原始問題
 ${query}
@@ -5226,7 +5536,8 @@ async function handleSend() {
     }
     
     // Check if chairman supports vision (optional warning)
-    if (!isVisionModel(chairmanModel)) {
+    // 如果設定為互評勝者模式，主席將動態決定
+    if (chairmanModel !== REVIEW_WINNER_VALUE && !isVisionModel(chairmanModel)) {
       console.warn('Chairman model does not support vision, will use text-only synthesis');
     }
   }
@@ -5470,8 +5781,11 @@ async function handleSend() {
     // Update stepper: Stage 3 active
     setStepActive(3);
     
+    // 決定實際使用的主席模型
+    const actualChairman = resolveChairmanModel(aggregatedRanking, successfulResponses);
+    
     // Update Stage 3 summary
-    updateStage3Summary(chairmanModel);
+    updateStage3Summary(actualChairman);
     
     stage3Status.textContent = '彙整中...';
     stage3Status.classList.add('loading');
@@ -5482,7 +5796,7 @@ async function handleSend() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
         </svg>
-        ${getModelName(chairmanModel)}
+        ${getModelName(actualChairman)}
       </div>
       <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
     `;
@@ -5507,7 +5821,7 @@ async function handleSend() {
       await saveCurrentConversation({
         query,
         models: councilModels,
-        chairmanModel,
+        chairmanModel: actualChairman,
         responses: savedResponses,
         ranking: aggregatedRanking,
         finalAnswer: finalAnswerContent,
@@ -6078,17 +6392,13 @@ async function runReview(reviewerModel, query, allResponses) {
     })));
   } catch (err) { 
     console.error(`Review by ${reviewerModel} failed:`, err);
-    const formatted = formatApiError(err, getModelName(reviewerModel));
     reviewFailures.set(reviewerModel, {
-      error: formatted.detail,
+      error: `API 呼叫失敗: ${err.message}`,
       raw: '',
       query,
       allResponses
     });
-    const actionHint = formatted.actions.includes('switch-model') 
-      ? '，可重試或更換模型' 
-      : '，可稍後重試';
-    showToast(`${formatted.short}${actionHint}`, true);
+    showToast(`${getModelName(reviewerModel)} 審查失敗: ${err.message}`, true);
   }
 }
 
@@ -6118,16 +6428,13 @@ function renderReviewResults(ranking) {
           <span class="failure-model">${getModelName(model)}</span>
           <span class="failure-error">${escapeHtml(info.error)}</span>
         </div>
-        <div class="failure-actions">
-          <button class="retry-review-btn" data-model="${model}">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M23 4v6h-6M1 20v-6h6"/>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-            </svg>
-            重試
-          </button>
-          <span class="failure-hint">或在設定中更換此模型</span>
-        </div>
+        <button class="retry-review-btn" data-model="${model}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          重試
+        </button>
       </div>
     `).join('');
     failuresHtml = `<div class="review-failures"><div class="review-failures-title">審查失敗 (${reviewFailures.size})</div>${failureItems}</div>`;
@@ -6166,6 +6473,9 @@ function renderReviewResults(ranking) {
 }
 
 async function runChairman(query, allResponses, aggregatedRanking, withSearchMode = false, executingCardId = null, searchResultsFromStage25 = null) {
+  // 決定實際使用的主席模型
+  const actualChairman = resolveChairmanModel(aggregatedRanking, allResponses);
+  
   // Use vision-specific chairman prompt if in vision mode
   let prompt = visionMode && uploadedImage
     ? generateVisionChairmanPrompt(query, allResponses, aggregatedRanking)
@@ -6187,7 +6497,7 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
   
   const parser = createStreamingParser();
   let finalContent = '';
-  const isVisionChairman = visionMode && uploadedImage && isVisionModel(chairmanModel);
+  const isVisionChairman = visionMode && uploadedImage && isVisionModel(actualChairman);
 
   try {
     const port = chrome.runtime.connect({ name: 'stream' });
@@ -6202,7 +6512,7 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
             started = true; 
             if (isCurrentCard) {
               const visionBadge = isVisionChairman ? '<span class="vision-stage-badge" style="margin-left: 0.5rem; font-size: 0.625rem;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>Vision</span>' : '';
-              finalAnswer.innerHTML = `<div class="chairman-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>${getModelName(chairmanModel)}${visionBadge}</div><div class="response-content"></div>`; 
+              finalAnswer.innerHTML = `<div class="chairman-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>${getModelName(actualChairman)}${visionBadge}</div><div class="response-content"></div>`; 
             }
           }
           content += msg.content;
@@ -6215,7 +6525,7 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
           
           // Track cost from usage data if available
           if (msg.usage) {
-            addToSessionCost(chairmanModel, msg.usage.prompt_tokens || 0, msg.usage.completion_tokens || 0);
+            addToSessionCost(actualChairman, msg.usage.prompt_tokens || 0, msg.usage.completion_tokens || 0);
           }
           
           // Parse tasks from response if task planner is enabled
@@ -6288,7 +6598,7 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
       port.postMessage({ 
         type: 'QUERY_MODEL_STREAM', 
         payload: { 
-          model: chairmanModel, 
+          model: actualChairman, 
           messages,
           visionMode: isVisionChairman
         } 
@@ -6539,38 +6849,108 @@ ${finalContent.slice(0, 2500)}
 4. 每張圖的選項應與該圖主題相關，不要使用通用的「性別/服裝」等選項`;
 
   try {
-    // Use chairman model for consistency
-    const result = await queryModelNonStreaming(chairmanModel, IMAGE_PROMPT_SYSTEM + '\n\n' + analysisPrompt);
+    // Use helper model for consistency (fallback if chairman is dynamic)
+    const result = await queryModelNonStreaming(getAvailableHelperModel(), IMAGE_PROMPT_SYSTEM + '\n\n' + analysisPrompt);
     
     // Parse JSON from response with error tolerance
-    const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
-    let jsonStr = jsonMatch ? jsonMatch[1] : result;
+    // Extract JSON from markdown code block - handle multiple code blocks
+    let jsonStr = result;
     
-    // Try to extract JSON object if there's extra text
-    const jsonObjMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (jsonObjMatch) jsonStr = jsonObjMatch[0];
+    // Try to find JSON code block first (```json ... ```)
+    const jsonCodeBlockMatch = result.match(/```json\s*([\s\S]*?)```/);
+    if (jsonCodeBlockMatch) {
+      jsonStr = jsonCodeBlockMatch[1];
+    } else {
+      // Try generic code block (``` ... ```)
+      const genericCodeBlockMatch = result.match(/```\s*([\s\S]*?)```/);
+      if (genericCodeBlockMatch) {
+        jsonStr = genericCodeBlockMatch[1];
+      }
+    }
+    
+    // Find the root JSON object using bracket matching (handles nested {} in strings)
+    jsonStr = jsonStr.trim();
+    const startIdx = jsonStr.indexOf('{');
+    if (startIdx !== -1) {
+      let depth = 0;
+      let inString = false;
+      let escapeNext = false;
+      let endIdx = -1;
+      
+      for (let i = startIdx; i < jsonStr.length; i++) {
+        const char = jsonStr[i];
+        
+        if (escapeNext) {
+          escapeNext = false;
+          continue;
+        }
+        
+        if (char === '\\') {
+          escapeNext = true;
+          continue;
+        }
+        
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+        
+        if (!inString) {
+          if (char === '{') depth++;
+          else if (char === '}') {
+            depth--;
+            if (depth === 0) {
+              endIdx = i;
+              break;
+            }
+          }
+        }
+      }
+      
+      if (endIdx !== -1) {
+        jsonStr = jsonStr.slice(startIdx, endIdx + 1);
+      }
+    }
     
     // Clean up common JSON issues
     jsonStr = jsonStr
       .trim()
-      .replace(/,\s*([}\]])/g, '$1')  // Remove trailing commas
-      .replace(/(['"])?([a-zA-Z_][a-zA-Z0-9_]*)\1\s*:/g, '"$2":')  // Ensure property names are double-quoted
-      .replace(/:\s*'([^']*)'/g, ':"$1"');  // Convert single-quoted values to double-quoted
+      .replace(/,\s*([}\]])/g, '$1');  // Remove trailing commas
     
     let parsed;
     try {
       parsed = JSON.parse(jsonStr);
     } catch (parseErr) {
-      // If still fails, try to fix truncated JSON by closing brackets
       console.warn('JSON parse failed, attempting repair:', parseErr.message);
+      console.warn('JSON string preview (first 500 chars):', jsonStr.slice(0, 500));
+      
+      // Try to fix truncated JSON by closing brackets
       let repaired = jsonStr;
-      const openBrackets = (repaired.match(/\[/g) || []).length;
-      const closeBrackets = (repaired.match(/\]/g) || []).length;
-      const openBraces = (repaired.match(/\{/g) || []).length;
-      const closeBraces = (repaired.match(/\}/g) || []).length;
+      
+      // Count brackets outside of strings
+      let openBrackets = 0, closeBrackets = 0, openBraces = 0, closeBraces = 0;
+      let inStr = false, escape = false;
+      for (const char of repaired) {
+        if (escape) { escape = false; continue; }
+        if (char === '\\') { escape = true; continue; }
+        if (char === '"') { inStr = !inStr; continue; }
+        if (!inStr) {
+          if (char === '[') openBrackets++;
+          else if (char === ']') closeBrackets++;
+          else if (char === '{') openBraces++;
+          else if (char === '}') closeBraces++;
+        }
+      }
+      
       repaired += ']'.repeat(Math.max(0, openBrackets - closeBrackets));
       repaired += '}'.repeat(Math.max(0, openBraces - closeBraces));
-      parsed = JSON.parse(repaired);
+      
+      try {
+        parsed = JSON.parse(repaired);
+      } catch (repairErr) {
+        console.error('JSON repair also failed:', repairErr.message);
+        throw parseErr; // Throw original error
+      }
     }
     
     // Normalize to multi-image structure
@@ -6723,7 +7103,12 @@ ${finalContent.slice(0, 2500)}
 
 // Helper: Build paradigm axis HTML for a subject with attributes
 function buildParadigmSubjectHtml(subjectName, attributes, axisType, subjectIdx) {
+  if (!attributes || typeof attributes !== 'object') return '';
+  
   const attributeRows = Object.entries(attributes).map(([attrName, options]) => {
+    // Guard: ensure options is an array
+    if (!Array.isArray(options)) return '';
+    
     const optionChips = options.map((opt, optIdx) => 
       `<button class="paradigm-chip" data-axis="${escapeAttr(axisType)}" data-subject="${escapeAttr(subjectName)}" data-attr="${escapeAttr(attrName)}" data-value="${escapeAttr(opt)}" data-idx="${optIdx}">${escapeHtml(opt)}</button>`
     ).join('');
@@ -6733,7 +7118,9 @@ function buildParadigmSubjectHtml(subjectName, attributes, axisType, subjectIdx)
         <div class="paradigm-chips-row">${optionChips}</div>
       </div>
     `;
-  }).join('');
+  }).filter(Boolean).join('');
+  
+  if (!attributeRows) return '';
   
   return `
     <div class="paradigm-subject" data-subject="${escapeAttr(subjectName)}">
@@ -6750,9 +7137,24 @@ function buildParadigmSubjectHtml(subjectName, attributes, axisType, subjectIdx)
 function buildParadigmAxisHtml(axisName, axisLabel, subjects, icon = '🎨') {
   if (!subjects || Object.keys(subjects).length === 0) return '';
   
-  const subjectsHtml = Object.entries(subjects).map(([name, attrs], idx) => 
-    buildParadigmSubjectHtml(name, attrs, axisName, idx)
-  ).join('');
+  // Detect structure: nested (characters) vs flat (style/colorAtmosphere)
+  // Nested: { "主體名": { "屬性": [...] } }
+  // Flat: { "屬性": [...] }
+  const firstValue = Object.values(subjects)[0];
+  const isFlat = Array.isArray(firstValue);
+  
+  let subjectsHtml;
+  if (isFlat) {
+    // Flat structure: wrap in a single virtual subject
+    subjectsHtml = buildParadigmSubjectHtml(axisLabel, subjects, axisName, 0);
+  } else {
+    // Nested structure: iterate over subjects
+    subjectsHtml = Object.entries(subjects).map(([name, attrs], idx) => {
+      // Guard: skip if attrs is not a valid object
+      if (!attrs || typeof attrs !== 'object' || Array.isArray(attrs)) return '';
+      return buildParadigmSubjectHtml(name, attrs, axisName, idx);
+    }).join('');
+  }
   
   return `
     <div class="paradigm-axis-section" data-axis="${escapeAttr(axisName)}">
@@ -6883,6 +7285,30 @@ function composePromptFromParadigms(basePrompt, globalSelections, imageSelection
       });
     }
   }
+  
+  // Clean up unselected placeholders - remove them and clean surrounding punctuation
+  // Match patterns like {anything.anything} or {anything}
+  prompt = prompt
+    // Remove placeholder with surrounding Chinese punctuation patterns
+    .replace(/[，、；：]?\s*\{[^{}]+\}\s*[，、；：]?/g, match => {
+      // If both sides have punctuation, keep one
+      const hasLeadingPunct = /^[，、；：]/.test(match);
+      const hasTrailingPunct = /[，、；：]$/.test(match);
+      if (hasLeadingPunct && hasTrailingPunct) return match.slice(-1);
+      return '';
+    })
+    // Clean up double punctuation that might result
+    .replace(/[，、]{2,}/g, '，')
+    .replace(/[。]{2,}/g, '。')
+    // Clean up leading punctuation at start of sections
+    .replace(/^[，、；：\s]+/gm, '')
+    // Clean up trailing punctuation before newlines
+    .replace(/[，、；：\s]+$/gm, '')
+    // Remove any remaining standalone placeholders
+    .replace(/\{[^{}]+\}/g, '')
+    // Clean up multiple spaces
+    .replace(/\s{2,}/g, ' ')
+    .trim();
   
   return prompt;
 }
@@ -7202,96 +7628,109 @@ const STYLE_INTEGRATION_PROMPT = `你是圖像 Prompt 整合專家。將指定�
 }
 \`\`\``;
 
-// Integrate selected style into all prompts via AI
+// Integrate selected style into consistency block only (preserve base_prompt placeholders)
 async function integrateStyleIntoPrompts(aiResult, selectedStyle, editedGlobalContext) {
   const images = aiResult.images || [];
   const consistencyBlock = aiResult.consistencyBlock || {};
   const globalContext = editedGlobalContext || aiResult.globalContext || '';
+  const paradigmSelections = aiResult.paradigmSelections || {};
   
-  // Build consistency block text
+  // Apply paradigm selections to consistency block parts (global placeholders only)
+  const processedConsistencyBlock = {
+    characters: consistencyBlock.characters 
+      ? composePromptFromParadigms(consistencyBlock.characters, paradigmSelections, null)
+      : '',
+    style: consistencyBlock.style
+      ? composePromptFromParadigms(consistencyBlock.style, paradigmSelections, null)
+      : '',
+    sceneCoherence: consistencyBlock.sceneCoherence
+      ? composePromptFromParadigms(consistencyBlock.sceneCoherence, paradigmSelections, null)
+      : ''
+  };
+  
+  // Build consistency text from processed block
   const consistencyText = [
-    consistencyBlock.characters ? `【角色】${consistencyBlock.characters}` : '',
-    consistencyBlock.style ? `【畫風】${consistencyBlock.style}` : '',
-    consistencyBlock.sceneCoherence ? `【場景】${consistencyBlock.sceneCoherence}` : ''
+    processedConsistencyBlock.characters ? `【角色】${processedConsistencyBlock.characters}` : '',
+    processedConsistencyBlock.style ? `【畫風】${processedConsistencyBlock.style}` : '',
+    processedConsistencyBlock.sceneCoherence ? `【場景】${processedConsistencyBlock.sceneCoherence}` : ''
   ].filter(Boolean).join('\n');
   
-  // Build the integration request
-  const imagesInfo = images.map((img, idx) => ({
-    index: idx + 1,
-    title: img.title,
-    base_prompt: img.basePrompt || img.finalPrompt || ''
-  }));
+  // Also replace global placeholders in global context
+  const processedGlobalContext = composePromptFromParadigms(globalContext, paradigmSelections, null);
   
-  const integrationPrompt = `## 選定風格
+  // Process base prompts: only replace GLOBAL placeholders, preserve image-level placeholders
+  const processedImages = images.map((img, idx) => {
+    // Only replace global paradigm placeholders (characters, style, color)
+    // Image-level placeholders ({scene.xxx}, {object.xxx}, {comp.xxx}) are preserved
+    const processedBasePrompt = composePromptFromParadigms(
+      img.basePrompt || img.finalPrompt || '',
+      paradigmSelections,
+      null // imageSelections = null means image-level placeholders are untouched
+    );
+    return {
+      ...img,
+      // Store both: processed (global replaced) and original (for reference)
+      basePromptProcessed: processedBasePrompt,
+      basePromptOriginal: img.basePrompt || img.finalPrompt || ''
+    };
+  });
+  
+  // Use AI only to integrate style into consistency block, not base_prompt
+  const styleIntegrationPrompt = `## 任務
+將選定的風格融入一致性區塊描述中，輸出融合後的一致性描述文字。
+
+## 選定風格
 名稱：${selectedStyle.name}
 描述：${selectedStyle.description}
 
-## 一致性區塊（每張圖必須包含這些描述）
+## 原始一致性區塊
 ${consistencyText || '（無）'}
 
 ## 全局上下文
-${globalContext || '（無特定要求）'}
+${processedGlobalContext || '（無特定要求）'}
 
-## 各圖片的基礎 prompt
-${imagesInfo.map(img => `### 圖 ${img.index}: ${img.title}\n${img.base_prompt}`).join('\n\n')}
+## 輸出要求
+輸出融入風格後的一致性描述（不需要 JSON 格式），保持【角色】【畫風】【場景】的分段結構。
+將風格元素（筆觸、質感、色調等）自然融入描述中。
+字數控制在 150-300 字。`;
 
-請將風格融入每張圖的 prompt 中。注意：保留 prompt 中的 {placeholder} 標記（如 {angle}、{background_detail}），不要替換它們。`;
-
+  let integratedConsistencyText = consistencyText;
+  
   try {
-    const result = await queryModelNonStreaming(chairmanModel, STYLE_INTEGRATION_PROMPT + '\n\n' + integrationPrompt);
-    
-    // Parse JSON
-    const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
-    let jsonStr = jsonMatch ? jsonMatch[1] : result;
-    const jsonObjMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (jsonObjMatch) jsonStr = jsonObjMatch[0];
-    
-    // Clean up JSON
-    jsonStr = jsonStr
-      .trim()
-      .replace(/,\s*([}\]])/g, '$1');
-    
-    const parsed = JSON.parse(jsonStr);
-    const integratedPrompts = parsed.integrated_prompts || [];
-    
-    // Update aiResult images with integrated prompts, preserving placeholders
-    const updatedImages = images.map((img, idx) => {
-      const integrated = integratedPrompts[idx];
-      return {
-        ...img,
-        finalPrompt: integrated?.prompt || img.basePrompt || img.finalPrompt || '',
-        integratedStyle: selectedStyle.name,
-        // Preserve placeholders structure
-        placeholders: img.placeholders || {}
-      };
-    });
-    
-    return {
-      ...aiResult,
-      selectedStyle: selectedStyle,
-      consistencyBlock: consistencyBlock,
-      images: updatedImages
-    };
+    const result = await queryModelNonStreaming(getAvailableHelperModel(), styleIntegrationPrompt);
+    // Use AI result as integrated consistency text (remove markdown if any)
+    integratedConsistencyText = result
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/^#+\s*.*/gm, '')
+      .trim() || consistencyText;
   } catch (err) {
-    console.error('Style integration failed:', err);
-    // Fallback: manually prepend style to each prompt
-    const updatedImages = images.map(img => {
-      const stylePrefix = `${selectedStyle.name}風格。${globalContext ? globalContext + '。' : ''}`;
-      return {
-        ...img,
-        finalPrompt: stylePrefix + (img.basePrompt || img.finalPrompt || ''),
-        integratedStyle: selectedStyle.name,
-        placeholders: img.placeholders || {}
-      };
-    });
-    
-    return {
-      ...aiResult,
-      selectedStyle: selectedStyle,
-      consistencyBlock: consistencyBlock,
-      images: updatedImages
-    };
+    console.error('Style integration failed, using fallback:', err);
+    // Fallback: prepend style name to consistency text
+    integratedConsistencyText = `${selectedStyle.name}風格。\n${consistencyText}`;
   }
+  
+  // Build updated images with layered prompt structure
+  const updatedImages = processedImages.map((img, idx) => {
+    return {
+      ...img,
+      // Keep basePrompt with image-level placeholders intact
+      basePrompt: img.basePromptProcessed,
+      // finalPrompt will be composed at generation time from layers
+      finalPrompt: img.basePromptProcessed,
+      integratedStyle: selectedStyle.name,
+      placeholders: img.placeholders || {}
+    };
+  });
+  
+  return {
+    ...aiResult,
+    selectedStyle: selectedStyle,
+    // Store both raw and integrated consistency blocks
+    consistencyBlock: processedConsistencyBlock,
+    integratedConsistencyText: integratedConsistencyText,
+    globalContext: processedGlobalContext,
+    images: updatedImages
+  };
 }
 
 // Preview and edit integrated prompts before generation
@@ -7424,7 +7863,7 @@ function parsePreviewContent(content, originalImages) {
       if (currentImageIdx >= 0 && currentImageIdx < parsedImages.length) {
         parsedImages[currentImageIdx] = {
           ...parsedImages[currentImageIdx],
-          finalPrompt: currentPromptLines.join('\n').trim()
+          basePrompt: currentPromptLines.join('\n').trim()
         };
       }
       
@@ -7445,7 +7884,7 @@ function parsePreviewContent(content, originalImages) {
   if (currentImageIdx >= 0 && currentImageIdx < parsedImages.length) {
     parsedImages[currentImageIdx] = {
       ...parsedImages[currentImageIdx],
-      finalPrompt: currentPromptLines.join('\n').trim()
+      basePrompt: currentPromptLines.join('\n').trim()
     };
   }
   
@@ -7477,7 +7916,7 @@ ${prompt}
 請精煉上述 prompt，確保一致性描述自然融入，移除重複內容，使語句流暢。`;
 
   try {
-    const result = await queryModelNonStreaming(chairmanModel, REFINE_PROMPT_SYSTEM + '\n\n' + refineRequest);
+    const result = await queryModelNonStreaming(getAvailableHelperModel(), REFINE_PROMPT_SYSTEM + '\n\n' + refineRequest);
     // Clean up the result - remove any markdown formatting
     return result
       .replace(/^```[\s\S]*?\n/, '')
@@ -7514,20 +7953,25 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
   const selectedStyle = aiResult.selectedStyle;
   const consistencyBlock = aiResult.consistencyBlock || {};
   
-  // Build consistency block text for display
-  const consistencyText = [
+  // Use integrated consistency text (with style fused in), fallback to raw block
+  const consistencyText = aiResult.integratedConsistencyText || [
     consistencyBlock.characters ? `【角色】${consistencyBlock.characters}` : '',
     consistencyBlock.style ? `【畫風】${consistencyBlock.style}` : '',
     consistencyBlock.sceneCoherence ? `【場景】${consistencyBlock.sceneCoherence}` : ''
   ].filter(Boolean).join('\n\n');
   
-  // Initialize state for tracking each image (style is already integrated)
+  // Initialize state for tracking each image
+  // basePrompt contains image-level placeholders, consistencyBlock is the fused style layer
   multiImageState = {
-    images: images.map(img => ({ ...img })),
+    images: images.map(img => ({ 
+      ...img,
+      // Track image-level paradigm selections separately
+      imageParadigmSelections: {}
+    })),
     completedCount: 0,
     generatedImages: [],
     integratedStyle: selectedStyle?.name || null,
-    consistencyBlock: consistencyText // Track editable consistency block
+    consistencyBlock: consistencyText // Editable consistency block (style already fused)
   };
   
   // Theme type badge
@@ -7617,8 +8061,9 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
           ${placeholderChipsHtml && !hasImageParadigms ? `<div class="placeholder-options-container">${placeholderChipsHtml}</div>` : ''}
           
           <div class="prompt-editor-textarea-wrapper">
-            <textarea class="prompt-editor-textarea image-prompt-textarea" data-image-idx="${idx}" rows="5">${escapeHtml(img.finalPrompt || '')}</textarea>
-            <div class="textarea-hint">選擇上方系譜軸選項會置換 prompt 中對應的 {placeholder}</div>
+            <div class="textarea-layer-hint">單圖描述（選擇系譜軸選項會置換 {placeholder}）</div>
+            <textarea class="prompt-editor-textarea image-prompt-textarea" data-image-idx="${idx}" rows="5">${escapeHtml(img.basePrompt || img.finalPrompt || '')}</textarea>
+            <div class="textarea-hint">生成時會自動組合：一致性描述 + 此區塊內容</div>
           </div>
           
           <div class="image-card-actions">
@@ -7760,8 +8205,8 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
           chip.classList.add('selected');
         }
         
-        // Update state
-        multiImageState.images[idx].finalPrompt = textarea.value;
+        // Update state - track basePrompt (textarea shows basePrompt layer)
+        multiImageState.images[idx].basePrompt = textarea.value;
       });
     });
     
@@ -7814,20 +8259,44 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
             }
           }
           
-          // If no placeholder found, note the selection for composition
-          if (!replaced && axis === 'composition') {
-            // Store for later use in prompt composition
-            if (!multiImageState.images[idx].paradigmSelections) {
-              multiImageState.images[idx].paradigmSelections = {};
+          // Store selection for tracking
+          if (!multiImageState.images[idx].imageParadigmSelections) {
+            multiImageState.images[idx].imageParadigmSelections = {};
+          }
+          const selectionKey = attr && attr !== subject ? `${subject}.${attr}` : subject;
+          multiImageState.images[idx].imageParadigmSelections[selectionKey] = value;
+          
+          // If no placeholder found, check if value conflicts with consistency block
+          if (!replaced) {
+            const consistencyBlock = multiImageState.consistencyBlock || '';
+            const valueAlreadyInConsistency = consistencyBlock.includes(value);
+            
+            if (!valueAlreadyInConsistency) {
+              // Append to prompt with clear labeling (user can edit/remove if unwanted)
+              const labelMap = {
+                'scene': '場景',
+                'object': '物件', 
+                'composition': '構圖'
+              };
+              const label = labelMap[axis] || axis;
+              const suffix = `（${label}：${value}）`;
+              
+              // Check if similar suffix already exists, replace it
+              const suffixPattern = new RegExp(`（${label}：[^）]+）`, 'g');
+              if (suffixPattern.test(newText)) {
+                newText = newText.replace(suffixPattern, suffix);
+              } else {
+                newText = newText.trim() + suffix;
+              }
             }
-            multiImageState.images[idx].paradigmSelections[subject] = value;
+            // If value is in consistency block, don't append (consistency takes precedence)
           }
           
           textarea.value = newText;
         }
         
-        // Update state
-        multiImageState.images[idx].finalPrompt = textarea.value;
+        // Update state - track both basePrompt edits and final prompt
+        multiImageState.images[idx].basePrompt = textarea.value;
       });
     });
     
@@ -7851,9 +8320,9 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
           const consistencyBlock = multiImageState.consistencyBlock?.trim() || '';
           const refinedPrompt = await refinePromptWithAI(prompt, consistencyBlock);
           
-          // Update textarea with refined prompt
+          // Update textarea with refined prompt (this is the basePrompt layer)
           textarea.value = refinedPrompt;
-          multiImageState.images[idx].finalPrompt = refinedPrompt;
+          multiImageState.images[idx].basePrompt = refinedPrompt;
           
           showToast('Prompt 已精煉完成');
         } catch (err) {
@@ -7906,7 +8375,8 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
           // Update state
           multiImageState.images[idx].status = 'done';
           multiImageState.images[idx].generatedImage = generatedImages[0];
-          multiImageState.images[idx].finalPrompt = prompt;
+          // Store the full composed prompt that was sent to generation
+          multiImageState.images[idx].composedPrompt = prompt;
           
           if (isRegeneration) {
             // Replace existing entry in generatedImages

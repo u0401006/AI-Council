@@ -3667,6 +3667,15 @@ body {
   font-style: italic;
 }
 
+.textarea-layer-hint {
+  font-size: 0.625rem;
+  color: var(--accent-primary);
+  font-weight: 500;
+  padding: 0.25rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
 .prompt-editor-textarea {
   width: 100%;
   min-height: 160px;
@@ -5971,6 +5980,52 @@ body {
 
 .todo-feature-badge[data-feature="vision"] {
   background: rgba(236, 72, 153, 0.1);
+}
+
+/* Learner mode task styles */
+.todo-item.learner-task {
+  border-left: 3px solid var(--accent-color, #10b981);
+}
+
+.todo-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-size: 0.75rem;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 4px;
+}
+
+.todo-type-icon[data-type="explore"] {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.todo-type-icon[data-type="verify"] {
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.todo-type-icon[data-type="apply"] {
+  background: rgba(249, 115, 22, 0.15);
+}
+
+.todo-type-icon[data-type="connect"] {
+  background: rgba(168, 85, 247, 0.15);
+}
+
+.todo-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 0.25rem;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--border-color);
+  opacity: 0.8;
+}
+
+.todo-item.learner-task .todo-content {
+  font-weight: 500;
 }
 
 .todo-actions {

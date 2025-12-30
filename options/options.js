@@ -37,7 +37,7 @@ const DEFAULT_CHAIRMAN = 'anthropic/claude-sonnet-4.5';
 // Default prompts
 const DEFAULT_REVIEW_PROMPT = `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
 
-**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文). Simplified Chinese is strictly prohibited.**
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited.**
 
 ## User's Question
 {query}
@@ -60,7 +60,7 @@ Be objective. Focus on factual accuracy and helpfulness. Write all reasons in Tr
 
 const DEFAULT_CHAIRMAN_PROMPT = `You are the Chairman of an AI Council. Synthesize the expert responses into a single, comprehensive final answer.
 
-**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文). Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
+**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
 
 ## User's Question
 {query}
@@ -102,6 +102,12 @@ const statusEl = document.getElementById('status');
 const outputLengthRadios = document.querySelectorAll('input[name="outputLength"]');
 const outputFormatRadios = document.querySelectorAll('input[name="outputFormat"]');
 
+// Learner mode radio group
+const learnerModeRadios = document.querySelectorAll('input[name="learnerMode"]');
+
+// Prompt section element
+const promptSection = document.getElementById('promptSection');
+
 // Initialize
 async function init() {
   await loadAvailableModels();
@@ -112,6 +118,36 @@ async function init() {
   saveBtn.addEventListener('click', saveSettings);
   resetPromptsBtn.addEventListener('click', resetPrompts);
   updateModelsBtn.addEventListener('click', updateModelsFromOpenRouter);
+  
+  // Learner mode change handler
+  learnerModeRadios.forEach(radio => {
+    radio.addEventListener('change', handleLearnerModeChange);
+  });
+}
+
+// Handle learner mode change - toggle prompt section visibility
+function handleLearnerModeChange() {
+  const selectedMode = document.querySelector('input[name="learnerMode"]:checked')?.value || 'standard';
+  const isLearnerMode = selectedMode !== 'standard';
+  
+  if (promptSection) {
+    promptSection.style.opacity = isLearnerMode ? '0.5' : '1';
+    promptSection.style.pointerEvents = isLearnerMode ? 'none' : 'auto';
+    
+    // Add or remove a visual indicator
+    const existingNote = promptSection.querySelector('.learner-mode-note');
+    if (isLearnerMode && !existingNote) {
+      const note = document.createElement('p');
+      note.className = 'hint learner-mode-note';
+      note.style.color = 'var(--warning, #f59e0b)';
+      note.textContent = `目前使用 ${selectedMode} 歲學習者模式的內建提示詞`;
+      promptSection.querySelector('.section-header').after(note);
+    } else if (!isLearnerMode && existingNote) {
+      existingNote.remove();
+    } else if (isLearnerMode && existingNote) {
+      existingNote.textContent = `目前使用 ${selectedMode} 歲學習者模式的內建提示詞`;
+    }
+  }
 }
 
 function renderModelList() {
@@ -139,9 +175,11 @@ function renderModelList() {
 }
 
 function renderChairmanSelect() {
-  chairmanSelect.innerHTML = AVAILABLE_MODELS.map(model => 
+  const reviewWinnerOption = '<option value="__review_winner__">互評勝者（動態）</option>';
+  const modelOptions = AVAILABLE_MODELS.map(model => 
     `<option value="${model.id}">${model.name} (${model.provider})</option>`
   ).join('');
+  chairmanSelect.innerHTML = reviewWinnerOption + modelOptions;
 }
 
 async function loadSettings() {
@@ -156,7 +194,8 @@ async function loadSettings() {
     reviewPrompt: DEFAULT_REVIEW_PROMPT,
     chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT,
     outputLength: DEFAULT_OUTPUT_LENGTH,
-    outputFormat: DEFAULT_OUTPUT_FORMAT
+    outputFormat: DEFAULT_OUTPUT_FORMAT,
+    learnerMode: 'standard'
   });
 
   apiKeyInput.value = result.apiKey;
@@ -181,6 +220,14 @@ async function loadSettings() {
   outputFormatRadios.forEach(radio => {
     radio.checked = radio.value === result.outputFormat;
   });
+  
+  // Set learner mode radio buttons
+  learnerModeRadios.forEach(radio => {
+    radio.checked = radio.value === result.learnerMode;
+  });
+  
+  // Update prompt section visibility based on learner mode
+  handleLearnerModeChange();
 }
 
 async function saveSettings() {
@@ -200,6 +247,9 @@ async function saveSettings() {
   // Get output style settings
   const outputLength = document.querySelector('input[name="outputLength"]:checked')?.value || DEFAULT_OUTPUT_LENGTH;
   const outputFormat = document.querySelector('input[name="outputFormat"]:checked')?.value || DEFAULT_OUTPUT_FORMAT;
+  
+  // Get learner mode setting
+  const learnerMode = document.querySelector('input[name="learnerMode"]:checked')?.value || 'standard';
 
   if (councilModels.length < 2) {
     showStatus('請選擇至少 2 個模型', 'error');
@@ -217,7 +267,8 @@ async function saveSettings() {
     reviewPrompt,
     chairmanPrompt,
     outputLength,
-    outputFormat
+    outputFormat,
+    learnerMode
   });
 
   showStatus('設定已儲存', 'success');
