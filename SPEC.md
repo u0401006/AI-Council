@@ -1,7 +1,7 @@
 # AI Council 產品規格書
 
-> 版本：2.0  
-> 更新日期：2024-12-27  
+> 版本：2.1  
+> 更新日期：2026-01-02  
 > 狀態：Chrome Extension 已上線，React Native iOS 規劃中
 
 ---
@@ -11,10 +11,11 @@
 1. [目的](#1-目的)
 2. [使用情境](#2-使用情境)
 3. [技術棧（現況）](#3-技術棧現況)
-4. [React Native iOS 移轉技術細節](#4-react-native-ios-移轉技術細節)
-5. [移轉需補足項目](#5-移轉需補足項目)
-6. [相關文件索引](#6-相關文件索引)
-7. [使用手冊](#7-使用手冊)
+4. [圖片生成系統規格](#4-圖片生成系統規格)
+5. [React Native iOS 移轉技術細節](#5-react-native-ios-移轉技術細節)
+6. [移轉需補足項目](#6-移轉需補足項目)
+7. [相關文件索引](#7-相關文件索引)
+8. [使用手冊](#8-使用手冊)
 
 ---
 
@@ -287,15 +288,563 @@ chrome.runtime.onConnect.addListener(port => {
 
 ---
 
-## 4. React Native iOS 移轉技術細節
+## 4. 圖片生成系統規格
 
-### 4.1 目標平台
+圖片生成系統採用**符號學兩軸論**（索緒爾理論）設計，透過五階段流程實現高品質、可控的多圖片生成。
+
+### 4.1 系統流程總覽
+
+```
+Council 討論完成
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 1: AI Prompt 生成 (generateImagePromptWithAI)        │
+│  ├─ 分析 Council 內容                                        │
+│  ├─ 識別多圖規劃                                             │
+│  ├─ 生成結構化 JSON（風格、系譜軸、一致性區塊、base_prompt）    │
+│  └─ 輸出：recommendedStyles, globalParadigms, images[]      │
+└─────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 2: 風格選擇 (showStyleSelectionUI)                   │
+│  ├─ 顯示 AI 推薦風格卡片                                     │
+│  ├─ 全局系譜軸選擇器（paradigm chips）                       │
+│  ├─ 一致性描述編輯區                                         │
+│  └─ 輸出：selectedStyle, paradigmSelections, globalContext  │
+└─────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 3: 風格整合 (integrateStyleIntoPrompts)              │
+│  ├─ 全局 placeholder 替換（composePromptFromParadigms）      │
+│  ├─ AI 將風格融入 consistency_block                         │
+│  └─ 輸出：integratedConsistencyText, processedImages[]      │
+└─────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 4: 預覽與編輯 (showPromptPreview)                    │
+│  ├─ 純文字預覽區（可直接編輯）                                │
+│  ├─ 解析編輯內容（parsePreviewContent）                      │
+│  └─ 輸出：編輯後的 images[]                                  │
+└─────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 5: 多圖編輯器 (showMultiImageEditor)                 │
+│  ├─ 每張圖獨立編輯卡片                                       │
+│  ├─ 單圖系譜軸選擇（image-level paradigms）                  │
+│  ├─ 潤色功能（refinePromptWithAI）                          │
+│  ├─ 組合：consistency_block + base_prompt                   │
+│  └─ 呼叫 runImageGeneration 生成圖片                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 符號學兩軸論架構
+
+#### 4.2.1 核心概念
+
+| 軸向 | 名稱 | 說明 |
+|------|------|------|
+| **系譜軸**（Paradigmatic） | 垂直替代選項 | 每個敘事主體的可替換屬性選項 |
+| **毗鄰軸**（Syntagmatic） | 橫向組合結構 | 選定的選項組合成完整 prompt |
+
+```
+毗鄰軸組合公式：
+最終 Prompt = 一致性區塊（consistency_block）+ 單圖描述（base_prompt）
+            = [角色一致性] + [畫風一致性] + [場景一致性] + [該圖特定描述]
+```
+
+#### 4.2.2 系譜軸層級結構
+
+```
+系譜軸（Paradigmatic Axis）
+├── 全局系譜軸（Global Paradigms）─ 跨圖片共用
+│   ├── characters（角色系譜軸）
+│   │   └── {角色名}
+│   │       ├── 面貌: [方臉, 圓臉, 鵝蛋臉]
+│   │       ├── 表情: [微笑, 沉思, 驚喜]
+│   │       └── 髮型: [短髮, 長髮, 雙馬尾]
+│   │
+│   ├── style（風格系譜軸）
+│   │   ├── 線條: [細膩手繪, 粗獷筆觸, 平滑向量]
+│   │   └── 質感: [紙本紋理, 平滑數位, 水彩暈染]
+│   │
+│   └── color_atmosphere（色彩氛圍系譜軸）
+│       ├── 色溫: [暖色調, 冷色調, 中性]
+│       ├── 飽和度: [低飽和日系, 標準, 高飽和鮮明]
+│       └── 光線: [柔和自然光, 強烈側光, 逆光剪影]
+│
+└── 單圖系譜軸（Image Paradigms）─ 每張圖獨立
+    ├── scene（場景系譜軸）
+    │   └── {場景元素}
+    │       └── {屬性}: [選項1, 選項2, ...]
+    │
+    ├── object（物件系譜軸）
+    │   └── {物件名}
+    │       └── {屬性}: [選項1, 選項2, ...]
+    │
+    └── composition（構圖系譜軸）
+        ├── 視角: [平視, 俯視, 仰視]
+        ├── 景深: [遠景全身, 中景半身, 近景特寫]
+        └── 位置: [主體置中, 三分法左, 三分法右]
+```
+
+### 4.3 Prompt 選擇器分層邏輯
+
+#### 4.3.1 全局系譜軸選擇器（Phase 2）
+
+**觸發時機**：風格選擇 UI 顯示時
+
+**實作位置**：`showStyleSelectionUI()` → `buildParadigmAxisHtml()`
+
+**UI 結構**：
+```html
+<div class="global-paradigms-container">
+  <div class="paradigm-axis-section" data-axis="characters">
+    <div class="paradigm-subject" data-subject="爸爸">
+      <div class="paradigm-attribute-row">
+        <span class="paradigm-attr-label">面貌</span>
+        <div class="paradigm-chips-row">
+          <button class="paradigm-chip" data-axis="characters" 
+                  data-subject="爸爸" data-attr="面貌" data-value="方臉">方臉</button>
+          <button class="paradigm-chip" ...>圓臉</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+**選擇邏輯**：
+```javascript
+// 點擊 chip 時的處理
+const paradigmSelections = {
+  characters: {},      // 角色選擇
+  style: {},           // 風格選擇
+  colorAtmosphere: {}  // 色彩選擇
+};
+
+// 同一屬性列只能選一個（radio 行為）
+chip.closest('.paradigm-chips-row').querySelectorAll('.paradigm-chip')
+    .forEach(c => c.classList.remove('selected'));
+
+// 儲存選擇
+paradigmSelections[axis][subject][attr] = value;
+// 例：paradigmSelections.characters.爸爸.面貌 = "方臉"
+```
+
+#### 4.3.2 單圖系譜軸選擇器（Phase 5）
+
+**觸發時機**：多圖編輯器中每張圖卡
+
+**實作位置**：`showMultiImageEditor()` → `buildImageParadigmAxisHtml()`
+
+**資料結構**：
+```javascript
+multiImageState.images[idx].imageParadigmSelections = {
+  scene: {},       // {元素: {屬性: 值}}
+  object: {},      // {物件: {屬性: 值}}
+  composition: {}  // {屬性: 值}
+};
+```
+
+**UI 結構**：
+```html
+<div class="image-paradigm-row">
+  <span class="image-paradigm-label">神社階梯</span>
+  <div class="image-paradigm-chips">
+    <button class="image-paradigm-chip" data-image-idx="0" 
+            data-axis="scene" data-subject="神社階梯" 
+            data-attr="狀態" data-value="積雪覆蓋">積雪覆蓋</button>
+  </div>
+</div>
+```
+
+### 4.4 一致性設定（Consistency Block）
+
+#### 4.4.1 結構定義
+
+```javascript
+const consistencyBlock = {
+  characters: "所有角色的精確外觀描述，使用 {角色名.屬性} placeholder",
+  style: "畫風描述，使用 {style.屬性} placeholder",
+  scene_coherence: "場景連貫性要求"
+};
+```
+
+#### 4.4.2 一致性確保機制
+
+**1. AI 生成階段**：`IMAGE_PROMPT_SYSTEM` 指導 AI 產出統一的 consistency_block
+
+**2. 風格整合階段**：`integrateStyleIntoPrompts()` 將選定風格融入
+```javascript
+const styleIntegrationPrompt = `
+將選定的風格融入一致性區塊描述中...
+名稱：${selectedStyle.name}
+描述：${selectedStyle.description}
+原始一致性區塊：${consistencyText}
+`;
+```
+
+**3. 最終組合**：每張圖生成時自動 prepend consistency_block
+```javascript
+// Phase 5 生成按鈕邏輯
+const consistencyBlock = multiImageState.consistencyBlock?.trim();
+if (consistencyBlock) {
+  prompt = consistencyBlock + '\n\n' + prompt;
+}
+```
+
+#### 4.4.3 一致性描述格式
+
+```
+【角色】爸爸（面貌:方臉，表情:微笑）；媽媽（面貌:鵝蛋臉，表情:溫柔微笑）
+【畫風】細膩手繪，紙本紋理
+【色彩】暖色調，低飽和日系，柔和自然光
+【場景】京都冬日，積雪場景，和風建築
+```
+
+### 4.5 變項置換（Placeholder Substitution）
+
+#### 4.5.1 Placeholder 命名規則
+
+| 類型 | 格式 | 範例 | 用途位置 |
+|------|------|------|----------|
+| 角色屬性 | `{角色名.屬性}` | `{爸爸.面貌}`, `{媽媽.表情}` | consistency_block |
+| 風格屬性 | `{style.屬性}` | `{style.線條}`, `{style.質感}` | consistency_block |
+| 色彩屬性 | `{color.屬性}` | `{color.色溫}`, `{color.光線}` | consistency_block |
+| 場景屬性 | `{scene.元素.屬性}` | `{scene.庭園.狀態}` | base_prompt |
+| 物件屬性 | `{object.物件.屬性}` | `{object.燈籠.數量}` | base_prompt |
+| 構圖屬性 | `{comp.屬性}` | `{comp.視角}`, `{comp.景深}` | base_prompt |
+
+#### 4.5.2 置換函數：`composePromptFromParadigms()`
+
+**函數簽名**：
+```javascript
+function composePromptFromParadigms(basePrompt, globalSelections, imageSelections)
+```
+
+**置換流程**：
+```javascript
+// 1. 全局 placeholder 置換
+if (globalSelections) {
+  // 角色: {角色名.屬性} → 選定值
+  patterns = [`{${charName}.${attrName}}`, `{characters.${charName}.${attrName}}`];
+  
+  // 風格: {style.屬性} → 選定值
+  patterns = [`{style.${attrName}}`, `{${styleName}.${attrName}}`];
+  
+  // 色彩: {color.屬性} → 選定值
+  patterns = [`{color.${attrName}}`, `{${colorName}.${attrName}}`];
+}
+
+// 2. 單圖 placeholder 置換（僅當 imageSelections 非 null）
+if (imageSelections) {
+  // 場景: {scene.元素.屬性} → 選定值
+  // 物件: {object.物件.屬性} → 選定值
+  // 構圖: {comp.屬性} → 選定值
+}
+
+// 3. 清理未選擇的 placeholder
+prompt = prompt
+  .replace(/[，、；：]?\s*\{[^{}]+\}\s*[，、；：]?/g, ...)  // 移除並清理標點
+  .replace(/\{[^{}]+\}/g, '')                               // 移除殘留
+  .replace(/\s{2,}/g, ' ')                                   // 清理多餘空白
+  .trim();
+```
+
+#### 4.5.3 置換時機
+
+| 階段 | 函數 | 置換範圍 |
+|------|------|----------|
+| Phase 3 | `integrateStyleIntoPrompts()` | 全局 placeholder（consistency_block + global_context） |
+| Phase 5 | 生成按鈕 click handler | 單圖 placeholder（base_prompt） |
+
+### 4.6 潤飾邏輯（Prompt Refinement）
+
+#### 4.6.1 系統 Prompt：`REFINE_PROMPT_SYSTEM`
+
+```javascript
+const REFINE_PROMPT_SYSTEM = `你是圖像 Prompt 精煉專家。將用戶編輯後的 prompt 進行潤色，確保品質。
+
+## 精煉原則
+1. **去除重複**：刪除重複的描述（如角色描述出現兩次）
+2. **融合一致性區塊**：確保一致性描述自然融入 prompt，不是生硬的前置
+3. **語句流暢**：調整語序使描述更自然
+4. **保持完整**：不要刪除重要細節
+5. **填補 placeholder**：如果還有未置換的 {placeholder}，用合理的預設值填入
+
+## 輸出要求
+只輸出精煉後的 prompt，不要加任何說明或 markdown 格式。
+字數控制在 150-250 字。`;
+```
+
+#### 4.6.2 潤飾函數：`refinePromptWithAI()`
+
+**觸發時機**：Phase 5 多圖編輯器中點擊「潤色」按鈕
+
+**輸入**：
+- `prompt`: 當前 textarea 內容（base_prompt）
+- `consistencyBlock`: 一致性區塊文字
+
+**處理流程**：
+```javascript
+async function refinePromptWithAI(prompt, consistencyBlock) {
+  const refineRequest = `
+## 一致性描述
+${consistencyBlock || '（無）'}
+
+## 原始 Prompt
+${prompt}
+
+請精煉上述 prompt，確保一致性描述自然融入，移除重複內容，使語句流暢。`;
+
+  const result = await queryModelNonStreaming(
+    getAvailableHelperModel(), 
+    REFINE_PROMPT_SYSTEM + '\n\n' + refineRequest
+  );
+  
+  return result.trim();
+}
+```
+
+**輸出**：精煉後的 prompt（150-250 字），已去除重複、自然融合
+
+#### 4.6.3 潤飾處理項目
+
+| 項目 | 說明 |
+|------|------|
+| 去除重複 | 同一角色描述出現多次 → 保留一次 |
+| 融合一致性 | 「【角色】爸爸（方臉）\n\n方臉的爸爸站在...」→「方臉的爸爸站在...」 |
+| 語句流暢 | 關鍵字堆疊 → 完整句子 |
+| 填補 placeholder | `{comp.視角}` → 「平視」（合理預設值） |
+
+### 4.7 風格整合流程
+
+#### 4.7.1 系統 Prompt：`STYLE_INTEGRATION_PROMPT`
+
+```javascript
+const STYLE_INTEGRATION_PROMPT = `你是圖像 Prompt 整合專家。將指定的視覺風格融入每張圖的 prompt 中，保持內容描述不變但加入風格元素。
+
+## 融入原則
+1. **風格融合**：將風格元素（筆觸、質感、色調）融入場景描述中
+2. **保持一致**：所有圖片必須使用相同的風格語言
+3. **全局上下文**：將 global_context（人物一致性等）融入每張 prompt 開頭
+4. **自然語句**：用完整句子，不要只是堆疊關鍵字
+5. **保留 Placeholder**：如果 prompt 中有 {placeholder}，必須原封不動保留，不要替換
+
+## 範例
+原始 prompt: "一隻狐狸以{angle}站在樹下，{background_detail}，看著遠方"
+風格: "水彩童話風格，柔和筆觸，暈染邊緣"
+全局上下文: "保持狐狸的外觀一致：棕色毛皮，圓眼睛，短尾巴"
+
+融入後:
+"水彩童話風格的插畫，柔和筆觸與暈染邊緣。一隻棕色毛皮、圓眼睛、短尾巴的小狐狸以{angle}站在大樹下，{background_detail}，目光望向遠方。畫面色調溫暖，光線柔和，帶有手繪繪本的質感。"
+`;
+```
+
+#### 4.7.2 整合函數流程
+
+```javascript
+async function integrateStyleIntoPrompts(aiResult, selectedStyle, editedGlobalContext) {
+  // 1. 先用全局 paradigm 選擇置換 consistency_block 中的 placeholder
+  const processedConsistencyBlock = {
+    characters: composePromptFromParadigms(consistencyBlock.characters, paradigmSelections, null),
+    style: composePromptFromParadigms(consistencyBlock.style, paradigmSelections, null),
+    sceneCoherence: composePromptFromParadigms(consistencyBlock.sceneCoherence, paradigmSelections, null)
+  };
+  
+  // 2. AI 將風格融入 consistency_block（不動 base_prompt）
+  const styleIntegrationPrompt = `
+將選定的風格融入一致性區塊描述中...
+名稱：${selectedStyle.name}
+描述：${selectedStyle.description}
+`;
+  
+  const integratedConsistencyText = await queryModelNonStreaming(...);
+  
+  // 3. base_prompt 只處理全局 placeholder，保留單圖 placeholder
+  const processedImages = images.map(img => ({
+    ...img,
+    basePromptProcessed: composePromptFromParadigms(img.basePrompt, paradigmSelections, null)
+  }));
+  
+  return { integratedConsistencyText, images: processedImages };
+}
+```
+
+### 4.8 AI Prompt 生成系統：`IMAGE_PROMPT_SYSTEM`
+
+#### 4.8.1 核心指令
+
+```javascript
+const IMAGE_PROMPT_SYSTEM = `你是視覺設計專家和圖像生成 Prompt 工程師。根據提供的內容，運用符號學兩軸論（索緒爾理論）分析主題並生成結構化的圖像描述。
+
+## 動態分析原則（極重要）
+你必須根據使用者 prompt 內容**動態識別**敘事主體，而非使用固定模板：
+- 京都旅遊 → 識別：家庭成員、神社、庭園、和服
+- 科幻故事 → 識別：太空人、機器人、星艦、星球
+- 美食文章 → 識別：料理、食材、餐具、擺盤
+- 企業簡報 → 識別：圖表、數據標籤、版面區塊
+
+## 風格推薦規則
+根據內容主題推薦 3-5 個適合的視覺風格，必須：
+1. **貼近主題**：寓言→童話風、科技→賽博龐克、旅遊→插畫風
+2. **具體描述**：「柔和水彩筆觸，色彩暈染邊緣，童話繪本質感」
+3. **多樣選擇**：提供寫實、插畫、抽象等不同取向
+`;
+```
+
+#### 4.8.2 輸出 JSON 結構
+
+```json
+{
+  "image_count": 3,
+  "theme_type": "abstract|concrete|narrative|data",
+  "use_case": "用途說明",
+  
+  "recommended_styles": [
+    {
+      "id": "style_id_snake_case",
+      "name": "風格名稱",
+      "description": "詳細風格描述（30-50字）",
+      "suitable_for": "適合場景"
+    }
+  ],
+  
+  "global_paradigms": {
+    "characters": {
+      "角色名稱": {
+        "屬性類別1": ["選項1", "選項2", "選項3"],
+        "屬性類別2": ["選項1", "選項2"]
+      }
+    },
+    "style": {
+      "線條": ["細膩手繪", "粗獷筆觸", "平滑向量"],
+      "質感": ["紙本紋理", "平滑數位", "水彩暈染"]
+    },
+    "color_atmosphere": {
+      "色溫": ["暖色調", "冷色調", "中性"],
+      "飽和度": ["低飽和日系", "標準", "高飽和鮮明"],
+      "光線": ["柔和自然光", "強烈側光", "逆光剪影"]
+    }
+  },
+  
+  "consistency_block": {
+    "characters": "所有角色的精確外觀描述，使用 {角色名.屬性} placeholder",
+    "style": "畫風描述，使用 {style.屬性} placeholder",
+    "scene_coherence": "場景連貫性要求"
+  },
+  
+  "global_context": "簡短全局說明",
+  
+  "images": [
+    {
+      "title": "圖卡標題",
+      "use_case": "此圖用途",
+      "description": "圖片說明",
+      
+      "image_paradigms": {
+        "scene": {
+          "場景元素名": {
+            "屬性1": ["選項1", "選項2"],
+            "屬性2": ["選項1", "選項2"]
+          }
+        },
+        "object": {
+          "物件名": {
+            "屬性1": ["選項1", "選項2"]
+          }
+        },
+        "composition": {
+          "視角": ["平視", "俯視", "仰視"],
+          "景深": ["遠景全身", "中景半身", "近景特寫"],
+          "位置": ["主體置中", "三分法左", "三分法右"]
+        }
+      },
+      
+      "base_prompt": "包含 {placeholder} 的圖像描述（150-200字）"
+    }
+  ]
+}
+```
+
+### 4.9 圖片生成 API
+
+#### 4.9.1 生成函數：`runImageGeneration()`
+
+```javascript
+async function runImageGeneration(prompt, timeoutMs = 240000) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error('圖片生成逾時（超過 4 分鐘），請稍後再試'));
+    }, timeoutMs);
+    
+    chrome.runtime.sendMessage({ 
+      type: 'QUERY_IMAGE', 
+      payload: { 
+        model: DEFAULT_IMAGE_MODEL,  // google/gemini-2.0-flash-exp:free
+        prompt: prompt 
+      } 
+    }, (response) => {
+      clearTimeout(timeoutId);
+      if (response?.images?.length) {
+        resolve(response.images);
+      } else {
+        reject(new Error('未收到圖片'));
+      }
+    });
+  });
+}
+```
+
+#### 4.9.2 最終 Prompt 組裝
+
+```
+┌────────────────────────────────────────┐
+│  最終送出的 Prompt                       │
+├────────────────────────────────────────┤
+│  【角色】爸爸（方臉，微笑）；媽媽...       │  ← 一致性區塊
+│  【畫風】水彩童話風格，柔和筆觸...         │    (consistency_block)
+│  【場景】京都冬日，積雪覆蓋...             │
+│                                        │
+│  一家四口站在積雪覆蓋的石階前，           │  ← 單圖描述
+│  成排綿延的朱紅燈籠沿階而上。             │    (base_prompt)
+│  仰視構圖下，微笑的爸爸牽著...            │    (已完成 placeholder 置換)
+└────────────────────────────────────────┘
+```
+
+### 4.10 相關函數索引
+
+| 函數名稱 | 檔案位置 | 功能說明 |
+|----------|----------|----------|
+| `generateImagePromptWithAI()` | `sidepanel/app.js` | Phase 1: AI 分析生成 JSON |
+| `showStyleSelectionUI()` | `sidepanel/app.js` | Phase 2: 風格選擇 UI |
+| `buildParadigmAxisHtml()` | `sidepanel/app.js` | 全局系譜軸 HTML 生成 |
+| `integrateStyleIntoPrompts()` | `sidepanel/app.js` | Phase 3: 風格整合 |
+| `composePromptFromParadigms()` | `sidepanel/app.js` | Placeholder 置換核心函數 |
+| `showPromptPreview()` | `sidepanel/app.js` | Phase 4: 預覽編輯 |
+| `buildPreviewContent()` | `sidepanel/app.js` | 建構預覽文字 |
+| `parsePreviewContent()` | `sidepanel/app.js` | 解析編輯後內容 |
+| `showMultiImageEditor()` | `sidepanel/app.js` | Phase 5: 多圖編輯器 |
+| `buildImageParadigmAxisHtml()` | `sidepanel/app.js` | 單圖系譜軸 HTML 生成 |
+| `refinePromptWithAI()` | `sidepanel/app.js` | Prompt 潤飾 |
+| `runImageGeneration()` | `sidepanel/app.js` | 圖片生成 API 呼叫 |
+
+---
+
+## 5. React Native iOS 移轉技術細節
+
+### 5.1 目標平台
 
 - **主要目標**：iOS App（App Store 上架）
 - **次要目標**：Android App（Google Play）
 - **技術選型**：React Native + Expo
 
-### 4.2 架構對照
+### 5.2 架構對照
 
 | 層級 | Chrome Extension | React Native iOS |
 |------|------------------|------------------|
@@ -308,7 +857,7 @@ chrome.runtime.onConnect.addListener(port => {
 | **本地儲存** | chrome.storage.local | MMKV / SQLite |
 | **認證** | 無 | Apple Sign-In |
 
-### 4.3 系統架構圖
+### 5.3 系統架構圖
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -352,7 +901,7 @@ chrome.runtime.onConnect.addListener(port => {
    └───────────┘      └───────────┘      └───────────┘
 ```
 
-### 4.4 技術選型理由
+### 5.4 技術選型理由
 
 | 技術 | 選擇原因 |
 |------|---------|
@@ -364,7 +913,7 @@ chrome.runtime.onConnect.addListener(port => {
 | **MMKV** | 高效能 key-value 儲存，取代 AsyncStorage |
 | **Vercel Edge** | 低延遲、全球部署、Streaming Response |
 
-### 4.5 API 代理設計
+### 5.5 API 代理設計
 
 Chrome Extension 直接呼叫 OpenRouter，但 iOS App 需要後端代理：
 
@@ -409,7 +958,7 @@ export default async function handler(req: Request) {
 }
 ```
 
-### 4.6 商業模式選項
+### 5.6 商業模式選項
 
 | 模式 | 說明 | 適用場景 |
 |------|------|---------|
@@ -418,7 +967,7 @@ export default async function handler(req: Request) {
 | **Pay-as-you-go** | 按用量計費 | 輕度使用者 |
 | **Freemium** | 免費額度 + 付費升級 | 用戶獲取 |
 
-### 4.7 React Native 元件對應
+### 5.7 React Native 元件對應
 
 | Chrome Extension | React Native |
 |------------------|--------------|
@@ -431,15 +980,15 @@ export default async function handler(req: Request) {
 
 ---
 
-## 5. 移轉需補足項目
+## 6. 移轉需補足項目
 
-### 5.1 優先級定義
+### 6.1 優先級定義
 
 - **P0**：App Store 上架必要條件
 - **P1**：核心用戶體驗
 - **P2**：進階功能
 
-### 5.2 後端開發
+### 6.2 後端開發
 
 | 項目 | 優先級 | 說明 | 預估工時 |
 |------|--------|------|---------|
@@ -450,7 +999,7 @@ export default async function handler(req: Request) {
 | 訂閱系統 | P1 | In-App Purchase 整合 | 5d |
 | API Key 託管 | P1 | 用戶自帶 Key 選項 | 2d |
 
-### 5.3 前端開發
+### 6.3 前端開發
 
 | 項目 | 優先級 | 說明 | 預估工時 |
 |------|--------|------|---------|
@@ -463,7 +1012,7 @@ export default async function handler(req: Request) {
 | 離線儲存 | P1 | 對話歷史本地快取 | 2d |
 | Deep Link | P2 | 外部分享連結 | 1d |
 
-### 5.4 App Store 合規
+### 6.4 App Store 合規
 
 | 項目 | 優先級 | 說明 |
 |------|--------|------|
@@ -473,7 +1022,7 @@ export default async function handler(req: Request) {
 | App Review 準備 | P0 | 測試帳號、功能說明 |
 | 內容審核 | P1 | AI 輸出過濾機制 |
 
-### 5.5 移轉優先順序
+### 6.5 移轉優先順序
 
 ```
 Phase 1 (MVP - App Store 上架)
@@ -500,9 +1049,9 @@ Phase 3 (進階功能)
 
 ---
 
-## 6. 相關文件索引
+## 7. 相關文件索引
 
-### 6.1 文件總覽
+### 7.1 文件總覽
 
 | 文件 | 用途 | 維護時機 |
 |------|------|---------|
@@ -513,7 +1062,7 @@ Phase 3 (進階功能)
 | [`MODEL_UPDATE_GUIDE.md`](MODEL_UPDATE_GUIDE.md) | 模型更新機制 | 篩選邏輯變更時 |
 | [`PRIVACY.md`](PRIVACY.md) | 隱私政策 | 資料處理方式變更時 |
 
-### 6.2 PROMPTS_REFERENCE.md 摘要
+### 7.2 PROMPTS_REFERENCE.md 摘要
 
 Prompt 類別與位置：
 
@@ -528,8 +1077,10 @@ Prompt 類別與位置：
 | 學習者模式 | `LEARNER_TASK_SUFFIXES` | `sidepanel/app.js` |
 | Vision | `generateVisionReviewPrompt` | `sidepanel/app.js` |
 | 圖片生成 | `IMAGE_PROMPT_SYSTEM` | `sidepanel/app.js` |
+| 圖片生成 | `STYLE_INTEGRATION_PROMPT` | `sidepanel/app.js` |
+| 圖片生成 | `REFINE_PROMPT_SYSTEM` | `sidepanel/app.js` |
 
-### 6.3 MODEL_UPDATE_GUIDE.md 摘要
+### 7.3 MODEL_UPDATE_GUIDE.md 摘要
 
 模型篩選邏輯：
 
@@ -551,9 +1102,9 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
 
 ---
 
-## 7. 使用手冊
+## 8. 使用手冊
 
-### 7.1 Chrome Extension 安裝
+### 8.1 Chrome Extension 安裝
 
 1. Clone 或下載此 repo
 2. 開啟 Chrome，前往 `chrome://extensions/`
@@ -561,7 +1112,7 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
 4. 點擊「載入未封裝項目」
 5. 選擇 repo 資料夾
 
-### 7.2 初始設定
+### 8.2 初始設定
 
 1. 點擊擴充功能圖示 → 右鍵 → **選項**
 2. 輸入 **OpenRouter API Key**（必要）
@@ -572,7 +1123,7 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
 5. 選擇主席模型
 6. 點擊「儲存設定」
 
-### 7.3 基本使用
+### 8.3 基本使用
 
 #### 發起 Council 查詢
 
@@ -590,7 +1141,7 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
 - **選取文字**：在網頁選取文字 → 右鍵 → 「加入 AI Council Context」
 - **網路搜尋**：點擊「網搜」按鈕，輸入關鍵字
 
-### 7.4 進階功能
+### 8.4 進階功能
 
 #### Vision Mode（圖片分析）
 
@@ -620,7 +1171,7 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
 3. 系統會自動搜尋並發起新的 Council 查詢
 4. 可設定最大迭代次數（預設 5 次）
 
-### 7.5 學習者模式
+### 8.5 學習者模式
 
 1. 前往選項頁
 2. 在「學習者模式」區塊選擇年齡層
@@ -628,14 +1179,14 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
 4. 發起查詢後，回答風格會依年齡層調整
 5. 會生成探索任務引導學習
 
-### 7.6 輸出風格設定
+### 8.6 輸出風格設定
 
 | 設定 | 選項 | 說明 |
 |------|------|------|
 | **輸出長度** | 簡潔 / 標準 / 詳盡 | 控制回答字數 |
 | **輸出格式** | 純文字 / 混合 / 結構化 | 控制 Markdown 使用程度 |
 
-### 7.7 常見問題
+### 8.7 常見問題
 
 **Q: 為什麼沒有回應？**
 - 確認 OpenRouter API Key 已正確設定
