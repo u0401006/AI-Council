@@ -508,8 +508,145 @@ function getStyleInstructions(skill) {
   return instructions;
 }
 
+/**
+ * Enhanced Skill Selector - integrates with SkillLoader for dynamic skills
+ * Falls back to hardcoded SKILLS if SkillLoader is not available
+ */
+class EnhancedSkillSelector extends SkillSelector {
+  constructor(skills = SKILLS) {
+    super(skills);
+    this.skillLoader = null;
+    this.dynamicSkillsLoaded = false;
+  }
+  
+  /**
+   * Initialize with SkillLoader
+   */
+  async initialize() {
+    // Try to use SkillLoader if available
+    if (window.MAVSkillLoader?.skillLoader) {
+      this.skillLoader = window.MAVSkillLoader.skillLoader;
+      await this.skillLoader.initialize();
+      this.dynamicSkillsLoaded = true;
+      console.log('EnhancedSkillSelector: SkillLoader integrated');
+    }
+  }
+  
+  /**
+   * Select skill - tries dynamic skills first, then falls back to hardcoded
+   */
+  async selectAsync(query, settings = {}) {
+    // Try SkillLoader first
+    if (this.skillLoader && this.dynamicSkillsLoaded) {
+      try {
+        const dynamicSkill = await this.skillLoader.selectSkill(query, settings);
+        if (dynamicSkill) {
+          console.log('Selected dynamic skill:', dynamicSkill.id);
+          return dynamicSkill;
+        }
+      } catch (err) {
+        console.warn('Dynamic skill selection failed:', err);
+      }
+    }
+    
+    // Fall back to hardcoded skills
+    return this.select(query, settings);
+  }
+  
+  /**
+   * Get all skills (merged from hardcoded and dynamic)
+   */
+  async getAllAsync() {
+    const hardcoded = this.getAll();
+    
+    if (this.skillLoader && this.dynamicSkillsLoaded) {
+      const dynamicMeta = this.skillLoader.getAllMetadata();
+      // Merge, preferring dynamic skills
+      const merged = new Map();
+      
+      // Add hardcoded first
+      for (const skill of hardcoded) {
+        merged.set(skill.id, skill);
+      }
+      
+      // Override with dynamic skills
+      for (const meta of dynamicMeta) {
+        if (!merged.has(meta.id)) {
+          try {
+            const fullSkill = await this.skillLoader.loadInstructions(meta.id);
+            merged.set(meta.id, fullSkill);
+          } catch (err) {
+            console.warn(`Failed to load skill ${meta.id}:`, err);
+          }
+        }
+      }
+      
+      return Array.from(merged.values());
+    }
+    
+    return hardcoded;
+  }
+  
+  /**
+   * Get skill by ID (checks both sources)
+   */
+  async getByIdAsync(id) {
+    // Try SkillLoader first
+    if (this.skillLoader && this.dynamicSkillsLoaded) {
+      try {
+        const skill = await this.skillLoader.loadInstructions(id);
+        if (skill) return skill;
+      } catch (err) {
+        // Not found in dynamic, fall through
+      }
+    }
+    
+    // Fall back to hardcoded
+    return this.getById(id);
+  }
+  
+  /**
+   * Load a reference file for a skill (Layer 3)
+   */
+  async loadReference(skillId, refPath) {
+    if (this.skillLoader) {
+      return this.skillLoader.loadReference(skillId, refPath);
+    }
+    throw new Error('SkillLoader not available');
+  }
+  
+  /**
+   * Add a custom skill at runtime
+   */
+  async addCustomSkill(skillId, content) {
+    if (this.skillLoader) {
+      return this.skillLoader.addSkill(skillId, content);
+    }
+    throw new Error('SkillLoader not available');
+  }
+  
+  /**
+   * Get skill metadata for Planner (minimal token usage)
+   */
+  getMetadataForPlanner() {
+    if (this.skillLoader && this.dynamicSkillsLoaded) {
+      return this.skillLoader.getAllMetadata();
+    }
+    
+    // Fall back to hardcoded
+    return Object.values(this.skills).map(s => ({
+      id: s.id,
+      name: s.name,
+      description: s.description
+    }));
+  }
+}
+
 // Create global skill selector instance
 const skillSelector = new SkillSelector();
+
+// Create enhanced selector (will be initialized async)
+const enhancedSkillSelector = new EnhancedSkillSelector();
 
 // Export for use in other modules
 if (typeof window !== 'undefined') {
@@ -517,7 +654,9 @@ if (typeof window !== 'undefined') {
     SKILLS,
     LEARNER_SYSTEM_PROMPTS,
     SkillSelector,
+    EnhancedSkillSelector,
     skillSelector,
+    enhancedSkillSelector,
     applySkillToAgent,
     getStyleInstructions
   };
