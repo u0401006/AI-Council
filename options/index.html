@@ -3,167 +3,174 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Council 設定</title>
+  <title data-i18n="options.pageTitle">AI Council 設定</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>AI Council 設定</h1>
-      <p class="subtitle">多模型 AI 智囊團設定</p>
+      <h1 data-i18n="options.pageTitle">AI Council 設定</h1>
+      <p class="subtitle" data-i18n="options.subtitle">多模型 AI 智囊團設定</p>
     </header>
-<!-- 
-    <div class="donate-banner">
-      <span>☕</span>
-      <span>覺得好用嗎？</span>
-      <a href="https://buymeacoffee.com/u04010069" target="_blank" rel="noopener">請我喝杯咖啡</a>
-    </div> -->
 
     <section class="card">
-      <h2>API 設定</h2>
+      <h2 data-i18n="options.languageSection">介面語言</h2>
       <div class="field">
-        <label for="apiKey">OpenRouter API 金鑰</label>
-        <input type="password" id="apiKey" placeholder="sk-or-v1-..."  spellcheck="false">
-        <p class="hint">前往 <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> 取得金鑰</p>
+        <label for="language" data-i18n="options.languageLabel">選擇介面與 AI 回應語言</label>
+        <select id="language">
+          <option value="zh-TW">繁體中文</option>
+          <option value="en-US">English</option>
+          <option value="ja-JP">日本語</option>
+        </select>
+        <p class="hint" data-i18n="options.languageHint">變更後 AI 回應也會使用選擇的語言</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="options.apiSection">API 設定</h2>
+      <div class="field">
+        <label for="apiKey" data-i18n="options.apiKeyLabel">OpenRouter API 金鑰</label>
+        <input type="password" id="apiKey" data-i18n-placeholder="options.apiKeyPlaceholder" placeholder="sk-or-v1-..." spellcheck="false">
+        <p class="hint" data-i18n-html="options.apiKeyHint">前往 <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> 取得金鑰</p>
       </div>
       <div class="field">
-        <label for="braveApiKey">Brave Search API 金鑰（選填）</label>
-        <input type="password" id="braveApiKey" placeholder="BSA..." spellcheck="false">
-        <p class="hint">前往 <a href="https://brave.com/search/api/" target="_blank">brave.com/search/api</a> 取得金鑰（免費額度 2000 次/月）</p>
+        <label for="braveApiKey" data-i18n="options.braveApiKeyLabel">Brave Search API 金鑰（選填）</label>
+        <input type="password" id="braveApiKey" data-i18n-placeholder="options.braveApiKeyPlaceholder" placeholder="BSA..." spellcheck="false">
+        <p class="hint" data-i18n-html="options.braveApiKeyHint">前往 <a href="https://brave.com/search/api/" target="_blank">brave.com/search/api</a> 取得金鑰（免費額度 2000 次/月）</p>
       </div>
     </section>
 
     <section class="card">
       <div class="section-header">
-        <h2>參與模型</h2>
-        <button type="button" id="updateModelsBtn" class="btn-secondary">從 OpenRouter 更新</button>
+        <h2 data-i18n="options.modelsSection">參與模型</h2>
+        <button type="button" id="updateModelsBtn" class="btn-secondary" data-i18n="options.updateModelsBtn">從 OpenRouter 更新</button>
       </div>
-      <p class="hint">選擇要參與討論的模型。<span class="vision-badge">VIS</span> 表示支援圖片分析，<span class="image-badge">IMG</span> 表示支援圖片生成。定價顯示為：$輸入/$輸出（每百萬 tokens）</p>
+      <p class="hint" data-i18n-html="options.modelsHint">選擇要參與討論的模型。<span class="vision-badge">VIS</span> 表示支援圖片分析，<span class="image-badge">IMG</span> 表示支援圖片生成。定價顯示為：$輸入/$輸出（每百萬 tokens）</p>
       <div class="model-list" id="modelList">
         <!-- Populated by JS -->
       </div>
     </section>
 
     <section class="card">
-      <h2>主席模型</h2>
+      <h2 data-i18n="options.chairmanSection">主席模型</h2>
       <div class="field">
-        <label for="chairmanModel">選擇負責彙整最終答案的模型</label>
+        <label for="chairmanModel" data-i18n="options.chairmanLabel">選擇負責彙整最終答案的模型</label>
         <select id="chairmanModel">
           <!-- Populated by JS -->
         </select>
-        <p class="hint">選擇「互評勝者」可讓排名第一的模型動態擔任主席</p>
+        <p class="hint" data-i18n="options.chairmanHint">選擇「互評勝者」可讓排名第一的模型動態擔任主席</p>
       </div>
     </section>
 
     <section class="card">
-      <h2>選項</h2>
+      <h2 data-i18n="options.optionsSection">選項</h2>
       <div class="field checkbox-field">
         <input type="checkbox" id="enableReview" checked>
-        <label for="enableReview">啟用互評審查（階段 2）</label>
+        <label for="enableReview" data-i18n="options.enableReviewLabel">啟用互評審查（階段 2）</label>
       </div>
-      <p class="hint">停用可節省 API 費用，但會跳過模型排名</p>
+      <p class="hint" data-i18n="options.enableReviewHint">停用可節省 API 費用，但會跳過模型排名</p>
       
       <div class="field" style="margin-top: 1rem;">
-        <label for="maxSearchIterations">網搜迭代上限</label>
+        <label for="maxSearchIterations" data-i18n="options.maxSearchLabel">網搜迭代上限</label>
         <select id="maxSearchIterations">
-          <option value="1">1 次</option>
-          <option value="2">2 次</option>
-          <option value="3">3 次</option>
-          <option value="4">4 次</option>
-          <option value="5" selected>5 次</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5" selected>5</option>
         </select>
-        <p class="hint">單次對話中 AI 可建議網搜的最大次數</p>
+        <p class="hint" data-i18n="options.maxSearchHint">單次對話中 AI 可建議網搜的最大次數</p>
       </div>
       
       <div class="field" style="margin-top: 1rem;">
-        <label for="maxCardDepth">任務深度上限</label>
+        <label for="maxCardDepth" data-i18n="options.maxDepthLabel">任務深度上限</label>
         <select id="maxCardDepth">
-          <option value="2">L0 - L2（3 層）</option>
-          <option value="3" selected>L0 - L3（4 層）</option>
-          <option value="4">L0 - L4（5 層）</option>
+          <option value="2">L0 - L2</option>
+          <option value="3" selected>L0 - L3</option>
+          <option value="4">L0 - L4</option>
         </select>
-        <p class="hint">任務規劃器中子任務可展開的最大深度</p>
+        <p class="hint" data-i18n="options.maxDepthHint">任務規劃器中子任務可展開的最大深度</p>
       </div>
     </section>
 
     <section class="card">
-      <h2>學習者模式</h2>
-      <p class="hint">針對不同年齡層調整 AI 的回應方式，啟用教練式引導探索</p>
-      <p class="hint" style="color: var(--warning, #f59e0b);">選擇年齡層後，將使用內建的教練式提示詞，下方「提示詞範本」的自訂設定會被覆蓋。</p>
+      <h2 data-i18n="options.learnerSection">學習者模式</h2>
+      <p class="hint" data-i18n="options.learnerHint">針對不同年齡層調整 AI 的回應方式，啟用教練式引導探索</p>
+      <p class="hint" style="color: var(--warning, #f59e0b);" data-i18n="options.learnerWarning">選擇年齡層後，將使用內建的教練式提示詞，下方「提示詞範本」的自訂設定會被覆蓋。</p>
       
       <div class="field">
         <div class="radio-group" id="learnerModeGroup">
           <label class="radio-item">
             <input type="radio" name="learnerMode" value="standard" checked>
-            <span class="radio-label">標準模式</span>
-            <span class="radio-hint">完整回答，適合成人使用</span>
+            <span class="radio-label" data-i18n="options.learnerStandard">標準模式</span>
+            <span class="radio-hint" data-i18n="options.learnerStandardHint">完整回答，適合成人使用</span>
           </label>
           <label class="radio-item">
             <input type="radio" name="learnerMode" value="9-10">
-            <span class="radio-label">9-10 歲</span>
-            <span class="radio-hint">簡單詞彙、生活例子、發現式引導</span>
+            <span class="radio-label" data-i18n="options.learner9_10">9-10 歲</span>
+            <span class="radio-hint" data-i18n="options.learner9_10Hint">簡單詞彙、生活例子、發現式引導</span>
           </label>
           <label class="radio-item">
             <input type="radio" name="learnerMode" value="11-12">
-            <span class="radio-label">11-12 歲</span>
-            <span class="radio-hint">給線索推導、連結已知、探索式學習</span>
+            <span class="radio-label" data-i18n="options.learner11_12">11-12 歲</span>
+            <span class="radio-hint" data-i18n="options.learner11_12Hint">給線索推導、連結已知、探索式學習</span>
           </label>
           <label class="radio-item">
             <input type="radio" name="learnerMode" value="13-15">
-            <span class="radio-label">13-15 歲</span>
-            <span class="radio-hint">方法論引導、框架思考、批判分析</span>
+            <span class="radio-label" data-i18n="options.learner13_15">13-15 歲</span>
+            <span class="radio-hint" data-i18n="options.learner13_15Hint">方法論引導、框架思考、批判分析</span>
           </label>
           <label class="radio-item">
             <input type="radio" name="learnerMode" value="16-18">
-            <span class="radio-label">16-18 歲</span>
-            <span class="radio-hint">學術深度、多元觀點、自主研究導向</span>
+            <span class="radio-label" data-i18n="options.learner16_18">16-18 歲</span>
+            <span class="radio-hint" data-i18n="options.learner16_18Hint">學術深度、多元觀點、自主研究導向</span>
           </label>
         </div>
       </div>
     </section>
 
     <section class="card">
-      <h2>回應風格</h2>
-      <p class="hint">控制 AI 回應的長度與格式偏好（標準模式適用）</p>
+      <h2 data-i18n="options.outputStyleSection">回應風格</h2>
+      <p class="hint" data-i18n="options.outputStyleHint">控制 AI 回應的長度與格式偏好（標準模式適用）</p>
       
       <div class="field" style="margin-top: 1rem;">
-        <label for="outputLength">長度偏好</label>
+        <label for="outputLength" data-i18n="options.outputLengthLabel">長度偏好</label>
         <div class="radio-group" id="outputLengthGroup">
           <label class="radio-item">
             <input type="radio" name="outputLength" value="concise">
-            <span class="radio-label">簡潔</span>
-            <span class="radio-hint">約 500 字，重點摘要</span>
+            <span class="radio-label" data-i18n="options.lengthConcise">簡潔</span>
+            <span class="radio-hint" data-i18n="options.lengthConciseHint">約 500 字，重點摘要</span>
           </label>
           <label class="radio-item">
             <input type="radio" name="outputLength" value="standard" checked>
-            <span class="radio-label">標準</span>
-            <span class="radio-hint">約 800 字，適度展開</span>
+            <span class="radio-label" data-i18n="options.lengthStandard">標準</span>
+            <span class="radio-hint" data-i18n="options.lengthStandardHint">約 800 字，適度展開</span>
           </label>
           <label class="radio-item">
             <input type="radio" name="outputLength" value="detailed">
-            <span class="radio-label">詳盡</span>
-            <span class="radio-hint">約 1200 字，完整說明</span>
+            <span class="radio-label" data-i18n="options.lengthDetailed">詳盡</span>
+            <span class="radio-hint" data-i18n="options.lengthDetailedHint">約 1200 字，完整說明</span>
           </label>
         </div>
       </div>
 
       <div class="field" style="margin-top: 1rem;">
-        <label for="outputFormat">格式偏好</label>
+        <label for="outputFormat" data-i18n="options.outputFormatLabel">格式偏好</label>
         <div class="radio-group" id="outputFormatGroup">
           <label class="radio-item">
             <input type="radio" name="outputFormat" value="bullet">
-            <span class="radio-label">條列式優先</span>
-            <span class="radio-hint">使用項目符號，每點簡短</span>
+            <span class="radio-label" data-i18n="options.formatBullet">條列式優先</span>
+            <span class="radio-hint" data-i18n="options.formatBulletHint">使用項目符號，每點簡短</span>
           </label>
           <label class="radio-item">
             <input type="radio" name="outputFormat" value="mixed" checked>
-            <span class="radio-label">混合</span>
-            <span class="radio-hint">依內容性質靈活選擇</span>
+            <span class="radio-label" data-i18n="options.formatMixed">混合</span>
+            <span class="radio-hint" data-i18n="options.formatMixedHint">依內容性質靈活選擇</span>
           </label>
           <label class="radio-item">
             <input type="radio" name="outputFormat" value="paragraph">
-            <span class="radio-label">段落式</span>
-            <span class="radio-hint">使用完整段落說明</span>
+            <span class="radio-label" data-i18n="options.formatParagraph">段落式</span>
+            <span class="radio-hint" data-i18n="options.formatParagraphHint">使用完整段落說明</span>
           </label>
         </div>
       </div>
@@ -171,30 +178,35 @@
 
     <section class="card" id="promptSection">
       <div class="section-header">
-        <h2>提示詞範本</h2>
-        <button type="button" id="resetPromptsBtn" class="btn-secondary">重設為預設</button>
+        <h2 data-i18n="options.promptsSection">提示詞範本</h2>
+        <button type="button" id="resetPromptsBtn" class="btn-secondary" data-i18n="options.resetPromptsBtn">重設為預設</button>
       </div>
-      <p class="hint">自訂給 AI 模型的指令。可用變數：<code>{query}</code> 使用者問題、<code>{responses}</code> 模型回應、<code>{ranking}</code> 審查排名。</p>
+      <p class="hint" data-i18n-html="options.promptsHint">自訂給 AI 模型的指令。可用變數：<code>{query}</code> 使用者問題、<code>{responses}</code> 模型回應、<code>{ranking}</code> 審查排名。</p>
       
       <div class="field">
-        <label for="reviewPrompt">審查提示詞（階段 2）</label>
-        <p class="hint">模型互相評估回應的指令</p>
-        <textarea id="reviewPrompt" rows="10" placeholder="輸入審查指令..."></textarea>
+        <label for="reviewPrompt" data-i18n="options.reviewPromptLabel">審查提示詞（階段 2）</label>
+        <p class="hint" data-i18n="options.reviewPromptHint">模型互相評估回應的指令</p>
+        <textarea id="reviewPrompt" rows="10" data-i18n-placeholder="options.reviewPromptPlaceholder" placeholder="輸入審查指令..."></textarea>
       </div>
 
       <div class="field">
-        <label for="chairmanPrompt">主席提示詞（階段 3）</label>
-        <p class="hint">主席彙整最終答案的指令</p>
-        <textarea id="chairmanPrompt" rows="10" placeholder="輸入主席指令..."></textarea>
+        <label for="chairmanPrompt" data-i18n="options.chairmanPromptLabel">主席提示詞（階段 3）</label>
+        <p class="hint" data-i18n="options.chairmanPromptHint">主席彙整最終答案的指令</p>
+        <textarea id="chairmanPrompt" rows="10" data-i18n-placeholder="options.chairmanPromptPlaceholder" placeholder="輸入主席指令..."></textarea>
       </div>
     </section>
 
     <div class="actions">
-      <button id="saveBtn" class="btn-primary">儲存設定</button>
+      <button id="saveBtn" class="btn-primary" data-i18n="options.saveBtn">儲存設定</button>
       <span id="status" class="status"></span>
     </div>
   </div>
 
+  <!-- Load i18n scripts -->
+  <script src="../locales/zh-TW.js"></script>
+  <script src="../locales/en-US.js"></script>
+  <script src="../locales/ja-JP.js"></script>
+  <script src="../locales/i18n.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

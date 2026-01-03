@@ -3880,7 +3880,7 @@ body {
 }
 
 .context-items:empty::after {
-  content: '尚未新增參考資料';
+  content: var(--i18n-context-empty, '尚未新增參考資料');
   display: block;
   padding: 0.75rem;
   text-align: center;

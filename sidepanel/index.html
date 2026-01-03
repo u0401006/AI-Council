@@ -3,36 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Council</title>
+  <title data-i18n="sidepanel.title">AI Council</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="app">
     <header class="header">
       <div class="header-left">
-        <h1>AI Council</h1>
+        <h1 data-i18n="sidepanel.title">AI Council</h1>
       </div>
       <div class="header-right">
-        <button id="newChatBtn" class="icon-btn" title="新對話">
+        <button id="newChatBtn" class="icon-btn" data-i18n-title="sidepanel.newChat" title="新對話">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 20h9"></path>
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
           </svg>
         </button>
-        <button id="historyBtn" class="icon-btn" title="歷史紀錄">
+        <button id="historyBtn" class="icon-btn" data-i18n-title="sidepanel.history" title="歷史紀錄">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
         </button>
-        <button id="exportBtn" class="icon-btn" title="匯出" style="display: none;">
+        <button id="exportBtn" class="icon-btn" data-i18n-title="sidepanel.export" title="匯出" style="display: none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
         </button>
-        <button id="settingsBtn" class="icon-btn" title="設定">
+        <button id="settingsBtn" class="icon-btn" data-i18n-title="sidepanel.settings" title="設定">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -44,10 +44,10 @@
     <!-- History Panel -->
     <div id="historyPanel" class="history-panel hidden">
       <div class="history-header">
-        <span>歷史紀錄</span>
+        <span data-i18n="sidepanel.historyTitle">歷史紀錄</span>
         <div class="history-header-actions">
-          <button id="clearHistoryBtn" class="text-btn">全部清除</button>
-          <button id="closeHistoryBtn" class="history-close-btn" title="關閉">
+          <button id="clearHistoryBtn" class="text-btn" data-i18n="sidepanel.clearHistory">全部清除</button>
+          <button id="closeHistoryBtn" class="history-close-btn" data-i18n-title="sidepanel.closeHistory" title="關閉">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -63,7 +63,7 @@
     <!-- Breadcrumb Navigation for Card System -->
     <nav id="breadcrumbNav" class="breadcrumb-nav hidden">
       <div class="breadcrumb-container">
-        <button id="breadcrumbHome" class="breadcrumb-home" title="回到根卡片">
+        <button id="breadcrumbHome" class="breadcrumb-home" data-i18n-title="sidepanel.backToRoot" title="回到根卡片">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
             <polyline points="9 22 9 12 15 12 15 22"></polyline>
@@ -74,8 +74,8 @@
         </div>
       </div>
       <div class="breadcrumb-indicators">
-        <span id="cardDepthIndicator" class="card-depth-indicator">深度: 0</span>
-        <button id="cardCountIndicator" class="card-count-link" title="在畫布中檢視任務樹">
+        <span id="cardDepthIndicator" class="card-depth-indicator" data-i18n="sidepanel.depthLabel">深度: 0</span>
+        <button id="cardCountIndicator" class="card-count-link" data-i18n-title="sidepanel.viewInCanvas" title="在畫布中檢視任務樹">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
             <line x1="9" y1="3" x2="9" y2="21"></line>
@@ -115,7 +115,7 @@
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
           </svg>
-          <span>參考</span>
+          <span data-i18n="sidepanel.contextTitle">參考</span>
           <span id="contextCharCount" class="context-char-count hidden"></span>
           <span id="contextBadge" class="context-badge hidden">0</span>
           <button id="contextToggle" class="context-toggle">
@@ -126,35 +126,35 @@
         </div>
         <div id="contextContent" class="context-content hidden">
           <div class="context-actions">
-            <button id="capturePageBtn" class="context-action-btn" title="擷取目前頁面內容">
+            <button id="capturePageBtn" class="context-action-btn" data-i18n-title="sidepanel.capturePage" title="擷取目前頁面內容">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="2" y1="12" x2="22" y2="12"></line>
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
               </svg>
-              <span>擷取頁面</span>
+              <span data-i18n="sidepanel.capturePage">擷取頁面</span>
             </button>
-            <button id="captureSelectionBtn" class="context-action-btn" title="擷取選取文字">
+            <button id="captureSelectionBtn" class="context-action-btn" data-i18n-title="sidepanel.captureSelection" title="擷取選取文字">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
               </svg>
-              <span>選取文字</span>
+              <span data-i18n="sidepanel.captureSelection">選取文字</span>
             </button>
-            <button id="webSearchBtn" class="context-action-btn" title="網路搜尋">
+            <button id="webSearchBtn" class="context-action-btn" data-i18n-title="sidepanel.webSearch" title="網路搜尋">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>
-              <span>網搜</span>
+              <span data-i18n="sidepanel.webSearch">網搜</span>
             </button>
-            <button id="pasteContextBtn" class="context-action-btn" title="從剪貼簿貼上">
+            <button id="pasteContextBtn" class="context-action-btn" data-i18n-title="sidepanel.paste" title="從剪貼簿貼上">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
               </svg>
-              <span>貼上</span>
+              <span data-i18n="sidepanel.paste">貼上</span>
             </button>
-            <button id="clearContextBtn" class="context-action-btn danger" title="清除所有參考資料">
+            <button id="clearContextBtn" class="context-action-btn danger" data-i18n-title="sidepanel.clearContext" title="清除所有參考資料">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -176,10 +176,10 @@
           </svg>
         </div>
         <div class="search-iteration-hint-content">
-          <span class="search-iteration-hint-label">延伸搜尋：</span>
+          <span class="search-iteration-hint-label" data-i18n="sidepanel.extendSearch">延伸搜尋：</span>
           <span id="searchIterationKeyword" class="search-iteration-keyword"></span>
         </div>
-        <button id="cancelSearchIteration" class="search-iteration-cancel" title="取消">
+        <button id="cancelSearchIteration" class="search-iteration-cancel" data-i18n-title="sidepanel.cancelSearch" title="取消">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -189,6 +189,7 @@
 
       <textarea 
         id="queryInput" 
+        data-i18n-placeholder="sidepanel.inputPlaceholder"
         placeholder="輸入您的問題..."
         rows="1"
       ></textarea>
@@ -202,8 +203,8 @@
               <circle cx="8.5" cy="8.5" r="1.5"></circle>
               <polyline points="21 15 16 10 5 21"></polyline>
             </svg>
-            <span>點擊或拖放圖片至此</span>
-            <span class="upload-hint">支援 JPG、PNG、GIF、WebP</span>
+            <span data-i18n="sidepanel.uploadImageHint">點擊或拖放圖片至此</span>
+            <span class="upload-hint" data-i18n="sidepanel.uploadImageFormats">支援 JPG、PNG、GIF、WebP</span>
           </div>
         </div>
         <div id="visionPreviewArea" class="vision-preview-area hidden">
@@ -224,14 +225,14 @@
       </div>
 
       <div class="input-actions">
-        <label class="vision-toggle" title="Vision Council：上傳圖片讓多個 AI 分析">
+        <label class="vision-toggle" data-i18n-title="sidepanel.visionToggle" title="Vision Council：上傳圖片讓多個 AI 分析">
           <input type="checkbox" id="visionToggle">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
         </label>
-        <label class="image-toggle" title="啟用圖片生成（支援特定模型）">
+        <label class="image-toggle" data-i18n-title="sidepanel.imageToggle" title="啟用圖片生成（支援特定模型）">
           <input type="checkbox" id="imageToggle">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -239,7 +240,7 @@
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
         </label>
-        <label class="search-toggle" title="啟用 AI 網搜迭代模式">
+        <label class="search-toggle" data-i18n-title="sidepanel.searchToggle" title="啟用 AI 網搜迭代模式">
           <input type="checkbox" id="searchModeToggle">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"></circle>
@@ -248,7 +249,7 @@
         </label>
         <span id="modelCount" class="model-count">0 個模型</span>
         <button id="sendBtn" class="btn-send">
-          <span>送出</span>
+          <span data-i18n="sidepanel.sendBtn">送出</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path>
           </svg>
@@ -262,20 +263,20 @@
             <line x1="12" y1="1" x2="12" y2="23"></line>
             <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
           </svg>
-          <span>費用追蹤</span>
+          <span data-i18n="sidepanel.costTitle">費用追蹤</span>
           <span id="sessionCostTotal" class="cost-total">$0.0000</span>
         </div>
         <div class="cost-tracker-details hidden" id="costTrackerDetails">
           <div class="cost-item">
-            <span class="cost-label">輸入</span>
+            <span class="cost-label" data-i18n="sidepanel.costInput">輸入</span>
             <span id="sessionCostInput" class="cost-value">$0.0000</span>
           </div>
           <div class="cost-item">
-            <span class="cost-label">輸出</span>
+            <span class="cost-label" data-i18n="sidepanel.costOutput">輸出</span>
             <span id="sessionCostOutput" class="cost-value">$0.0000</span>
           </div>
           <div class="cost-item">
-            <span class="cost-label">圖片 tokens</span>
+            <span class="cost-label" data-i18n="sidepanel.costImageTokens">圖片 tokens</span>
             <span id="sessionImageTokens" class="cost-value">0</span>
           </div>
         </div>
@@ -291,7 +292,7 @@
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
         </div>
-        <span class="step-label">回應</span>
+        <span class="step-label" data-i18n="sidepanel.stepResponse">回應</span>
       </div>
       <div class="step-connector"></div>
       <div class="step" data-step="2">
@@ -301,7 +302,7 @@
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
         </div>
-        <span class="step-label">審查</span>
+        <span class="step-label" data-i18n="sidepanel.stepReview">審查</span>
       </div>
       <div class="step-connector"></div>
       <div class="step" data-step="3">
@@ -311,15 +312,15 @@
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
         </div>
-        <span class="step-label">彙整</span>
+        <span class="step-label" data-i18n="sidepanel.stepSynthesis">彙整</span>
       </div>
     </div>
 
     <!-- Stage 1: Model Responses -->
     <div id="stage1Section" class="stage-section hidden">
       <div class="stage-header" data-stage="1">
-        <span class="stage-label">階段 1</span>
-        <span class="stage-title">模型回應</span>
+        <span class="stage-label" data-i18n="sidepanel.stage1Label">階段 1</span>
+        <span class="stage-title" data-i18n="sidepanel.stage1Title">模型回應</span>
         <span class="stage-summary" id="stage1Summary"></span>
         <span class="stage-status" id="stage1Status"></span>
         <button class="toggle-btn" data-target="stage1Content">
@@ -337,8 +338,8 @@
     <!-- Stage 2: Peer Review -->
     <div id="stage2Section" class="stage-section hidden">
       <div class="stage-header" data-stage="2">
-        <span class="stage-label stage-label-secondary">階段 2</span>
-        <span class="stage-title">互評審查</span>
+        <span class="stage-label stage-label-secondary" data-i18n="sidepanel.stage2Label">階段 2</span>
+        <span class="stage-title" data-i18n="sidepanel.stage2Title">互評審查</span>
         <span class="stage-summary" id="stage2Summary"></span>
         <span class="stage-status" id="stage2Status"></span>
         <button class="toggle-btn" data-target="stage2Content">
@@ -355,8 +356,8 @@
     <!-- Stage 3: Search Options (shown when suggestions available) -->
     <div id="stage25Section" class="stage-section hidden">
       <div class="stage-header" data-stage="3">
-        <span class="stage-label stage-label-search">階段 3</span>
-        <span class="stage-title">搜尋選擇</span>
+        <span class="stage-label stage-label-search" data-i18n="sidepanel.stage3Label">階段 3</span>
+        <span class="stage-title" data-i18n="sidepanel.stage3Title">搜尋選擇</span>
         <span class="stage-summary" id="stage25Summary"></span>
         <span class="stage-status" id="stage25Status"></span>
         <button class="toggle-btn" data-target="stage25Content">
@@ -367,17 +368,17 @@
       </div>
       <div id="stage25Content" class="stage-content expanded">
         <div id="searchSuggestions" class="search-suggestions">
-          <p class="search-suggestions-intro">根據模型回答，以下是建議的搜尋關鍵詞（最多選擇 3 項）：</p>
+          <p class="search-suggestions-intro" data-i18n="sidepanel.searchSuggestionsIntro">根據模型回答，以下是建議的搜尋關鍵詞（最多選擇 3 項）：</p>
           <div id="searchSuggestionList" class="search-suggestion-list"></div>
           <!-- Custom search suggestion input -->
           <div class="custom-suggestion-row">
-            <input type="text" id="customSuggestionInput" class="custom-suggestion-input" placeholder="輸入自訂關鍵字...">
-            <button id="addCustomSuggestionBtn" class="add-suggestion-btn" title="新增為選項">
+            <input type="text" id="customSuggestionInput" class="custom-suggestion-input" data-i18n-placeholder="sidepanel.customKeywordPlaceholder" placeholder="輸入自訂關鍵字...">
+            <button id="addCustomSuggestionBtn" class="add-suggestion-btn" data-i18n-title="sidepanel.addKeyword" title="新增為選項">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
-              新增
+              <span data-i18n="sidepanel.addKeyword">新增</span>
             </button>
           </div>
           <div class="search-actions">
@@ -386,9 +387,9 @@
                 <circle cx="11" cy="11" r="8"></circle>
                 <path d="M21 21l-4.35-4.35"></path>
               </svg>
-              執行搜尋
+              <span data-i18n="sidepanel.executeSearch">執行搜尋</span>
             </button>
-            <button id="skipSearchBtn" class="btn-secondary">跳過搜尋</button>
+            <button id="skipSearchBtn" class="btn-secondary" data-i18n="sidepanel.skipSearch">跳過搜尋</button>
           </div>
         </div>
       </div>
@@ -397,8 +398,8 @@
     <!-- Stage 4: Final Answer -->
     <div id="stage3Section" class="stage-section hidden">
       <div class="stage-header" data-stage="4">
-        <span class="stage-label stage-label-accent">階段 4</span>
-        <span class="stage-title">主席彙整</span>
+        <span class="stage-label stage-label-accent" data-i18n="sidepanel.stage4Label">階段 4</span>
+        <span class="stage-title" data-i18n="sidepanel.stage4Title">主席彙整</span>
         <span class="stage-summary" id="stage3Summary"></span>
         <span class="stage-status" id="stage3Status"></span>
         <button class="toggle-btn" data-target="stage3Content">
@@ -418,10 +419,10 @@
                 <path d="M9 11l3 3L22 4"></path>
                 <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
               </svg>
-              <span>待辦任務</span>
+              <span data-i18n="sidepanel.todoTitle">待辦任務</span>
               <span id="todoCount" class="todo-count">0</span>
             </div>
-            <button id="addTaskBtn" class="add-task-btn" title="新增任務">
+            <button id="addTaskBtn" class="add-task-btn" data-i18n-title="sidepanel.addTask" title="新增任務">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -432,13 +433,13 @@
             <!-- Task items will be rendered here -->
           </div>
           <div id="addTaskForm" class="add-task-form hidden">
-            <input type="text" id="newTaskInput" class="new-task-input" placeholder="輸入新任務... (Ctrl+Enter 確認)">
-            <span class="add-task-hint">按 Ctrl+Enter 或點擊右側 ✓ 確認新增</span>
+            <input type="text" id="newTaskInput" class="new-task-input" data-i18n-placeholder="sidepanel.newTaskPlaceholder" placeholder="輸入新任務... (Ctrl+Enter 確認)">
+            <span class="add-task-hint" data-i18n="sidepanel.newTaskHint">按 Ctrl+Enter 或點擊右側 ✓ 確認新增</span>
             <div class="add-task-actions">
               <select id="newTaskPriority" class="task-priority-select">
-                <option value="high">高優先</option>
-                <option value="medium" selected>中優先</option>
-                <option value="low">低優先</option>
+                <option value="high" data-i18n="sidepanel.priorityHigh">高優先</option>
+                <option value="medium" selected data-i18n="sidepanel.priorityMedium">中優先</option>
+                <option value="low" data-i18n="sidepanel.priorityLow">低優先</option>
               </select>
               <button id="confirmAddTask" class="confirm-add-btn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -462,24 +463,24 @@
               <line x1="12" y1="1" x2="12" y2="23"></line>
               <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
             </svg>
-            <span>本次對話費用</span>
+            <span data-i18n="sidepanel.conversationCostTitle">本次對話費用</span>
             <span id="conversationCostTotal" class="cost-summary-total">$0.0000</span>
           </div>
           <div class="cost-summary-details">
             <div class="cost-detail-row">
-              <span class="cost-detail-label">階段 1（模型回應）</span>
+              <span class="cost-detail-label" data-i18n="sidepanel.costStage1">階段 1（模型回應）</span>
               <span id="costStage1" class="cost-detail-value">$0.0000</span>
             </div>
             <div class="cost-detail-row">
-              <span class="cost-detail-label">階段 2（互評審查）</span>
+              <span class="cost-detail-label" data-i18n="sidepanel.costStage2">階段 2（互評審查）</span>
               <span id="costStage2" class="cost-detail-value">$0.0000</span>
             </div>
             <div class="cost-detail-row">
-              <span class="cost-detail-label">階段 3（主席彙整）</span>
+              <span class="cost-detail-label" data-i18n="sidepanel.costStage3">階段 3（主席彙整）</span>
               <span id="costStage3" class="cost-detail-value">$0.0000</span>
             </div>
             <div class="cost-detail-row cost-detail-image hidden" id="costImageRow">
-              <span class="cost-detail-label">圖片生成</span>
+              <span class="cost-detail-label" data-i18n="sidepanel.costImageGen">圖片生成</span>
               <span id="costImageGen" class="cost-detail-value">$0.0000</span>
             </div>
           </div>
@@ -495,7 +496,7 @@
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <span>延伸搜尋</span>
+          <span data-i18n="sidepanel.searchStrategyTitle">延伸搜尋</span>
         </div>
         <span id="searchIterationCounter" class="search-iteration-counter">0/5 次</span>
       </div>
@@ -503,22 +504,22 @@
         <!-- Search query buttons will be added here -->
       </div>
       <div class="custom-search-row">
-        <input type="text" id="customSearchInput" class="custom-search-input" placeholder="輸入自訂關鍵字...">
+        <input type="text" id="customSearchInput" class="custom-search-input" data-i18n-placeholder="sidepanel.customSearchPlaceholder" placeholder="輸入自訂關鍵字...">
         <button id="customSearchBtn" class="custom-search-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          搜尋
+          <span data-i18n="common.search">搜尋</span>
         </button>
       </div>
-      <p class="search-strategy-hint">點擊 AI 建議或輸入自訂關鍵字，搜尋結果將加入參考資料並重新執行 Council</p>
+      <p class="search-strategy-hint" data-i18n="sidepanel.searchStrategyHint">點擊 AI 建議或輸入自訂關鍵字，搜尋結果將加入參考資料並重新執行 Council</p>
     </div>
 
     <!-- Branch Actions (after final answer) -->
     <div id="branchActionsSection" class="branch-actions-section hidden">
       <div class="branch-actions-header">
-        <span class="branch-actions-title">下一步</span>
+        <span class="branch-actions-title" data-i18n="sidepanel.branchActionsTitle">下一步</span>
       </div>
       <div class="branch-actions-buttons">
         <button id="branchSearchBtn" class="branch-action-btn branch-search">
@@ -526,7 +527,7 @@
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <span>延伸搜尋</span>
+          <span data-i18n="sidepanel.branchSearch">延伸搜尋</span>
         </button>
         <button id="branchImageBtn" class="branch-action-btn branch-image">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -534,14 +535,14 @@
             <circle cx="8.5" cy="8.5" r="1.5"></circle>
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
-          <span>生成圖片</span>
+          <span data-i18n="sidepanel.branchImage">生成圖片</span>
         </button>
         <button id="branchVisionBtn" class="branch-action-btn branch-vision hidden">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
-          <span>Vision 分析</span>
+          <span data-i18n="sidepanel.branchVision">Vision 分析</span>
         </button>
         <button id="branchCanvasBtn" class="branch-action-btn branch-canvas">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -549,7 +550,7 @@
             <line x1="3" y1="9" x2="21" y2="9"></line>
             <line x1="9" y1="21" x2="9" y2="9"></line>
           </svg>
-          <span>開啟畫布</span>
+          <span data-i18n="sidepanel.branchCanvas">開啟畫布</span>
         </button>
       </div>
     </div>
@@ -566,8 +567,8 @@
             </svg>
           </div>
           <div class="canvas-action-text">
-            <span class="canvas-action-title">在畫布中開啟</span>
-            <span class="canvas-action-desc">編輯與調整回應內容</span>
+            <span class="canvas-action-title" data-i18n="sidepanel.openInCanvas">在畫布中開啟</span>
+            <span class="canvas-action-desc" data-i18n="sidepanel.canvasDesc">編輯與調整回應內容</span>
           </div>
           <svg class="canvas-action-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="9 18 15 12 9 6"></polyline>
@@ -584,7 +585,7 @@
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
               <line x1="3" y1="9" x2="21" y2="9"></line>
             </svg>
-            <span>在新分頁開啟</span>
+            <span data-i18n="sidepanel.openInTab">在新分頁開啟</span>
           </button>
           <button class="canvas-dropdown-item" data-mode="window">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -592,7 +593,7 @@
               <line x1="8" y1="21" x2="16" y2="21"></line>
               <line x1="12" y1="17" x2="12" y2="21"></line>
             </svg>
-            <span>在獨立視窗開啟</span>
+            <span data-i18n="sidepanel.openInWindow">在獨立視窗開啟</span>
           </button>
         </div>
       </div>
@@ -605,7 +606,7 @@
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
       </div>
-      <p>輸入問題，同時查詢多個 AI 模型</p>
+      <p data-i18n="sidepanel.emptyState">輸入問題，同時查詢多個 AI 模型</p>
     </div>
 
     <!-- Error Banner -->
@@ -624,7 +625,7 @@
     <div id="exportModal" class="modal hidden">
       <div class="modal-content">
         <div class="modal-header">
-          <h3>匯出對話</h3>
+          <h3 data-i18n="sidepanel.exportTitle">匯出對話</h3>
           <button id="closeExportModal" class="dismiss-btn">&times;</button>
         </div>
         <div class="modal-body">
@@ -634,21 +635,21 @@
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
               </svg>
-              <span>Markdown (.md)</span>
+              <span data-i18n="sidepanel.exportMd">Markdown (.md)</span>
             </button>
             <button id="exportJson" class="export-btn">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
               </svg>
-              <span>JSON (.json)</span>
+              <span data-i18n="sidepanel.exportJson">JSON (.json)</span>
             </button>
             <button id="copyClipboard" class="export-btn">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
               </svg>
-              <span>複製到剪貼簿</span>
+              <span data-i18n="sidepanel.copyClipboard">複製到剪貼簿</span>
             </button>
           </div>
         </div>
@@ -659,7 +660,7 @@
     <div id="newConvModal" class="modal hidden">
       <div class="modal-content modal-compact">
         <div class="modal-header">
-          <h3>開啟新對話</h3>
+          <h3 data-i18n="sidepanel.newConvTitle">開啟新對話</h3>
           <button id="closeNewConvModal" class="dismiss-btn">&times;</button>
         </div>
         <div class="modal-body">
@@ -667,21 +668,21 @@
             <label class="radio-option">
               <input type="radio" name="newConvType" value="newSession" checked>
               <div class="radio-content">
-                <span class="radio-title">建立全新 Session</span>
-                <span class="radio-desc">清空所有卡片，從頭開始新專案</span>
+                <span class="radio-title" data-i18n="sidepanel.newSessionOption">建立全新 Session</span>
+                <span class="radio-desc" data-i18n="sidepanel.newSessionDesc">清空所有卡片，從頭開始新專案</span>
               </div>
             </label>
             <label class="radio-option">
               <input type="radio" name="newConvType" value="newRoot">
               <div class="radio-content">
-                <span class="radio-title">新增 Root 卡片</span>
-                <span class="radio-desc">在目前 Session 內新增另一個主題</span>
+                <span class="radio-title" data-i18n="sidepanel.newRootOption">新增 Root 卡片</span>
+                <span class="radio-desc" data-i18n="sidepanel.newRootDesc">在目前 Session 內新增另一個主題</span>
               </div>
             </label>
           </div>
           <div class="modal-actions">
-            <button id="cancelNewConv" class="btn-secondary">取消</button>
-            <button id="confirmNewConv" class="btn-primary">確認</button>
+            <button id="cancelNewConv" class="btn-secondary" data-i18n="common.cancel">取消</button>
+            <button id="confirmNewConv" class="btn-primary" data-i18n="common.confirm">確認</button>
           </div>
         </div>
       </div>
@@ -691,18 +692,18 @@
     <div id="pasteModal" class="modal hidden">
       <div class="modal-content modal-paste">
         <div class="modal-header">
-          <h3>貼上參考資料</h3>
+          <h3 data-i18n="sidepanel.pasteTitle">貼上參考資料</h3>
           <button id="closePasteModal" class="dismiss-btn">&times;</button>
         </div>
         <div class="modal-body">
-          <p class="paste-modal-hint">請在下方貼上您要加入的參考資料內容：</p>
-          <textarea id="pasteModalTextarea" class="paste-modal-textarea" placeholder="在此貼上內容..."></textarea>
+          <p class="paste-modal-hint" data-i18n="sidepanel.pasteHint">請在下方貼上您要加入的參考資料內容：</p>
+          <textarea id="pasteModalTextarea" class="paste-modal-textarea" data-i18n-placeholder="sidepanel.pastePlaceholder" placeholder="在此貼上內容..."></textarea>
           <div class="paste-modal-meta">
             <span id="pasteCharCount" class="paste-char-count">0 字元</span>
           </div>
           <div class="modal-actions">
-            <button id="cancelPaste" class="btn-secondary">取消</button>
-            <button id="confirmPaste" class="btn-primary">確認貼上</button>
+            <button id="cancelPaste" class="btn-secondary" data-i18n="common.cancel">取消</button>
+            <button id="confirmPaste" class="btn-primary" data-i18n="sidepanel.confirmPaste">確認貼上</button>
           </div>
         </div>
       </div>
@@ -717,20 +718,20 @@
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
-            網路搜尋
+            <span data-i18n="sidepanel.webSearchTitle">網路搜尋</span>
           </h3>
           <button id="closeWebSearchModal" class="dismiss-btn">&times;</button>
         </div>
         <div class="modal-body">
-          <p class="search-modal-hint">輸入關鍵字搜尋網路資料，結果將加入參考資料：</p>
+          <p class="search-modal-hint" data-i18n="sidepanel.webSearchHint">輸入關鍵字搜尋網路資料，結果將加入參考資料：</p>
           <div class="search-modal-input-row">
-            <input type="text" id="webSearchModalInput" class="search-modal-input" placeholder="輸入搜尋關鍵字...">
+            <input type="text" id="webSearchModalInput" class="search-modal-input" data-i18n-placeholder="sidepanel.webSearchPlaceholder" placeholder="輸入搜尋關鍵字...">
             <button id="confirmWebSearch" class="btn-primary search-modal-btn">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>
-              搜尋
+              <span data-i18n="common.search">搜尋</span>
             </button>
           </div>
           <!-- Search Status Display -->
@@ -739,18 +740,24 @@
               <span class="spinner"></span>
             </div>
             <div class="search-status-text">
-              <span id="webSearchStatusLabel">準備搜尋中...</span>
+              <span id="webSearchStatusLabel" data-i18n="sidepanel.searchPreparing">準備搜尋中...</span>
               <span id="webSearchStatusDetail" class="search-status-detail"></span>
             </div>
           </div>
           <div class="modal-actions">
-            <button id="cancelWebSearch" class="btn-secondary">取消</button>
+            <button id="cancelWebSearch" class="btn-secondary" data-i18n="common.cancel">取消</button>
           </div>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- Load i18n scripts -->
+  <script src="../locales/zh-TW.js"></script>
+  <script src="../locales/en-US.js"></script>
+  <script src="../locales/ja-JP.js"></script>
+  <script src="../locales/i18n.js"></script>
+  
   <!-- Agent Framework -->
   <script src="skills-bundle.js"></script>
   <script src="skill-loader.js"></script>

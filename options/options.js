@@ -34,10 +34,14 @@ const DEFAULT_MODELS = [
 
 const DEFAULT_CHAIRMAN = 'anthropic/claude-sonnet-4.5';
 
-// Default prompts
-const DEFAULT_REVIEW_PROMPT = `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
+// Language-specific default prompts
+function getDefaultReviewPrompt(language) {
+  const langInstruction = i18n.t('ai.languageInstruction');
+  const langName = i18n.t('ai.languageName');
+  
+  return `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
 
-**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited.**
+${langInstruction}
 
 ## User's Question
 {query}
@@ -50,17 +54,22 @@ Rank these responses from best to worst. Output in this exact JSON format:
 \`\`\`json
 {
   "rankings": [
-    {"response": "A", "rank": 1, "reason": "簡短理由（繁體中文）"},
-    {"response": "B", "rank": 2, "reason": "簡短理由（繁體中文）"}
+    {"response": "A", "rank": 1, "reason": "Brief reason in ${langName}"},
+    {"response": "B", "rank": 2, "reason": "Brief reason in ${langName}"}
   ]
 }
 \`\`\`
 
-Be objective. Focus on factual accuracy and helpfulness. Write all reasons in Traditional Chinese.`;
+Be objective. Focus on factual accuracy and helpfulness. Write all reasons in ${langName}.`;
+}
 
-const DEFAULT_CHAIRMAN_PROMPT = `You are the Chairman of an AI Council. Synthesize the expert responses into a single, comprehensive final answer.
+function getDefaultChairmanPrompt(language) {
+  const langInstruction = i18n.t('ai.languageInstruction');
+  const langName = i18n.t('ai.languageName');
+  
+  return `You are the Chairman of an AI Council. Synthesize the expert responses into a single, comprehensive final answer.
 
-**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
+${langInstruction}
 
 ## User's Question
 {query}
@@ -77,13 +86,15 @@ Create a single authoritative answer that:
 3. Is well-organized and comprehensive
 4. When referencing context/search results, use citation markers like [1], [2] to indicate sources
 
-Provide your answer directly in Traditional Chinese (繁體中文), without meta-commentary.`;
+Provide your answer directly in ${langName}, without meta-commentary.`;
+}
 
 // Default output style settings
 const DEFAULT_OUTPUT_LENGTH = 'standard';
 const DEFAULT_OUTPUT_FORMAT = 'mixed';
 
 // DOM Elements
+const languageSelect = document.getElementById('language');
 const apiKeyInput = document.getElementById('apiKey');
 const braveApiKeyInput = document.getElementById('braveApiKey');
 const modelListEl = document.getElementById('modelList');
@@ -110,6 +121,9 @@ const promptSection = document.getElementById('promptSection');
 
 // Initialize
 async function init() {
+  // Initialize i18n first
+  await i18n.init();
+  
   await loadAvailableModels();
   renderModelList();
   renderChairmanSelect();
@@ -119,10 +133,26 @@ async function init() {
   resetPromptsBtn.addEventListener('click', resetPrompts);
   updateModelsBtn.addEventListener('click', updateModelsFromOpenRouter);
   
+  // Language change handler
+  languageSelect.addEventListener('change', handleLanguageChange);
+  
   // Learner mode change handler
   learnerModeRadios.forEach(radio => {
     radio.addEventListener('change', handleLearnerModeChange);
   });
+}
+
+// Handle language change
+async function handleLanguageChange() {
+  const newLanguage = languageSelect.value;
+  await i18n.setLocale(newLanguage);
+  
+  // Re-render dynamic content
+  renderChairmanSelect();
+  handleLearnerModeChange();
+  
+  // Update document title
+  document.title = t('options.pageTitle');
 }
 
 // Handle learner mode change - toggle prompt section visibility
@@ -140,12 +170,12 @@ function handleLearnerModeChange() {
       const note = document.createElement('p');
       note.className = 'hint learner-mode-note';
       note.style.color = 'var(--warning, #f59e0b)';
-      note.textContent = `目前使用 ${selectedMode} 歲學習者模式的內建提示詞`;
+      note.textContent = t('options.learnerModeNote', { mode: selectedMode });
       promptSection.querySelector('.section-header').after(note);
     } else if (!isLearnerMode && existingNote) {
       existingNote.remove();
     } else if (isLearnerMode && existingNote) {
-      existingNote.textContent = `目前使用 ${selectedMode} 歲學習者模式的內建提示詞`;
+      existingNote.textContent = t('options.learnerModeNote', { mode: selectedMode });
     }
   }
 }
@@ -175,7 +205,8 @@ function renderModelList() {
 }
 
 function renderChairmanSelect() {
-  const reviewWinnerOption = '<option value="__review_winner__">互評勝者（動態）</option>';
+  const reviewWinnerText = t('options.reviewWinner');
+  const reviewWinnerOption = `<option value="__review_winner__">${reviewWinnerText}</option>`;
   const modelOptions = AVAILABLE_MODELS.map(model => 
     `<option value="${model.id}">${model.name} (${model.provider})</option>`
   ).join('');
@@ -183,7 +214,10 @@ function renderChairmanSelect() {
 }
 
 async function loadSettings() {
+  const currentLanguage = i18n.getLocale();
+  
   const result = await chrome.storage.sync.get({
+    language: 'zh-TW',
     apiKey: '',
     braveApiKey: '',
     councilModels: DEFAULT_MODELS,
@@ -191,12 +225,21 @@ async function loadSettings() {
     enableReview: true,
     maxSearchIterations: 5,
     maxCardDepth: 3,
-    reviewPrompt: DEFAULT_REVIEW_PROMPT,
-    chairmanPrompt: DEFAULT_CHAIRMAN_PROMPT,
+    reviewPrompt: '',
+    chairmanPrompt: '',
     outputLength: DEFAULT_OUTPUT_LENGTH,
     outputFormat: DEFAULT_OUTPUT_FORMAT,
     learnerMode: 'standard'
   });
+
+  // Set language selector
+  languageSelect.value = result.language;
+  
+  // If language from storage differs from initialized, update
+  if (result.language !== currentLanguage) {
+    await i18n.setLocale(result.language);
+    renderChairmanSelect();
+  }
 
   apiKeyInput.value = result.apiKey;
   braveApiKeyInput.value = result.braveApiKey;
@@ -204,8 +247,10 @@ async function loadSettings() {
   maxSearchIterationsSelect.value = result.maxSearchIterations;
   if (maxCardDepthSelect) maxCardDepthSelect.value = result.maxCardDepth;
   chairmanSelect.value = result.chairmanModel;
-  reviewPromptTextarea.value = result.reviewPrompt;
-  chairmanPromptTextarea.value = result.chairmanPrompt;
+  
+  // Use stored prompts or generate defaults based on current language
+  reviewPromptTextarea.value = result.reviewPrompt || getDefaultReviewPrompt(result.language);
+  chairmanPromptTextarea.value = result.chairmanPrompt || getDefaultChairmanPrompt(result.language);
 
   // Set model checkboxes
   const checkboxes = modelListEl.querySelectorAll('[data-model]');
@@ -231,14 +276,15 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
+  const language = languageSelect.value;
   const apiKey = apiKeyInput.value.trim();
   const braveApiKey = braveApiKeyInput.value.trim();
   const enableReview = enableReviewCheckbox.checked;
   const maxSearchIterations = parseInt(maxSearchIterationsSelect.value, 10) || 5;
   const maxCardDepth = parseInt(maxCardDepthSelect?.value, 10) || 3;
   const chairmanModel = chairmanSelect.value;
-  const reviewPrompt = reviewPromptTextarea.value.trim() || DEFAULT_REVIEW_PROMPT;
-  const chairmanPrompt = chairmanPromptTextarea.value.trim() || DEFAULT_CHAIRMAN_PROMPT;
+  const reviewPrompt = reviewPromptTextarea.value.trim() || getDefaultReviewPrompt(language);
+  const chairmanPrompt = chairmanPromptTextarea.value.trim() || getDefaultChairmanPrompt(language);
   
   // Get selected models
   const checkboxes = modelListEl.querySelectorAll('[data-model]:checked');
@@ -252,11 +298,12 @@ async function saveSettings() {
   const learnerMode = document.querySelector('input[name="learnerMode"]:checked')?.value || 'standard';
 
   if (councilModels.length < 2) {
-    showStatus('請選擇至少 2 個模型', 'error');
+    showStatus(t('options.statusMinModels'), 'error');
     return;
   }
 
   await chrome.storage.sync.set({
+    language,
     apiKey,
     braveApiKey,
     councilModels,
@@ -271,13 +318,14 @@ async function saveSettings() {
     learnerMode
   });
 
-  showStatus('設定已儲存', 'success');
+  showStatus(t('options.statusSaved'), 'success');
 }
 
 function resetPrompts() {
-  reviewPromptTextarea.value = DEFAULT_REVIEW_PROMPT;
-  chairmanPromptTextarea.value = DEFAULT_CHAIRMAN_PROMPT;
-  showStatus('提示詞已重設為預設', 'success');
+  const language = languageSelect.value;
+  reviewPromptTextarea.value = getDefaultReviewPrompt(language);
+  chairmanPromptTextarea.value = getDefaultChairmanPrompt(language);
+  showStatus(t('options.statusPromptsReset'), 'success');
 }
 
 function showStatus(message, type) {
@@ -299,7 +347,7 @@ async function fetchModelsFromOpenRouter() {
   const apiKey = apiKeyInput.value.trim();
   
   if (!apiKey) {
-    throw new Error('請先輸入 OpenRouter API 金鑰');
+    throw new Error(t('errors.authDetail'));
   }
 
   const response = await fetch('https://openrouter.ai/api/v1/models', {
@@ -311,7 +359,7 @@ async function fetchModelsFromOpenRouter() {
   });
 
   if (!response.ok) {
-    throw new Error(`無法獲取模型列表: ${response.status}`);
+    throw new Error(`API Error: ${response.status}`);
   }
 
   const data = await response.json();
@@ -412,14 +460,14 @@ function filterAndSortModels(rawModels) {
 // Update models from OpenRouter
 async function updateModelsFromOpenRouter() {
   updateModelsBtn.disabled = true;
-  updateModelsBtn.textContent = '更新中...';
+  updateModelsBtn.textContent = t('options.updateModelsLoading');
 
   try {
     const rawModels = await fetchModelsFromOpenRouter();
     const newModels = filterAndSortModels(rawModels);
 
     if (newModels.length === 0) {
-      throw new Error('未找到符合條件的模型');
+      throw new Error('No models found');
     }
 
     // Save to storage
@@ -431,12 +479,12 @@ async function updateModelsFromOpenRouter() {
     renderChairmanSelect();
     await loadSettings();
 
-    showStatus(`成功更新 ${newModels.length} 個模型`, 'success');
+    showStatus(t('options.statusModelsUpdated', { count: newModels.length }), 'success');
   } catch (err) {
-    showStatus(`更新失敗: ${err.message}`, 'error');
+    showStatus(t('options.statusModelsUpdateFailed', { error: err.message }), 'error');
   } finally {
     updateModelsBtn.disabled = false;
-    updateModelsBtn.textContent = '從 OpenRouter 更新';
+    updateModelsBtn.textContent = t('options.updateModelsBtn');
   }
 }
 

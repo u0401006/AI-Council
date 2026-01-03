@@ -114,35 +114,35 @@ function formatApiError(error, modelName) {
   
   if (msg.includes('Failed to fetch')) {
     return {
-      short: `${modelName} 暫時無法連線`,
-      detail: '網路問題或該模型暫時不可用',
+      short: t('errors.connectionFailed', { model: modelName }),
+      detail: t('errors.connectionDetail'),
       actions: ['retry', 'switch-model']
     };
   }
   if (msg.includes('timeout') || msg.includes('超時') || msg.includes('逾時')) {
     return {
-      short: `${modelName} 回應超時`,
-      detail: '模型處理時間過長',
+      short: t('errors.timeout', { model: modelName }),
+      detail: t('errors.timeoutDetail'),
       actions: ['retry']
     };
   }
   if (msg.includes('API Key') || msg.includes('Unauthorized') || msg.includes('401')) {
     return {
-      short: `${modelName} 認證失敗`,
-      detail: '請檢查 API Key 設定',
+      short: t('errors.authFailed', { model: modelName }),
+      detail: t('errors.authDetail'),
       actions: ['check-settings']
     };
   }
   if (msg.includes('rate limit') || msg.includes('429')) {
     return {
-      short: `${modelName} 請求過於頻繁`,
-      detail: '請稍後再試',
+      short: t('errors.rateLimited', { model: modelName }),
+      detail: t('errors.rateLimitDetail'),
       actions: ['retry']
     };
   }
   // Other errors
   return {
-    short: `${modelName} 發生錯誤`,
+    short: t('errors.genericError', { model: modelName }),
     detail: msg.slice(0, 80),
     actions: ['retry']
   };
@@ -157,9 +157,36 @@ function generateReviewPrompt(query, responses, currentModel) {
   const responsesText = otherResponses.map(r => `### ${r.label}\n${r.content}`).join('\n\n---\n\n');
   
   // Use custom prompt with placeholders replaced
-  return customReviewPrompt
+  let prompt = customReviewPrompt
     .replace('{query}', query)
     .replace('{responses}', responsesText);
+  
+  // Inject current language instruction (replaces any hardcoded language instruction)
+  const langInstruction = i18n.getAILanguageInstruction();
+  prompt = injectLanguageInstruction(prompt, langInstruction);
+  
+  return prompt;
+}
+
+// Helper to inject language instruction into prompts
+function injectLanguageInstruction(prompt, langInstruction) {
+  // Remove existing language instruction patterns
+  const patterns = [
+    /\*\*IMPORTANT:.*(?:Traditional Chinese|English|Japanese|繁體中文|日本語).*\*\*/gi,
+    /\*\*重要：.*(?:繁體中文|Traditional Chinese|日本語).*\*\*/gi
+  ];
+  
+  let cleaned = prompt;
+  for (const pattern of patterns) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+  
+  // Insert language instruction after first paragraph or at the beginning
+  const firstParagraphEnd = cleaned.indexOf('\n\n');
+  if (firstParagraphEnd > 0 && firstParagraphEnd < 200) {
+    return cleaned.slice(0, firstParagraphEnd) + '\n\n' + langInstruction + cleaned.slice(firstParagraphEnd);
+  }
+  return langInstruction + '\n\n' + cleaned;
 }
 
 function generateChairmanPrompt(query, responses, aggregatedRanking = null) {
@@ -176,10 +203,14 @@ function generateChairmanPrompt(query, responses, aggregatedRanking = null) {
   }
   
   // Use custom prompt with placeholders replaced
-  const basePrompt = promptTemplate
+  let basePrompt = promptTemplate
     .replace('{query}', query)
     .replace('{responses}', responsesText)
     .replace('{ranking}', rankingInfo);
+  
+  // Inject current language instruction
+  const langInstruction = i18n.getAILanguageInstruction();
+  basePrompt = injectLanguageInstruction(basePrompt, langInstruction);
   
   // Append output style instructions from settings (skip for learner mode - they have their own format)
   let finalPrompt = learnerMode === 'standard' 
@@ -866,7 +897,7 @@ function renderTodoSection(tasks) {
   
   // Render tasks
   if (displayedTasks.length === 0) {
-    todoList.innerHTML = '<div class="todo-empty">暫無任務，點擊上方按鈕新增</div>';
+    todoList.innerHTML = `<div class="todo-empty">${t('sidepanel.todoEmpty')}</div>`;
     return;
   }
   
@@ -1076,7 +1107,7 @@ function addTaskManually(content, priority = 'medium') {
     t => t.content.toLowerCase() === trimmedContent.toLowerCase() && t.status === 'pending'
   );
   if (existingTask) {
-    showToast('已存在相同的待辦任務');
+    showToast(t('messages.taskExists'));
     return;
   }
   
@@ -1113,7 +1144,7 @@ function expandTaskToCard(taskId) {
   // 如果 task 已有關聯卡片，直接切換過去
   if (task.cardId && sessionState.cards.has(task.cardId)) {
     switchToCard(task.cardId, 'right');
-    showToast('已切換至任務卡片');
+    showToast(t('messages.switchedToCard'));
     return;
   }
   
@@ -1166,9 +1197,9 @@ function expandTaskToCard(taskId) {
       if (featureNames.length > 0) {
         showToast(`已建立子卡片，已啟用：${featureNames.join('、')}`);
       } else if (task.hint && learnerMode !== 'standard') {
-        showToast('已建立探索卡片，提示已加入脈絡');
+        showToast(t('messages.exploreCardCreated'));
       } else {
-        showToast('已建立子卡片，修改問題後按送出');
+        showToast(t('messages.childCardCreated'));
       }
     }
   } else {
@@ -1177,7 +1208,7 @@ function expandTaskToCard(taskId) {
     queryInput.focus();
     task.status = 'in_progress';
     renderTodoSection(displayedTasks);
-    showToast('已將任務帶入輸入框，按送出開始新對話');
+    showToast(t('messages.taskToInput'));
   }
 }
 
@@ -1296,12 +1327,12 @@ function renderBreadcrumb() {
   // Update indicators
   const currentCard = getCurrentCard();
   if (cardDepthIndicator) {
-    cardDepthIndicator.textContent = `深度: ${currentCard?.depth || 0}`;
+    cardDepthIndicator.textContent = t('sidepanel.depthLabel', { depth: currentCard?.depth || 0 });
   }
   if (cardCountIndicator) {
     const cardCountText = cardCountIndicator.querySelector('#cardCountText');
     if (cardCountText) {
-      cardCountText.textContent = `${cardCount} 張卡片`;
+      cardCountText.textContent = t('sidepanel.cardCount', { count: cardCount });
     }
   }
   
@@ -1478,7 +1509,7 @@ function loadCardIntoUI(card) {
     // Stage 1: 顯示已完成狀態
     stage1Section.classList.remove('hidden');
     stage1Section.classList.add('collapsed');
-    stage1Status.textContent = '完成';
+    stage1Status.textContent = t('sidepanel.stageComplete');
     stage1Status.className = 'stage-status done';
     document.getElementById('stage1Content').classList.remove('expanded');
     
@@ -1491,18 +1522,18 @@ function loadCardIntoUI(card) {
     if (enableReview) {
       stage2Section.classList.remove('hidden', 'stage-skipped');
       stage2Section.classList.add('collapsed');
-      stage2Status.textContent = '完成';
+      stage2Status.textContent = t('sidepanel.stageComplete');
       stage2Status.className = 'stage-status done';
       document.getElementById('stage2Content').classList.remove('expanded');
     } else {
       stage2Section.classList.add('stage-skipped');
-      stage2Status.textContent = '已跳過';
+      stage2Status.textContent = t('sidepanel.stageSkipped');
     }
     
     // Stage 3: 顯示結論
     stage3Section.classList.remove('hidden');
     stage3Section.classList.add('collapsed');
-    stage3Status.textContent = '完成';
+    stage3Status.textContent = t('sidepanel.stageComplete');
     stage3Status.className = 'stage-status done';
     document.getElementById('stage3Content').classList.add('expanded');
     
@@ -2046,7 +2077,7 @@ async function safeStorageSet(data) {
     return { success: true };
   } catch (err) {
     if (err.message?.includes('QUOTA_BYTES') || err.message?.includes('quota')) {
-      showToast('儲存空間不足，請清理歷史紀錄', true);
+      showToast(t('messages.storageError'), true);
       return { success: false, quotaError: true, error: err };
     }
     throw err;
@@ -2115,6 +2146,9 @@ function updateSearchUIState(hasBrave) {
 // Initialize
 // ============================================
 async function init() {
+  // Initialize i18n first
+  await i18n.init();
+  
   await loadDynamicPricing();
   await loadSettings();
   await checkApiKeys();
@@ -2178,7 +2212,7 @@ async function handleAddContextFromBackground(item) {
     url: item.url
   }); // Uses 'auto' scope: root card → session, subtask → card
   
-  showToast('已加入參考資料');
+  showToast(t('messages.contextAdded'));
 }
 
 // Output style settings
@@ -2211,28 +2245,76 @@ async function loadSettings() {
   updateModelCount();
 }
 
-// Generate output style instructions based on settings
+// Generate output style instructions based on settings and language
 function getOutputStyleInstructions() {
+  const locale = i18n.getLocale();
+  
+  // Localized length instructions
   const lengthInstructions = {
-    concise: '回答請控制在 500 字以內，聚焦核心重點，每個要點用 1-2 句話說明。',
-    standard: '回答請控制在 800 字左右，適度展開說明重要概念。',
-    detailed: '回答可詳細展開至 1200 字左右，完整涵蓋各面向。'
+    'zh-TW': {
+      concise: '回答請控制在 500 字以內，聚焦核心重點，每個要點用 1-2 句話說明。',
+      standard: '回答請控制在 800 字左右，適度展開說明重要概念。',
+      detailed: '回答可詳細展開至 1200 字左右，完整涵蓋各面向。'
+    },
+    'en-US': {
+      concise: 'Keep responses under 500 words, focusing on key points with 1-2 sentences per point.',
+      standard: 'Keep responses around 800 words with moderate elaboration on important concepts.',
+      detailed: 'Responses can be expanded to around 1200 words for comprehensive coverage.'
+    },
+    'ja-JP': {
+      concise: '回答は500字以内に抑え、核心的なポイントに焦点を当て、各ポイントは1-2文で説明してください。',
+      standard: '回答は約800字程度で、重要な概念を適度に展開してください。',
+      detailed: '回答は約1200字まで詳しく展開し、各側面を完全にカバーしてください。'
+    }
   };
-
+  
+  // Localized format instructions
   const formatInstructions = {
-    bullet: '優先使用條列式格式，每個項目簡短扼要。',
-    mixed: '依內容性質靈活選擇條列式或段落式。',
-    paragraph: '使用完整段落進行說明，保持邏輯連貫。'
+    'zh-TW': {
+      bullet: '優先使用條列式格式，每個項目簡短扼要。',
+      mixed: '依內容性質靈活選擇條列式或段落式。',
+      paragraph: '使用完整段落進行說明，保持邏輯連貫。'
+    },
+    'en-US': {
+      bullet: 'Prefer bullet point format with brief items.',
+      mixed: 'Flexibly choose between bullet points and paragraphs based on content.',
+      paragraph: 'Use complete paragraphs for explanation, maintaining logical coherence.'
+    },
+    'ja-JP': {
+      bullet: '箇条書き形式を優先し、各項目は簡潔に。',
+      mixed: '内容の性質に応じて箇条書きと段落を柔軟に選択。',
+      paragraph: '完全な段落で説明し、論理的な一貫性を保つ。'
+    }
+  };
+  
+  // Localized header
+  const headers = {
+    'zh-TW': '**輸出風格指引**：',
+    'en-US': '**Output Style Guidelines**:',
+    'ja-JP': '**出力スタイルガイドライン**：'
+  };
+  
+  // Localized closing
+  const closings = {
+    'zh-TW': '避免冗長的開場白和重複說明，直接切入主題。',
+    'en-US': 'Avoid lengthy introductions and repetition, get straight to the point.',
+    'ja-JP': '冗長な前置きや繰り返しを避け、本題に直接入ってください。'
   };
 
-  return `\n\n**輸出風格指引**：
-- ${lengthInstructions[outputLength] || lengthInstructions.standard}
-- ${formatInstructions[outputFormat] || formatInstructions.mixed}
-- 避免冗長的開場白和重複說明，直接切入主題。`;
+  const lang = lengthInstructions[locale] ? locale : 'zh-TW';
+  const length = lengthInstructions[lang][outputLength] || lengthInstructions[lang].standard;
+  const format = formatInstructions[lang][outputFormat] || formatInstructions[lang].mixed;
+  const header = headers[lang];
+  const closing = closings[lang];
+
+  return `\n\n${header}
+- ${length}
+- ${format}
+- ${closing}`;
 }
 
 function updateModelCount() {
-  modelCountEl.textContent = `${councilModels.length} 個模型`;
+  modelCountEl.textContent = t('sidepanel.modelCount', { count: councilModels.length });
 }
 
 function setupEventListeners() {
@@ -2358,7 +2440,7 @@ function setupEventListeners() {
     // Check Brave API key before enabling search mode
     if (searchModeToggle.checked && !hasBraveApiKey) {
       searchModeToggle.checked = false;
-      showToast('需要設定 Brave Search API 金鑰才能使用網搜功能', true);
+      showToast(t('messages.braveKeyRequired'), true);
       return;
     }
     enableSearchMode = searchModeToggle.checked;
@@ -2372,7 +2454,7 @@ function setupEventListeners() {
   customSearchBtn.addEventListener('click', () => {
     // Check Brave API key
     if (!hasBraveApiKey) {
-      showToast('需要設定 Brave Search API 金鑰才能使用網搜功能', true);
+      showToast(t('messages.braveKeyRequired'), true);
       return;
     }
     const query = customSearchInput.value.trim();
@@ -2556,7 +2638,7 @@ async function capturePageContent() {
     
     const tabId = await getActiveTabId();
     if (!tabId) {
-      showToast('找不到使用中的分頁', true);
+      showToast(t('messages.noActiveTab'), true);
       return;
     }
     
@@ -2569,7 +2651,7 @@ async function capturePageContent() {
     
     const { title, url, content } = response;
     if (!content || content.length < 10) {
-      showToast('頁面沒有內容', true);
+      showToast(t('messages.noContent'), true);
       return;
     }
     
@@ -2580,7 +2662,7 @@ async function capturePageContent() {
       url: url
     });
     
-    showToast('已擷取頁面內容');
+    showToast(t('messages.pageCaptured'));
   } catch (err) {
     showToast('Failed to capture page: ' + err.message, true);
   } finally {
@@ -2595,7 +2677,7 @@ async function captureSelection() {
     
     const tabId = await getActiveTabId();
     if (!tabId) {
-      showToast('找不到使用中的分頁', true);
+      showToast(t('messages.noActiveTab'), true);
       return;
     }
     
@@ -2608,7 +2690,7 @@ async function captureSelection() {
     
     const text = response;
     if (!text || text.length < 1) {
-      showToast('頁面上沒有選取文字', true);
+      showToast(t('messages.noSelection'), true);
       return;
     }
     
@@ -2618,7 +2700,7 @@ async function captureSelection() {
       content: text
     });
     
-    showToast('已擷取選取內容');
+    showToast(t('messages.selectionCaptured'));
   } catch (err) {
     showToast('擷取選取內容失敗：' + err.message, true);
   } finally {
@@ -2640,7 +2722,7 @@ async function pasteContext() {
           title: '貼上的內容',
           content: text
         });
-        showToast('已貼上內容');
+        showToast(t('messages.pasted'));
         return;
       }
     } catch (clipboardErr) {
@@ -2696,7 +2778,7 @@ function handlePasteConfirm() {
   const text = pasteModalTextarea.value.trim();
   
   if (!text || text.length < 1) {
-    showToast('請輸入內容', true);
+    showToast(t('messages.noInput'), true);
     return;
   }
   
@@ -2707,7 +2789,7 @@ function handlePasteConfirm() {
   });
   
   hidePasteModal();
-  showToast('已貼上內容');
+  showToast(t('messages.pasted'));
 }
 
 // Setup paste modal listeners
@@ -2744,7 +2826,7 @@ function setupPasteModalListeners() {
 async function handleWebSearchFromContext() {
   // Check Brave API key
   if (!hasBraveApiKey) {
-    showToast('需要設定 Brave Search API 金鑰才能使用網搜功能', true);
+    showToast(t('messages.braveKeyRequired'), true);
     return;
   }
   
@@ -2783,7 +2865,7 @@ async function executeWebSearchFromModal() {
   const query = webSearchModalInput.value.trim();
   
   if (!query || query.length === 0) {
-    showToast('請輸入搜尋關鍵字', true);
+    showToast(t('messages.noKeyword'), true);
     return;
   }
   
@@ -3045,7 +3127,7 @@ function renderStage25Suggestions(allSuggestions) {
   stage25SearchQueries = uniqueQueries.map(q => q.query);
   
   if (uniqueQueries.length === 0) {
-    searchSuggestionList.innerHTML = '<div class="no-suggestions">各模型未提供搜尋建議</div>';
+    searchSuggestionList.innerHTML = `<div class="no-suggestions">${t('sidepanel.noSuggestions')}</div>`;
     return;
   }
   
@@ -3094,11 +3176,11 @@ function handleStage25ExecuteSearch() {
   
   // 驗證選擇數量
   if (selectedQueries.length === 0) {
-    showToast('請至少選擇一個搜尋關鍵字');
+    showToast(t('messages.selectAtLeastOne'));
     return;
   }
   if (selectedQueries.length > 3) {
-    showToast('最多選擇 3 個關鍵字');
+    showToast(t('messages.maxThreeKeywords'));
     return;
   }
   
@@ -3113,7 +3195,7 @@ function handleStage25ExecuteSearch() {
 function handleStage25Skip() {
   if (!stage25Resolver) return;
   
-  stage25Status.textContent = '已跳過';
+  stage25Status.textContent = t('sidepanel.stageSkipped');
   stage25Status.className = 'stage-status done';
   stage25Section.classList.add('collapsed');
   
@@ -3148,7 +3230,7 @@ function addCustomSearchSuggestion() {
   
   const keyword = customSuggestionInput.value.trim();
   if (!keyword) {
-    showToast('請輸入關鍵字', true);
+    showToast(t('messages.noKeyword'), true);
     return;
   }
   
@@ -3157,7 +3239,7 @@ function addCustomSearchSuggestion() {
   for (const cb of existingCheckboxes) {
     if (cb.value.toLowerCase() === keyword.toLowerCase()) {
       cb.checked = true;
-      showToast('關鍵字已存在，已自動勾選');
+      showToast(t('messages.keywordExists'));
       customSuggestionInput.value = '';
       return;
     }
@@ -3181,12 +3263,12 @@ function addCustomSearchSuggestion() {
   // Clear input
   customSuggestionInput.value = '';
   
-  showToast('已新增關鍵字');
+  showToast(t('messages.keywordAdded'));
 }
 
 function updateSearchIterationCounter() {
   if (searchIterationCounter) {
-    searchIterationCounter.textContent = `${searchIteration}/${maxSearchIterations} 次`;
+    searchIterationCounter.textContent = t('sidepanel.searchIterationCount', { current: searchIteration, max: maxSearchIterations });
   }
 }
 
@@ -3220,7 +3302,7 @@ function renderSearchStrategies(queries) {
     });
   } else {
     // 無建議時顯示提示文字
-    searchStrategies.innerHTML = '<span class="no-suggestions">AI 未提供建議，請輸入自訂關鍵字</span>';
+    searchStrategies.innerHTML = `<span class="no-suggestions">${t('sidepanel.noSuggestions')}</span>`;
   }
 }
 
@@ -3231,7 +3313,7 @@ function renderSearchStrategies(queries) {
 // Step 1: User clicks a keyword -> prepare for next iteration
 async function prepareSearchIteration(keyword) {
   if (searchIteration >= maxSearchIterations) {
-    showToast('已達搜尋次數上限', true);
+    showToast(t('messages.maxIterationsReached'), true);
     return;
   }
   
@@ -3285,7 +3367,7 @@ async function prepareSearchIteration(keyword) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   
   // === UI Feedback: Show loading state ===
-  showToast('AI 正在生成建議的延伸問題...');
+  showToast(t('messages.generatingSuggestions'));
   
   // Disable input and button during generation
   queryInput.disabled = true;
@@ -3305,13 +3387,13 @@ async function prepareSearchIteration(keyword) {
     
     queryInput.value = suggestedPrompt;
     autoGrowTextarea();
-    showToast('已生成建議問題，可自行修改後送出');
+    showToast(t('messages.suggestionsGenerated'));
   } catch (err) {
     console.error('Failed to generate suggested prompt:', err);
     // Fallback: use a simple template
     queryInput.value = `針對「${keyword}」進行延伸討論：${originalQueryBeforeIteration}`;
     autoGrowTextarea();
-    showToast('建議生成失敗，已使用預設模板', true);
+    showToast(t('messages.suggestionsFailed'), true);
   } finally {
     // Restore input state
     queryInput.disabled = false;
@@ -3356,14 +3438,14 @@ function cancelSearchIterationMode() {
     searchStrategySection.classList.remove('hidden');
   }
   
-  showToast('已取消延伸搜尋');
+  showToast(t('messages.searchCancelled'));
 }
 
 // Step 2: User confirms prompt -> execute search and council
 async function executeSearchIteration() {
   const newQuery = queryInput.value.trim();
   if (!newQuery) {
-    showToast('請輸入問題', true);
+    showToast(t('messages.noQuestion'), true);
     return;
   }
   
@@ -3397,13 +3479,13 @@ async function executeSearchIteration() {
     const { results, query } = searchResponse;
     
     if (!results || results.length === 0) {
-      showToast('找不到相關結果', true);
+      showToast(t('messages.noResults'), true);
       resetButton();
       return;
     }
     
     // Fetch full page contents for top results
-    showToast('正在擷取搜尋結果內頁內容...');
+    showToast(t('messages.fetchingResults'));
     const urls = results.slice(0, 5).map(r => r.url);
     
     let pageContents = [];
@@ -3593,7 +3675,7 @@ async function runCouncilIteration() {
       aggregatedRanking = aggregateRankings(successfulResponses);
       renderReviewResults(aggregatedRanking);
       
-      stage2Status.textContent = '完成';
+      stage2Status.textContent = t('sidepanel.stageComplete');
       stage2Status.classList.remove('loading');
       stage2Status.classList.add('done');
       
@@ -3604,7 +3686,7 @@ async function runCouncilIteration() {
       stage2Section.classList.add('collapsed');
     } else {
       stage2Section.classList.add('stage-skipped');
-      stage2Status.textContent = '已跳過';
+      stage2Status.textContent = t('sidepanel.stageSkipped');
       reviewResults.innerHTML = '<div class="skipped-message">互評審查已停用</div>';
       setStepSkipped(2);
     }
@@ -3635,7 +3717,7 @@ async function runCouncilIteration() {
       // runCouncilIteration doesn't use Stage 2.5 search, so pass null
       finalAnswerContent = await runChairman(currentQuery, successfulResponses, aggregatedRanking, enableSearchMode, iterationCardId, null);
       
-      stage3Status.textContent = '完成';
+      stage3Status.textContent = t('sidepanel.stageComplete');
       stage3Status.classList.remove('loading');
       stage3Status.classList.add('done');
       
@@ -4047,7 +4129,7 @@ function toggleCanvasDropdown(e) {
 function handleBranchSearch() {
   // Check Brave API key
   if (!hasBraveApiKey) {
-    showToast('需要設定 Brave Search API 金鑰才能使用網搜功能', true);
+    showToast(t('messages.braveKeyRequired'), true);
     return;
   }
   
@@ -5137,17 +5219,17 @@ async function loadConversation(id) {
 
   // Render Stage 1
   renderSavedResponses(conv.responses || []);
-  stage1Status.textContent = '已載入';
+  stage1Status.textContent = t('sidepanel.stageComplete');
   stage1Status.className = 'stage-status done';
 
   // Render Stage 2
   if (conv.ranking && conv.ranking.length > 0) {
     renderReviewResults(conv.ranking);
-    stage2Status.textContent = '完成';
+    stage2Status.textContent = t('sidepanel.stageComplete');
     stage2Status.className = 'stage-status done';
   } else {
     stage2Section.classList.add('stage-skipped');
-    stage2Status.textContent = '已跳過';
+    stage2Status.textContent = t('sidepanel.stageSkipped');
     reviewResults.innerHTML = '<div class="skipped-message">無審查資料</div>';
   }
 
@@ -5172,7 +5254,7 @@ async function loadConversation(id) {
       finalAnswer.appendChild(imageSection);
     }
     
-    stage3Status.textContent = '完成';
+    stage3Status.textContent = t('sidepanel.stageComplete');
     stage3Status.className = 'stage-status done';
     
     // 解析並渲染 tasks
@@ -5704,7 +5786,7 @@ async function handleSend() {
       aggregatedRanking = aggregateRankings(successfulResponses);
       renderReviewResults(aggregatedRanking);
 
-      stage2Status.textContent = '完成';
+      stage2Status.textContent = t('sidepanel.stageComplete');
       stage2Status.classList.remove('loading');
       stage2Status.classList.add('done');
       
@@ -5718,7 +5800,7 @@ async function handleSend() {
       stage2Section.classList.add('collapsed');
     } else {
       stage2Section.classList.add('stage-skipped');
-      stage2Status.textContent = '已跳過';
+      stage2Status.textContent = t('sidepanel.stageSkipped');
       reviewResults.innerHTML = '<div class="skipped-message">互評審查已停用</div>';
       
       // Update stepper: Stage 2 skipped
@@ -5744,7 +5826,7 @@ async function handleSend() {
           searchIteration++;
           updateSearchIterationCounter();
           
-          stage25Status.textContent = '完成';
+          stage25Status.textContent = t('sidepanel.stageComplete');
           stage25Status.className = 'stage-status done';
           stage25Section.classList.add('collapsed');
           
@@ -5804,7 +5886,7 @@ async function handleSend() {
     try {
       finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking, enableSearchMode, targetCardId, searchResults);
 
-      stage3Status.textContent = '完成';
+      stage3Status.textContent = t('sidepanel.stageComplete');
       stage3Status.classList.remove('loading');
       stage3Status.classList.add('done');
       

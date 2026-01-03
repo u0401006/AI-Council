@@ -26,6 +26,9 @@ const toastContainer = document.getElementById('toastContainer');
 // Initialize
 // ============================================
 async function init() {
+  // Initialize i18n first
+  await i18n.init();
+  
   setupEventListeners();
   const imported = await checkForImport();
   if (!imported) {
@@ -99,10 +102,10 @@ async function checkForImport() {
     const { content, title, query } = result.canvasImport;
     if (content) {
       editor.innerHTML = markdownToHtml(content);
-      docTitle.textContent = title || query?.slice(0, 30) || '已匯入';
+      docTitle.textContent = title || query?.slice(0, 30) || t('messages.imported');
       currentDocId = crypto.randomUUID(); // 建立新文件 ID
       await chrome.storage.local.remove('canvasImport');
-      showToast('已匯入內容');
+      showToast(t('messages.imported'));
       scheduleSave(); // 自動儲存匯入的內容
       return true; // 有匯入
     }
@@ -144,9 +147,9 @@ async function importConversation(id) {
   
   if (conv?.finalAnswer) {
     editor.innerHTML = markdownToHtml(conv.finalAnswer);
-    docTitle.textContent = conv.query?.slice(0, 30) || '已匯入';
+    docTitle.textContent = conv.query?.slice(0, 30) || t('messages.imported');
     importModal.classList.add('hidden');
-    showToast('已匯入內容');
+    showToast(t('messages.imported'));
     scheduleSave();
   }
 }
@@ -308,7 +311,7 @@ function showAiToolbar(selection) {
 // ============================================
 async function handleAiAction(action) {
   if (!selectedText || !selectedRange) {
-    showToast('請先選取文字', true);
+    showToast(t('messages.noSelection'), true);
     return;
   }
   
@@ -332,7 +335,7 @@ async function handleTranslate(lang) {
   translateModal.classList.add('hidden');
   
   if (!selectedText || !selectedRange) {
-    showToast('請先選取文字', true);
+    showToast(t('messages.noSelection'), true);
     return;
   }
   
@@ -349,13 +352,7 @@ async function handleTranslate(lang) {
 }
 
 async function executeAiEdit(prompt, actionName) {
-  const actionNames = {
-    rewrite: '改寫',
-    summarize: '摘要',
-    expand: '擴充',
-    translate: '翻譯'
-  };
-  showAiLoading(`AI ${actionNames[actionName] || actionName}中...`);
+  showAiLoading(t('canvas.aiProcessing'));
   
   try {
     const result = await chrome.runtime.sendMessage({
@@ -383,13 +380,7 @@ async function executeAiEdit(prompt, actionName) {
     document.execCommand('insertText', false, newText);
     
     hideAiLoading();
-    const actionDoneNames = {
-      rewrite: '已改寫',
-      summarize: '已摘要',
-      expand: '已擴充',
-      translate: '已翻譯'
-    };
-    showToast(actionDoneNames[actionName] || '完成');
+    showToast(t('sidepanel.stageComplete'));
     scheduleSave();
     
   } catch (err) {
@@ -411,7 +402,7 @@ function hideAiLoading() {
 // Save/Load
 // ============================================
 function scheduleSave() {
-  saveStatus.textContent = '儲存中...';
+  saveStatus.textContent = t('canvas.saving');
   saveStatus.className = 'save-status saving';
   
   clearTimeout(autoSaveTimeout);
@@ -436,7 +427,7 @@ async function saveDocument() {
   
   await chrome.storage.local.set({ canvasDoc: doc });
   
-  saveStatus.textContent = '已儲存';
+  saveStatus.textContent = t('canvas.saved');
   saveStatus.className = 'save-status saved';
 }
 
@@ -445,21 +436,21 @@ async function loadSavedDoc() {
   if (result.canvasDoc) {
     const doc = result.canvasDoc;
     currentDocId = doc.id;
-    docTitle.textContent = doc.title || '未命名';
+    docTitle.textContent = doc.title || t('canvas.untitled');
     editor.innerHTML = doc.html || markdownToHtml(doc.content || '');
   }
 }
 
 function newDocument() {
-  if (editor.innerHTML.trim() && !confirm('確定要建立新文件？未儲存的變更將會遺失。')) {
+  if (editor.innerHTML.trim() && !confirm(t('common.confirm'))) {
     return;
   }
   
   currentDocId = null;
-  docTitle.textContent = '未命名';
+  docTitle.textContent = t('canvas.untitled');
   editor.innerHTML = '';
   chrome.storage.local.remove('canvasDoc');
-  showToast('已建立新文件');
+  showToast(t('messages.settingsSaved'));
 }
 
 // ============================================
@@ -483,8 +474,8 @@ function handleExport(format) {
       break;
     case 'copy':
       navigator.clipboard.writeText(markdown)
-        .then(() => showToast('已複製到剪貼簿'))
-        .catch(() => showToast('複製失敗', true));
+        .then(() => showToast(t('messages.copied')))
+        .catch(() => showToast(t('common.error'), true));
       break;
   }
   
@@ -499,7 +490,7 @@ function downloadFile(filename, content, type) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-  showToast('已下載檔案');
+  showToast(t('sidepanel.stageComplete'));
 }
 
 // ============================================
@@ -667,7 +658,7 @@ async function loadTreeData() {
     renderTree();
   } catch (err) {
     console.error('Failed to load tree data:', err);
-    showToast('載入任務樹失敗', true);
+    showToast(t('common.error'), true);
   }
 }
 
@@ -682,8 +673,8 @@ function renderTree() {
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           <line x1="9" y1="3" x2="9" y2="21"></line>
         </svg>
-        <p>尚無任務卡片</p>
-        <span>從 Council 建立任務後，卡片階層將顯示於此</span>
+        <p>${t('canvas.treeEmpty')}</p>
+        <span>${t('canvas.treeEmptyHint')}</span>
       </div>
     `;
     return;
@@ -789,16 +780,16 @@ function loadCardContent(sessionId, cardId) {
   
   const card = session.cards.find(c => c.id === cardId);
   if (!card || !card.finalAnswer) {
-    showToast('此卡片尚無內容');
+    showToast(t('messages.noContent'));
     return;
   }
   
   // Update editor content
   editor.innerHTML = markdownToHtml(card.finalAnswer);
-  docTitle.textContent = card.query.slice(0, 30) || '任務卡片';
+  docTitle.textContent = card.query.slice(0, 30) || t('canvas.title');
   currentDocId = `session-${sessionId}-card-${cardId}`;
   
-  showToast('已載入卡片內容');
+  showToast(t('messages.imported'));
 }
 
 // Initialize tree view event listeners
