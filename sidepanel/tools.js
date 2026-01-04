@@ -14,7 +14,7 @@
 const TOOL_DEFINITIONS = {
   query_council: {
     name: 'query_council',
-    description: '並行查詢多個 LLM 模型獲取初步回答。適用於需要多元觀點的問題。',
+    description: '並行查詢多個 LLM 模型獲取初步回答。適用於需要多元觀點的問題。支援異質任務分配。',
     parameters: {
       type: 'object',
       properties: {
@@ -31,6 +31,14 @@ const TOOL_DEFINITIONS = {
           type: 'boolean',
           default: true,
           description: '是否在 prompt 中要求模型提供搜尋建議'
+        },
+        skillId: {
+          type: 'string',
+          description: '套用的 skill ID（用於異質任務分配）'
+        },
+        taskDescription: {
+          type: 'string',
+          description: '具體任務描述（用於異質任務分配）'
         }
       },
       required: ['query']
@@ -65,7 +73,7 @@ const TOOL_DEFINITIONS = {
   
   peer_review: {
     name: 'peer_review',
-    description: '讓模型匿名互評其他模型的回答，產出排名與評語。適用於需要品質篩選的複雜問題。',
+    description: '讓模型匿名互評其他模型的回答，產出排名與評語。支援加權整合評估。',
     parameters: {
       type: 'object',
       properties: {
@@ -75,14 +83,26 @@ const TOOL_DEFINITIONS = {
             type: 'object',
             properties: {
               model: { type: 'string' },
-              content: { type: 'string' }
+              content: { type: 'string' },
+              task: { type: 'string' },
+              weight: { type: 'number' }
             }
           },
-          description: '要評審的回答列表'
+          description: '要評審的回答列表（含任務和權重資訊）'
         },
         query: {
           type: 'string',
           description: '原始問題'
+        },
+        modelWeights: {
+          type: 'object',
+          description: '模型權重映射 (model -> weight)'
+        },
+        evaluationMode: {
+          type: 'string',
+          enum: ['standard', 'weighted', 'contribution'],
+          default: 'standard',
+          description: '評估模式：standard=傳統互評, weighted=加權評估, contribution=貢獻度評估'
         }
       },
       required: ['responses', 'query']
@@ -249,6 +269,62 @@ class ToolRegistry {
 const toolRegistry = new ToolRegistry();
 
 /**
+ * Calculate contribution scores for heterogeneous task responses
+ * Evaluates how much each response contributes to the final answer
+ */
+function calculateContributionScores(taskGroups, responses, reviews) {
+  const contributions = new Map();
+  
+  // For each task group, evaluate contribution
+  for (const [taskKey, taskResponses] of taskGroups) {
+    const taskWeight = taskResponses[0]?.weight || 1.0 / taskGroups.size;
+    
+    // Within-task ranking
+    const taskScores = new Map();
+    for (const r of taskResponses) {
+      // Find this model's ranking from reviews
+      let rankScore = 0;
+      for (const review of reviews) {
+        if (review.rankings) {
+          const idx = responses.findIndex(resp => resp.model === r.model);
+          if (idx >= 0 && review.rankings[idx]) {
+            rankScore += (responses.length - review.rankings[idx].rank);
+          }
+        }
+      }
+      taskScores.set(r.model, rankScore);
+    }
+    
+    // Normalize within task
+    const maxTaskScore = Math.max(...taskScores.values()) || 1;
+    
+    for (const [model, score] of taskScores) {
+      const normalizedScore = score / maxTaskScore;
+      const contribution = taskWeight * normalizedScore;
+      
+      const existing = contributions.get(model) || { total: 0, tasks: [] };
+      existing.total += contribution;
+      existing.tasks.push({
+        task: taskKey,
+        weight: taskWeight,
+        score: normalizedScore,
+        contribution
+      });
+      contributions.set(model, existing);
+    }
+  }
+  
+  // Sort by total contribution
+  return Array.from(contributions.entries())
+    .map(([model, data]) => ({
+      model,
+      totalContribution: data.total,
+      taskBreakdown: data.tasks
+    }))
+    .sort((a, b) => b.totalContribution - a.totalContribution);
+}
+
+/**
  * Create tool executors that wrap existing MAV functions
  * These will be called from the main app.js to register implementations
  */
@@ -337,14 +413,31 @@ function createToolExecutors(appContext) {
     },
     
     /**
-     * Peer Review - anonymous cross-evaluation
+     * Peer Review - anonymous cross-evaluation with weighted scoring
      */
     peer_review: async (params, context) => {
-      const { responses, query } = params;
+      const { responses, query, modelWeights = {}, evaluationMode = 'standard' } = params;
+      
+      console.log('[PeerReview] Starting with mode:', evaluationMode, {
+        responseCount: responses?.length,
+        hasWeights: Object.keys(modelWeights).length > 0
+      });
       
       if (!responses || responses.length < 2) {
         throw new Error('Need at least 2 responses for peer review');
       }
+      
+      // Group responses by task for heterogeneous evaluation
+      const taskGroups = new Map();
+      for (const r of responses) {
+        const taskKey = r.task || 'default';
+        if (!taskGroups.has(taskKey)) {
+          taskGroups.set(taskKey, []);
+        }
+        taskGroups.get(taskKey).push(r);
+      }
+      
+      console.log('[PeerReview] Task groups:', Array.from(taskGroups.keys()));
       
       // Run reviews in parallel
       const reviewResults = await Promise.allSettled(
@@ -356,7 +449,7 @@ function createToolExecutors(appContext) {
         .filter(r => r.status === 'fulfilled' && r.value)
         .map(r => r.value);
       
-      // Calculate aggregated ranking
+      // Calculate aggregated ranking (standard)
       const scores = new Map();
       for (const review of reviews) {
         if (review.rankings) {
@@ -374,34 +467,108 @@ function createToolExecutors(appContext) {
         .sort((a, b) => b[1] - a[1])
         .map(([model, score]) => ({ model, score }));
       
+      // Calculate weighted ranking if weights provided
+      let weightedRanking = null;
+      if (evaluationMode === 'weighted' || Object.keys(modelWeights).length > 0) {
+        const weightedScores = new Map();
+        
+        for (const { model, score } of aggregatedRanking) {
+          const response = responses.find(r => r.model === model);
+          const taskWeight = response?.weight || modelWeights[model] || 1.0;
+          
+          // Normalized peer rank (0-1)
+          const maxScore = aggregatedRanking[0]?.score || 1;
+          const normalizedRank = score / maxScore;
+          
+          // Weighted score = taskWeight × peerRank
+          const weightedScore = taskWeight * normalizedRank;
+          weightedScores.set(model, weightedScore);
+        }
+        
+        weightedRanking = Array.from(weightedScores.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(([model, score]) => ({
+            model,
+            score,
+            taskWeight: responses.find(r => r.model === model)?.weight || modelWeights[model] || 1.0,
+            peerRank: scores.get(model) || 0
+          }));
+      }
+      
+      // Calculate contribution scores for heterogeneous tasks
+      let contributionScores = null;
+      if (evaluationMode === 'contribution' && taskGroups.size > 1) {
+        contributionScores = calculateContributionScores(taskGroups, responses, reviews);
+      }
+      
+      // Determine winner (for chairman rotation)
+      const winner = weightedRanking?.[0]?.model || aggregatedRanking[0]?.model || null;
+      
+      console.log('[PeerReview] Complete:', {
+        reviewCount: reviews.length,
+        winner,
+        evaluationMode,
+        hasWeightedRanking: weightedRanking !== null,
+        hasContributionScores: contributionScores !== null
+      });
+      
+      if (weightedRanking) {
+        console.log('[PeerReview] Weighted ranking:', weightedRanking.slice(0, 3));
+      }
+      
       return {
         reviews,
         aggregatedRanking,
-        reviewCount: reviews.length
+        weightedRanking,
+        contributionScores,
+        reviewCount: reviews.length,
+        winner,
+        evaluationMode
       };
     },
     
     /**
-     * Synthesize - chairman synthesis
+     * Synthesize - chairman synthesis with weighted integration
      */
     synthesize: async (params, context) => {
-      const { query, responses, reviews, searches, includeSearchStrategy = false } = params;
+      const { 
+        query, 
+        responses, 
+        reviews, 
+        searches, 
+        includeSearchStrategy = false,
+        useWeightedIntegration = false,
+        chairmanOverride = null
+      } = params;
       
-      const aggregatedRanking = reviews?.aggregatedRanking || null;
+      // Use weighted ranking if available
+      const ranking = reviews?.weightedRanking || reviews?.aggregatedRanking || null;
       const searchResults = searches || null;
+      
+      // Allow chairman override for dynamic rotation
+      const synthesisChairman = chairmanOverride || chairmanModel;
+      
+      // For heterogeneous tasks, prepare enhanced context
+      let synthesisContext = null;
+      if (useWeightedIntegration && reviews?.contributionScores) {
+        synthesisContext = formatContributionContext(reviews.contributionScores, responses);
+      }
       
       const result = await runChairman(
         query, 
         responses, 
-        aggregatedRanking, 
+        ranking, 
         includeSearchStrategy,
         null, // executingCardId
-        searchResults
+        searchResults,
+        synthesisContext // Additional context for weighted integration
       );
       
       return {
         content: result,
-        chairmanModel: chairmanModel
+        chairmanModel: synthesisChairman,
+        usedWeightedIntegration: useWeightedIntegration,
+        winner: reviews?.winner || null
       };
     },
     
@@ -433,6 +600,31 @@ function registerToolExecutors(appContext) {
   return toolRegistry;
 }
 
+/**
+ * Format contribution scores as context for chairman synthesis
+ */
+function formatContributionContext(contributionScores, responses) {
+  if (!contributionScores || contributionScores.length === 0) {
+    return null;
+  }
+  
+  let context = '\n\n## 模型貢獻度分析\n\n';
+  context += '以下是各模型對不同任務的貢獻度評估：\n\n';
+  
+  for (const { model, totalContribution, taskBreakdown } of contributionScores) {
+    context += `### ${model} (總貢獻: ${(totalContribution * 100).toFixed(1)}%)\n`;
+    
+    for (const task of taskBreakdown) {
+      context += `- ${task.task}: 權重 ${(task.weight * 100).toFixed(0)}%, 表現 ${(task.score * 100).toFixed(0)}%, 貢獻 ${(task.contribution * 100).toFixed(1)}%\n`;
+    }
+    context += '\n';
+  }
+  
+  context += '請基於上述貢獻度分析，整合各模型的優質內容，權重較高的任務應優先考慮。\n';
+  
+  return context;
+}
+
 // Export for use in other modules
 if (typeof window !== 'undefined') {
   window.MAVTools = {
@@ -440,7 +632,9 @@ if (typeof window !== 'undefined') {
     ToolRegistry,
     toolRegistry,
     createToolExecutors,
-    registerToolExecutors
+    registerToolExecutors,
+    calculateContributionScores,
+    formatContributionContext
   };
 }
 

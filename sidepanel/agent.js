@@ -1,10 +1,12 @@
 // ============================================
 // MAV Agent Framework - Agent Loop Core
+// Multi-Agent Orchestration Support
 // ============================================
 
 /**
  * Agent execution context
  * Maintains state across iterations
+ * Extended for Multi-Agent Orchestration
  */
 class AgentContext {
   constructor(query, settings = {}) {
@@ -25,9 +27,130 @@ class AgentContext {
     this.skill = settings.skill || null;
     this.plannerModel = settings.plannerModel || null;
     
+    // Multi-Agent Orchestration
+    this.assignmentPlan = settings.assignmentPlan || null;
+    this.currentChairman = settings.chairmanModel || null;
+    this.chairmanHistory = [];
+    this.roundWinner = null;
+    
+    // Grouped responses by task (for heterogeneous plans)
+    this.taskResponses = new Map(); // taskId -> responses[]
+    this.modelWeights = new Map();  // model -> weight
+    this.modelStrengths = new Map(); // model -> strength score (from reviews)
+    
     // Flags
     this.completed = false;
     this.cancelled = false;
+  }
+  
+  /**
+   * Set assignment plan and initialize weights
+   */
+  setAssignmentPlan(plan) {
+    this.assignmentPlan = plan;
+    
+    console.log('[AgentContext] Assignment plan set:', {
+      strategy: plan?.strategy,
+      assignmentCount: plan?.assignments?.length
+    });
+    
+    // Initialize model weights from plan
+    if (plan && plan.assignments) {
+      for (const assignment of plan.assignments) {
+        this.modelWeights.set(assignment.model, assignment.weight || 0);
+      }
+      console.log('[AgentContext] Model weights:', Object.fromEntries(this.modelWeights));
+    }
+  }
+  
+  /**
+   * Get assignment for a specific model
+   */
+  getAssignment(model) {
+    if (!this.assignmentPlan) return null;
+    return this.assignmentPlan.assignments.find(a => a.model === model) || null;
+  }
+  
+  /**
+   * Group responses by their assigned task
+   */
+  groupResponsesByTask() {
+    if (!this.assignmentPlan) {
+      // No plan, all responses are for same task
+      this.taskResponses.set('default', [...this.responses]);
+      return;
+    }
+    
+    this.taskResponses.clear();
+    
+    for (const response of this.responses) {
+      const assignment = this.getAssignment(response.model);
+      const taskKey = assignment?.task || 'default';
+      
+      if (!this.taskResponses.has(taskKey)) {
+        this.taskResponses.set(taskKey, []);
+      }
+      this.taskResponses.get(taskKey).push(response);
+    }
+  }
+  
+  /**
+   * Update model strength score from peer review
+   */
+  updateModelStrength(model, score) {
+    const current = this.modelStrengths.get(model) || 0;
+    this.modelStrengths.set(model, current + score);
+  }
+  
+  /**
+   * Get weighted score for a model
+   * finalScore = taskWeight × modelStrength × peerRank
+   */
+  getWeightedScore(model, peerRank) {
+    const weight = this.modelWeights.get(model) || 1.0;
+    const strength = this.modelStrengths.get(model) || 1.0;
+    return weight * strength * peerRank;
+  }
+  
+  /**
+   * Determine round winner based on peer review results
+   */
+  determineRoundWinner() {
+    if (!this.reviews?.aggregatedRanking?.length) {
+      console.log('[AgentContext] No ranking data to determine winner');
+      return null;
+    }
+    
+    // Get model with highest weighted score
+    let bestModel = null;
+    let bestScore = -1;
+    
+    for (const { model, score } of this.reviews.aggregatedRanking) {
+      const weightedScore = this.getWeightedScore(model, score);
+      if (weightedScore > bestScore) {
+        bestScore = weightedScore;
+        bestModel = model;
+      }
+    }
+    
+    this.roundWinner = bestModel;
+    console.log('[AgentContext] Round winner determined:', bestModel, 'with score:', bestScore);
+    return bestModel;
+  }
+  
+  /**
+   * Promote round winner to Chairman for next round
+   */
+  promoteWinnerToChairman() {
+    if (this.roundWinner) {
+      const previousChairman = this.currentChairman;
+      this.chairmanHistory.push(this.currentChairman);
+      this.currentChairman = this.roundWinner;
+      console.log('[AgentContext] Chairman promoted:', previousChairman, '→', this.currentChairman);
+      return this.currentChairman;
+    }
+    console.log('[AgentContext] No winner to promote');
+    return null;
   }
   
   /**
@@ -57,7 +180,13 @@ class AgentContext {
       searchCount: this.searches.length,
       lastActions: this.history.slice(-3).map(h => h.action.tool),
       elapsedTime: Date.now() - this.startTime,
-      skill: this.skill?.id || null
+      skill: this.skill?.id || null,
+      // Multi-Agent Orchestration info
+      hasAssignmentPlan: this.assignmentPlan !== null,
+      assignmentStrategy: this.assignmentPlan?.strategy || null,
+      currentChairman: this.currentChairman,
+      roundWinner: this.roundWinner,
+      taskCount: this.taskResponses.size
     };
   }
   
@@ -72,6 +201,10 @@ class AgentContext {
     switch (toolName) {
       case 'query_council':
         this.responses = data.responses || [];
+        // Group responses by task if we have an assignment plan
+        if (this.assignmentPlan) {
+          this.groupResponsesByTask();
+        }
         break;
         
       case 'web_search':
@@ -85,8 +218,21 @@ class AgentContext {
       case 'peer_review':
         this.reviews = {
           reviews: data.reviews,
-          aggregatedRanking: data.aggregatedRanking
+          aggregatedRanking: data.aggregatedRanking,
+          weightedRanking: data.weightedRanking || null
         };
+        
+        // Update model strengths from peer review
+        if (data.aggregatedRanking) {
+          const maxScore = data.aggregatedRanking[0]?.score || 1;
+          for (const { model, score } of data.aggregatedRanking) {
+            // Normalize to 0-1 range
+            this.updateModelStrength(model, score / maxScore);
+          }
+        }
+        
+        // Determine round winner for chairman rotation
+        this.determineRoundWinner();
         break;
         
       case 'synthesize':
@@ -96,6 +242,10 @@ class AgentContext {
         
       case 'final_answer':
         this.completed = true;
+        // If completing a round, promote winner to chairman
+        if (this.roundWinner && this.assignmentPlan) {
+          this.promoteWinnerToChairman();
+        }
         break;
     }
   }
@@ -120,6 +270,7 @@ class AgentContext {
 
 /**
  * Agent Loop - Core reasoning loop implementation
+ * Extended for Multi-Agent Orchestration
  */
 class AgentLoop {
   constructor(config = {}) {
@@ -128,6 +279,9 @@ class AgentLoop {
     this.maxIterations = config.maxIterations || 10;
     this.plannerModel = config.plannerModel || null;
     
+    // Orchestrator for multi-agent mode
+    this.orchestrator = config.orchestrator || null;
+    
     // Callbacks for UI updates
     this.onIterationStart = config.onIterationStart || (() => {});
     this.onToolStart = config.onToolStart || (() => {});
@@ -135,6 +289,11 @@ class AgentLoop {
     this.onIterationEnd = config.onIterationEnd || (() => {});
     this.onComplete = config.onComplete || (() => {});
     this.onError = config.onError || (() => {});
+    
+    // Orchestration callbacks
+    this.onAssignmentPlan = config.onAssignmentPlan || (() => {});
+    this.onChairmanChange = config.onChairmanChange || (() => {});
+    this.onSkillSelected = config.onSkillSelected || (() => {});
   }
   
   /**
@@ -142,6 +301,13 @@ class AgentLoop {
    */
   setPlanner(planner) {
     this.planner = planner;
+  }
+  
+  /**
+   * Set the orchestrator instance
+   */
+  setOrchestrator(orchestrator) {
+    this.orchestrator = orchestrator;
   }
   
   /**
@@ -158,6 +324,9 @@ class AgentLoop {
     if (skill.plannerHint && this.planner) {
       this.planner.setSkillHint(skill.plannerHint);
     }
+    
+    // Notify UI
+    this.onSkillSelected(skill);
   }
   
   /**
@@ -170,12 +339,29 @@ class AgentLoop {
     const context = new AgentContext(query, {
       maxIterations: this.maxIterations,
       skill: options.skill,
-      plannerModel: this.plannerModel
+      plannerModel: this.plannerModel,
+      chairmanModel: options.chairmanModel,
+      assignmentPlan: options.assignmentPlan
     });
     
     // Apply skill if provided
     if (options.skill) {
       this.applySkill(options.skill);
+    }
+    
+    // If orchestrator is available and no assignment plan provided, create one
+    if (this.orchestrator && !options.assignmentPlan && options.useOrchestration !== false) {
+      try {
+        const analysis = await this.orchestrator.analyzeTask(query, options.context || {});
+        const plan = await this.orchestrator.createAssignmentPlan(analysis, options.models);
+        context.setAssignmentPlan(plan);
+        context.currentChairman = this.orchestrator.getChairman();
+        
+        // Notify UI of assignment plan
+        this.onAssignmentPlan(plan, analysis);
+      } catch (err) {
+        console.warn('Orchestrator failed, falling back to standard flow:', err);
+      }
     }
     
     try {
@@ -458,12 +644,86 @@ class SimpleAgent extends AgentLoop {
   }
 }
 
+/**
+ * Orchestrated Agent Loop
+ * Extended for full Multi-Agent orchestration with heterogeneous task execution
+ */
+class OrchestratedAgentLoop extends AgentLoop {
+  constructor(config = {}) {
+    super(config);
+    
+    // Ensure orchestrator is available
+    if (!this.orchestrator && window.MAVOrchestrator) {
+      this.orchestrator = new window.MAVOrchestrator.Orchestrator();
+    }
+  }
+  
+  /**
+   * Run with full orchestration support
+   */
+  async runOrchestrated(query, options = {}) {
+    const { models, chairmanModel, context: appContext = {} } = options;
+    
+    // Setup orchestrator
+    if (this.orchestrator) {
+      this.orchestrator.setChairman(chairmanModel);
+      this.orchestrator.setAvailableModels(models);
+    }
+    
+    // Force orchestration mode
+    return this.run(query, {
+      ...options,
+      useOrchestration: true,
+      chairmanModel
+    });
+  }
+  
+  /**
+   * Execute with assignment plan - supports heterogeneous tasks
+   */
+  async executeWithPlan(plan, query, context) {
+    const taskGroups = plan.getTaskGroups();
+    const allResponses = [];
+    
+    // Execute each task group
+    for (const [taskKey, assignments] of taskGroups) {
+      const models = assignments.map(a => a.model);
+      const skill = assignments[0]?.skill || 'quick-answer';
+      const task = assignments[0]?.task || query;
+      
+      // Build task-specific query if different from main query
+      const taskQuery = task !== query ? `${task}\n\n原始問題: ${query}` : query;
+      
+      // Execute query_council for this task group
+      const result = await this.toolRegistry.execute('query_council', {
+        query: taskQuery,
+        models,
+        skillId: skill
+      }, context);
+      
+      if (result.success) {
+        // Tag responses with their task
+        const responses = (result.data.responses || []).map(r => ({
+          ...r,
+          task: taskKey,
+          skill,
+          weight: assignments.find(a => a.model === r.model)?.weight || 0
+        }));
+        allResponses.push(...responses);
+      }
+    }
+    
+    return allResponses;
+  }
+}
+
 // Export for use in other modules
 if (typeof window !== 'undefined') {
   window.MAVAgent = {
     AgentContext,
     AgentLoop,
-    SimpleAgent
+    SimpleAgent,
+    OrchestratedAgentLoop
   };
 }
 

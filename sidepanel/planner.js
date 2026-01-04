@@ -1,5 +1,6 @@
 // ============================================
 // MAV Agent Framework - Planner Module
+// Multi-Agent Orchestration Support
 // ============================================
 
 /**
@@ -93,6 +94,7 @@ ${params || '    （無參數）'}`;
 
 /**
  * Build the planning prompt with current context
+ * Extended for Multi-Agent Orchestration
  */
 function buildPlanningPrompt(context, skillHint = null) {
   const summary = context.getSummary();
@@ -106,6 +108,18 @@ function buildPlanningPrompt(context, skillHint = null) {
 - 已執行搜尋: ${summary.hasSearches ? `是 (${summary.searchCount} 次)` : '否'}
 - 最近行動: ${summary.lastActions.length > 0 ? summary.lastActions.join(' → ') : '無'}
 - 已用時間: ${Math.round(summary.elapsedTime / 1000)}秒`;
+
+  // Add orchestration info if available
+  if (summary.hasAssignmentPlan) {
+    prompt += `\n\n## 任務分配
+- 分配策略: ${summary.assignmentStrategy}
+- 當前 Chairman: ${summary.currentChairman || '未設定'}
+- 任務組數: ${summary.taskCount || 1}`;
+    
+    if (summary.roundWinner) {
+      prompt += `\n- 本輪互評勝者: ${summary.roundWinner}`;
+    }
+  }
 
   if (skillHint) {
     prompt += `\n\n## 技能提示\n${skillHint}`;
@@ -401,7 +415,7 @@ class Planner {
 /**
  * Rule-based Planner - uses predefined rules instead of LLM
  * More predictable and doesn't consume tokens
- * Now respects skill.preferredTools to customize behavior
+ * Now respects skill.preferredTools and orchestration to customize behavior
  */
 class RuleBasedPlanner {
   constructor(config = {}) {
@@ -409,6 +423,8 @@ class RuleBasedPlanner {
     this.preferredTools = null;
     this.skill = null;
     this.customRules = config.rules || null;
+    this.orchestrator = config.orchestrator || null;
+    this.useWeightedEvaluation = config.useWeightedEvaluation !== false;
   }
   
   setSkillHint(hint) {
@@ -434,11 +450,18 @@ class RuleBasedPlanner {
   }
   
   /**
+   * Set orchestrator for dynamic chairman management
+   */
+  setOrchestrator(orchestrator) {
+    this.orchestrator = orchestrator;
+  }
+  
+  /**
    * Plan using rules
    */
   async plan(context) {
     const summary = context.getSummary();
-    const rules = this.customRules || this._buildRulesFromSkill();
+    const rules = this.customRules || this._buildRulesFromSkill(context);
     
     for (const rule of rules) {
       if (rule.condition(summary, context, this)) {
@@ -455,13 +478,17 @@ class RuleBasedPlanner {
   }
   
   /**
-   * Build rules dynamically based on skill.preferredTools
+   * Build rules dynamically based on skill.preferredTools and orchestration
    */
-  _buildRulesFromSkill() {
+  _buildRulesFromSkill(context) {
     const preferred = this.preferredTools || ['query_council', 'peer_review', 'synthesize'];
     const hasWebSearch = preferred.includes('web_search');
     const hasPeerReview = preferred.includes('peer_review');
     const webSearchFirst = hasWebSearch && preferred.indexOf('web_search') === 0;
+    
+    // Check for orchestration mode
+    const hasOrchestration = context?.assignmentPlan !== null;
+    const useWeighted = this.useWeightedEvaluation && hasOrchestration;
     
     const rules = [];
     
@@ -522,19 +549,40 @@ class RuleBasedPlanner {
       });
     }
     
-    // Rule: Peer review only if skill allows
+    // Rule: Peer review with weighted evaluation support
     if (hasPeerReview) {
       rules.push({
         condition: (s, ctx) => s.hasResponses && !s.hasReviews && s.responseCount >= 2 && ctx.reviews === null,
-        action: (s, ctx) => ({
-          tool: 'peer_review',
-          parameters: { responses: ctx.responses, query: ctx.query },
-          reasoning: 'Running peer review'
-        })
+        action: (s, ctx, planner) => {
+          // Build model weights from context if available
+          const modelWeights = {};
+          if (ctx.modelWeights) {
+            for (const [model, weight] of ctx.modelWeights) {
+              modelWeights[model] = weight;
+            }
+          }
+          
+          // Determine evaluation mode
+          let evaluationMode = 'standard';
+          if (useWeighted && ctx.assignmentPlan?.strategy !== 'homogeneous') {
+            evaluationMode = ctx.taskResponses?.size > 1 ? 'contribution' : 'weighted';
+          }
+          
+          return {
+            tool: 'peer_review',
+            parameters: {
+              responses: ctx.responses,
+              query: ctx.query,
+              modelWeights,
+              evaluationMode
+            },
+            reasoning: `Running peer review (mode: ${evaluationMode})`
+          };
+        }
       });
     }
     
-    // Rule: Synthesize when we have responses
+    // Rule: Synthesize with weighted integration support
     rules.push({
       condition: (s) => {
         if (!s.hasResponses) return false;
@@ -542,16 +590,30 @@ class RuleBasedPlanner {
         if (hasPeerReview && !s.hasReviews && s.responseCount >= 2) return false;
         return true;
       },
-      action: (s, ctx) => ({
-        tool: 'synthesize',
-        parameters: {
-          query: ctx.query,
-          responses: ctx.responses,
-          reviews: ctx.reviews,
-          searches: ctx.searches
-        },
-        reasoning: 'Synthesizing final answer'
-      })
+      action: (s, ctx, planner) => {
+        // Determine if we should use weighted integration
+        const shouldUseWeighted = useWeighted && 
+          ctx.reviews?.weightedRanking !== null && 
+          ctx.assignmentPlan?.strategy !== 'homogeneous';
+        
+        // Get dynamic chairman if available (winner from peer review)
+        const chairmanOverride = ctx.roundWinner || null;
+        
+        return {
+          tool: 'synthesize',
+          parameters: {
+            query: ctx.query,
+            responses: ctx.responses,
+            reviews: ctx.reviews,
+            searches: ctx.searches,
+            useWeightedIntegration: shouldUseWeighted,
+            chairmanOverride
+          },
+          reasoning: shouldUseWeighted 
+            ? 'Synthesizing with weighted integration' 
+            : 'Synthesizing final answer'
+        };
+      }
     });
     
     // Rule: Max iterations reached
@@ -578,6 +640,32 @@ function createPlanner(config = {}) {
   return new RuleBasedPlanner(config);
 }
 
+/**
+ * Orchestrated Planner - integrates with Orchestrator for dynamic chairman
+ */
+class OrchestratedPlanner extends RuleBasedPlanner {
+  constructor(config = {}) {
+    super(config);
+    this.orchestrator = config.orchestrator || null;
+  }
+  
+  /**
+   * Override plan to support chairman rotation
+   */
+  async plan(context) {
+    // Before planning, update chairman if we have a new winner
+    if (this.orchestrator && context.roundWinner && context.reviews) {
+      const newChairman = this.orchestrator.promoteToChairman(context.roundWinner);
+      if (newChairman !== context.currentChairman) {
+        console.log(`Chairman rotated: ${context.currentChairman} → ${newChairman}`);
+        context.currentChairman = newChairman;
+      }
+    }
+    
+    return super.plan(context);
+  }
+}
+
 // Export for use in other modules
 if (typeof window !== 'undefined') {
   window.MAVPlanner = {
@@ -587,6 +675,7 @@ if (typeof window !== 'undefined') {
     parsePlannerResponse,
     Planner,
     RuleBasedPlanner,
+    OrchestratedPlanner,
     createPlanner
   };
 }

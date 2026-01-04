@@ -1802,6 +1802,12 @@ const branchImageBtn = document.getElementById('branchImageBtn');
 const branchVisionBtn = document.getElementById('branchVisionBtn');
 const branchCanvasBtn = document.getElementById('branchCanvasBtn');
 
+// Skill badge elements
+const skillBadge = document.getElementById('skillBadge');
+const skillBadgeIcon = document.getElementById('skillBadgeIcon');
+const skillBadgeName = document.getElementById('skillBadgeName');
+const skillBadgeStrategy = document.getElementById('skillBadgeStrategy');
+
 // Task Planner / TODO elements
 const todoSection = document.getElementById('todoSection');
 const todoCount = document.getElementById('todoCount');
@@ -2043,6 +2049,86 @@ function autoGrowTextarea() {
   // Set height to scrollHeight, clamped by CSS min/max
   const newHeight = Math.min(Math.max(queryInput.scrollHeight, 56), 180);
   queryInput.style.height = newHeight + 'px';
+}
+
+// ============================================
+// Skill Badge Display
+// ============================================
+
+/**
+ * Update skill badge display
+ * @param {Object|null} skill - The skill object (null to hide)
+ * @param {string|null} strategy - Assignment strategy ('homogeneous', 'heterogeneous', 'mixed')
+ */
+function updateSkillBadge(skill, strategy = null) {
+  if (!skillBadge) return;
+  
+  if (!skill) {
+    skillBadge.classList.add('hidden');
+    console.log('[Skill] Badge hidden');
+    return;
+  }
+  
+  // Show badge
+  skillBadge.classList.remove('hidden');
+  
+  // Set skill icon and name
+  if (skillBadgeIcon) {
+    skillBadgeIcon.textContent = skill.icon || '✨';
+  }
+  if (skillBadgeName) {
+    skillBadgeName.textContent = skill.name || skill.id || 'Unknown';
+  }
+  
+  // Set strategy if provided
+  if (skillBadgeStrategy) {
+    if (strategy && strategy !== 'homogeneous') {
+      skillBadgeStrategy.textContent = strategy === 'heterogeneous' ? '異質分工' : '混合模式';
+      skillBadgeStrategy.classList.remove('hidden');
+      skillBadge.setAttribute('data-strategy', strategy);
+    } else {
+      skillBadgeStrategy.classList.add('hidden');
+      skillBadge.removeAttribute('data-strategy');
+    }
+  }
+  
+  console.log('[Skill] Badge updated:', {
+    id: skill.id,
+    name: skill.name,
+    icon: skill.icon,
+    strategy: strategy || 'homogeneous'
+  });
+}
+
+/**
+ * Detect and show skill badge based on current query
+ */
+function detectAndShowSkillBadge() {
+  const query = queryInput.value.trim();
+  if (!query || query.length < 3) {
+    updateSkillBadge(null);
+    return;
+  }
+  
+  // Use SkillSelector if available
+  const skillSelector = window.MAVSkills?.skillSelector;
+  if (skillSelector) {
+    const settings = {
+      visionMode: visionMode,
+      learnerMode: learnerMode
+    };
+    console.log('[Skill] Detecting skill for query:', query.substring(0, 50) + '...', { settings });
+    const selectedSkill = skillSelector.select(query, settings);
+    if (selectedSkill) {
+      console.log('[Skill] Selected:', selectedSkill.id, selectedSkill.name);
+      updateSkillBadge(selectedSkill);
+    } else {
+      console.log('[Skill] No matching skill found');
+      updateSkillBadge(null);
+    }
+  } else {
+    console.warn('[Skill] SkillSelector not available');
+  }
 }
 
 // ============================================
@@ -2333,8 +2419,13 @@ function setupEventListeners() {
   newChatBtn.addEventListener('click', startNewChat);
   dismissError.addEventListener('click', () => errorBanner.classList.add('hidden'));
   
-  // Auto-grow textarea
-  queryInput.addEventListener('input', autoGrowTextarea);
+  // Auto-grow textarea and detect skill
+  queryInput.addEventListener('input', () => {
+    autoGrowTextarea();
+    // Debounce skill detection
+    clearTimeout(window._skillDetectTimeout);
+    window._skillDetectTimeout = setTimeout(detectAndShowSkillBadge, 300);
+  });
   autoGrowTextarea(); // Initial sizing
 
   // Image toggle
@@ -4921,6 +5012,7 @@ async function executeNewSession() {
   // Reset UI
   queryInput.value = '';
   autoGrowTextarea();
+  updateSkillBadge(null); // Hide skill badge
   emptyState.classList.remove('hidden');
   stage1Section.classList.add('hidden');
   stage2Section.classList.add('hidden');

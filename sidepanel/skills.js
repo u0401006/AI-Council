@@ -359,8 +359,11 @@ class SkillSelector {
    * @returns {Object} - Selected skill
    */
   select(query, settings = {}) {
+    console.log('[SkillSelector] Selecting skill for query:', query.substring(0, 40) + '...', { settings });
+    
     // Check educator first (settings-based trigger)
     if (this.skills.educator.trigger(query, settings)) {
+      console.log('[SkillSelector] Matched: educator (settings-based)');
       return this.skills.educator;
     }
     
@@ -379,10 +382,12 @@ class SkillSelector {
     for (const skillId of skillPriority) {
       const skill = this.skills[skillId];
       if (skill && skill.trigger(query, settings)) {
+        console.log('[SkillSelector] Matched:', skillId, skill.name);
         return skill;
       }
     }
     
+    console.log('[SkillSelector] No match, using default:', this.defaultSkill?.id);
     return this.defaultSkill;
   }
   
