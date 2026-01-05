@@ -64,7 +64,7 @@ window.LOCALE_ZH_TW = {
     
     // Options Section
     optionsSection: '選項',
-    enableReviewLabel: '啟用互評審查（階段 2）',
+    enableReviewLabel: '啟用互評審查',
     enableReviewHint: '停用可節省 API 費用，但會跳過模型排名',
     maxSearchLabel: '網搜迭代上限',
     maxSearchHint: '單次對話中 AI 可建議網搜的最大次數',
@@ -110,10 +110,10 @@ window.LOCALE_ZH_TW = {
     promptsSection: '提示詞範本',
     resetPromptsBtn: '重設為預設',
     promptsHint: '自訂給 AI 模型的指令。可用變數：<code>{query}</code> 使用者問題、<code>{responses}</code> 模型回應、<code>{ranking}</code> 審查排名。',
-    reviewPromptLabel: '審查提示詞（階段 2）',
+    reviewPromptLabel: '審查提示詞',
     reviewPromptHint: '模型互相評估回應的指令',
     reviewPromptPlaceholder: '輸入審查指令...',
-    chairmanPromptLabel: '主席提示詞（階段 3）',
+    chairmanPromptLabel: '主席提示詞',
     chairmanPromptHint: '主席彙整最終答案的指令',
     chairmanPromptPlaceholder: '輸入主席指令...',
     
@@ -182,14 +182,10 @@ window.LOCALE_ZH_TW = {
     stepReview: '審查',
     stepSynthesis: '彙整',
     
-    // Stages
-    stage1Label: '階段 1',
+    // Stages (no numbered labels, icon-based UI)
     stage1Title: '模型回應',
-    stage2Label: '階段 2',
     stage2Title: '互評審查',
-    stage3Label: '階段 3',
     stage3Title: '搜尋選擇',
-    stage4Label: '階段 4',
     stage4Title: '主席彙整',
     stageComplete: '完成',
     stageSkipped: '已跳過',
@@ -236,9 +232,9 @@ window.LOCALE_ZH_TW = {
     
     // Conversation Cost
     conversationCostTitle: '本次對話費用',
-    costStage1: '階段 1（模型回應）',
-    costStage2: '階段 2（互評審查）',
-    costStage3: '階段 3（主席彙整）',
+    costStage1: '模型回應',
+    costStage2: '互評審查',
+    costStage3: '主席彙整',
     costImageGen: '圖片生成',
     
     // Export Modal

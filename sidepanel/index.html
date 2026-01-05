@@ -193,7 +193,7 @@
         <span id="skillBadgeName" class="skill-badge-name"></span>
         <span id="skillBadgeStrategy" class="skill-badge-strategy hidden"></span>
       </div>
-      
+
       <textarea 
         id="queryInput" 
         data-i18n-placeholder="sidepanel.inputPlaceholder"
@@ -326,7 +326,6 @@
     <!-- Stage 1: Model Responses -->
     <div id="stage1Section" class="stage-section hidden">
       <div class="stage-header" data-stage="1">
-        <span class="stage-label" data-i18n="sidepanel.stage1Label">階段 1</span>
         <span class="stage-title" data-i18n="sidepanel.stage1Title">模型回應</span>
         <span class="stage-summary" id="stage1Summary"></span>
         <span class="stage-status" id="stage1Status"></span>
@@ -345,7 +344,6 @@
     <!-- Stage 2: Peer Review -->
     <div id="stage2Section" class="stage-section hidden">
       <div class="stage-header" data-stage="2">
-        <span class="stage-label stage-label-secondary" data-i18n="sidepanel.stage2Label">階段 2</span>
         <span class="stage-title" data-i18n="sidepanel.stage2Title">互評審查</span>
         <span class="stage-summary" id="stage2Summary"></span>
         <span class="stage-status" id="stage2Status"></span>
@@ -362,8 +360,7 @@
 
     <!-- Stage 3: Search Options (shown when suggestions available) -->
     <div id="stage25Section" class="stage-section hidden">
-      <div class="stage-header" data-stage="3">
-        <span class="stage-label stage-label-search" data-i18n="sidepanel.stage3Label">階段 3</span>
+      <div class="stage-header" data-stage="search">
         <span class="stage-title" data-i18n="sidepanel.stage3Title">搜尋選擇</span>
         <span class="stage-summary" id="stage25Summary"></span>
         <span class="stage-status" id="stage25Status"></span>
@@ -404,8 +401,7 @@
 
     <!-- Stage 4: Final Answer -->
     <div id="stage3Section" class="stage-section hidden">
-      <div class="stage-header" data-stage="4">
-        <span class="stage-label stage-label-accent" data-i18n="sidepanel.stage4Label">階段 4</span>
+      <div class="stage-header" data-stage="synthesis">
         <span class="stage-title" data-i18n="sidepanel.stage4Title">主席彙整</span>
         <span class="stage-summary" id="stage3Summary"></span>
         <span class="stage-status" id="stage3Status"></span>
@@ -419,6 +415,7 @@
         <div id="finalAnswer" class="final-answer"></div>
         
         <!-- Task Planner Section -->
+        <!-- Unified TODO + Suggested Actions Section -->
         <div id="todoSection" class="todo-section hidden">
           <div class="todo-header">
             <div class="todo-title">
@@ -461,6 +458,28 @@
               </button>
             </div>
           </div>
+          
+          <!-- Suggested Actions (inside TODO section) -->
+          <div id="suggestedActionsPanel" class="todo-suggestions hidden">
+            <div class="todo-suggestions-header">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              </svg>
+              <span data-i18n="sidepanel.suggestedActions">建議下一步</span>
+            </div>
+            <div id="suggestedActionsContent" class="todo-suggestions-content">
+              <!-- Dynamic suggested actions will be rendered here -->
+            </div>
+            <div class="todo-suggestions-input">
+              <input type="text" id="suggestedQuickInput" placeholder="進一步提問..." data-i18n-placeholder="sidepanel.quickInputPlaceholder">
+              <button id="suggestedQuickSubmit" class="quick-submit-btn" title="送出">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
         
         <!-- Conversation Cost Summary -->
@@ -475,21 +494,84 @@
           </div>
           <div class="cost-summary-details">
             <div class="cost-detail-row">
-              <span class="cost-detail-label" data-i18n="sidepanel.costStage1">階段 1（模型回應）</span>
+              <span class="cost-detail-label" data-i18n="sidepanel.costStage1">模型回應</span>
               <span id="costStage1" class="cost-detail-value">$0.0000</span>
             </div>
             <div class="cost-detail-row">
-              <span class="cost-detail-label" data-i18n="sidepanel.costStage2">階段 2（互評審查）</span>
+              <span class="cost-detail-label" data-i18n="sidepanel.costStage2">互評審查</span>
               <span id="costStage2" class="cost-detail-value">$0.0000</span>
             </div>
             <div class="cost-detail-row">
-              <span class="cost-detail-label" data-i18n="sidepanel.costStage3">階段 3（主席彙整）</span>
+              <span class="cost-detail-label" data-i18n="sidepanel.costStage3">主席彙整</span>
               <span id="costStage3" class="cost-detail-value">$0.0000</span>
             </div>
             <div class="cost-detail-row cost-detail-image hidden" id="costImageRow">
               <span class="cost-detail-label" data-i18n="sidepanel.costImageGen">圖片生成</span>
               <span id="costImageGen" class="cost-detail-value">$0.0000</span>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent Execution Status (same level as other stages) -->
+    <div id="agentProgressSection" class="stage-section hidden">
+      <div class="stage-header" data-stage="agent">
+        <span class="stage-title" data-i18n="sidepanel.agentProgress">執行狀態</span>
+        <span class="stage-summary" id="agentProgressSummary"></span>
+        <span id="progressStep" class="stage-status"></span>
+        <button class="toggle-btn" data-target="agentProgressContent">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+      </div>
+      <div id="agentProgressContent" class="stage-content expanded">
+        <div id="progressContent" class="progress-content">
+          <!-- Dynamic progress items will be rendered here -->
+        </div>
+        
+        <!-- Agent Breakpoint Panel (user interaction point) -->
+        <div id="agentBreakpointPanel" class="agent-breakpoint-panel hidden">
+          <div class="breakpoint-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <span class="breakpoint-title">等待確認</span>
+          </div>
+          <div id="breakpointMessage" class="breakpoint-message">
+            <!-- Dynamic message -->
+          </div>
+          <!-- Dynamic options container -->
+          <div id="breakpointOptions" class="breakpoint-options">
+            <!-- Dynamically rendered option buttons -->
+          </div>
+          <!-- Search suggestions (for inputType: search) -->
+          <div id="breakpointSearches" class="breakpoint-searches hidden">
+            <!-- Suggested search buttons -->
+          </div>
+          <!-- Default actions (fallback) -->
+          <div id="breakpointDefaultActions" class="breakpoint-actions">
+            <button id="breakpointProceed" class="breakpoint-btn proceed">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>直接產出結論</span>
+            </button>
+            <button id="breakpointCustom" class="breakpoint-btn custom">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>自訂輸入</span>
+            </button>
+          </div>
+          <!-- Custom input area -->
+          <div id="breakpointCustomInput" class="breakpoint-custom-input hidden">
+            <input type="text" id="breakpointTextInput" placeholder="輸入...">
+            <button id="breakpointTextSubmit" class="breakpoint-text-submit">送出</button>
           </div>
         </div>
       </div>

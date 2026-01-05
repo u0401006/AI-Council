@@ -1031,6 +1031,14 @@ body {
   background: var(--bg-elevated);
 }
 
+/* Stage icons (emoji-based, no number labels) */
+.stage-icon {
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Legacy stage-label (kept for backwards compatibility) */
 .stage-label {
   padding: 0.25rem 0.5rem;
   background: var(--stage-1);
@@ -1052,6 +1060,10 @@ body {
 
 .stage-label-accent {
   background: var(--stage-3);
+}
+
+.stage-label-agent {
+  background: linear-gradient(135deg, #8b5cf6, #a855f7);
 }
 
 .stage-title {
@@ -4997,6 +5009,531 @@ body {
 
 .skill-badge[data-strategy="mixed"] .skill-badge-strategy {
   background: rgba(16, 185, 129, 0.2);
+}
+
+/* Agent Progress Content (inside stage section) */
+#agentProgressContent .progress-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Agent Breakpoint Panel - now inside agent progress section */
+.agent-breakpoint-panel {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(251, 191, 36, 0.08));
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 10px;
+  animation: fadeIn 0.3s ease;
+}
+
+.agent-breakpoint-panel.hidden {
+  display: none;
+}
+
+/* Progress items - now inside #agentProgressContent */
+.progress-content .progress-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  border-left: 3px solid transparent;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.progress-content .progress-item .icon {
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+
+.progress-content .progress-item .label {
+  flex: 1;
+}
+
+.progress-content .progress-item .status {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+.progress-content .progress-item.active,
+.progress-content .progress-item.loading {
+  background: rgba(99, 102, 241, 0.1);
+  border-left-color: var(--accent);
+}
+
+.progress-content .progress-item.done {
+  background: rgba(16, 185, 129, 0.06);
+  border-left-color: #10b981;
+  color: var(--text-secondary);
+}
+
+.progress-content .progress-item.done .icon {
+  color: #10b981;
+}
+
+.progress-content .progress-item.done .status {
+  color: #10b981;
+}
+
+/* Progress loading animation */
+.progress-content .progress-item.loading .status::after {
+  content: '';
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-left: 0.25rem;
+  border: 1px solid transparent;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Progress reasoning text */
+.progress-content .progress-reasoning {
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.375rem;
+  margin-left: 1.5rem;
+  background: rgba(99, 102, 241, 0.08);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  line-height: 1.5;
+}
+
+/* Error state */
+.progress-content .progress-item.error {
+  background: rgba(239, 68, 68, 0.1);
+  border-left-color: #ef4444;
+}
+
+.progress-content .progress-item.error .icon {
+  color: #ef4444;
+}
+
+.progress-content .progress-item.error .status {
+  color: #ef4444;
+  font-weight: 500;
+}
+
+/* Agent Breakpoint Panel */
+.agent-breakpoint-panel {
+  margin-bottom: 0.75rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(251, 191, 36, 0.08));
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 10px;
+  animation: fadeIn 0.3s ease;
+}
+
+.agent-breakpoint-panel.hidden {
+  display: none;
+}
+
+.agent-breakpoint-panel .breakpoint-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  color: #f59e0b;
+}
+
+.agent-breakpoint-panel .breakpoint-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.agent-breakpoint-panel .breakpoint-message {
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+}
+
+.agent-breakpoint-panel .breakpoint-searches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.agent-breakpoint-panel .breakpoint-search-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 20px;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.agent-breakpoint-panel .breakpoint-search-btn:hover {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: #f59e0b;
+  transform: translateY(-1px);
+}
+
+.agent-breakpoint-panel .breakpoint-search-btn::before {
+  content: '🔍';
+  font-size: 0.75rem;
+}
+
+/* Dynamic options container */
+.agent-breakpoint-panel .breakpoint-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.agent-breakpoint-panel .breakpoint-options:empty {
+  display: none;
+}
+
+.agent-breakpoint-panel .breakpoint-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.agent-breakpoint-panel .breakpoint-option-btn:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.agent-breakpoint-panel .breakpoint-option-btn .option-icon {
+  font-size: 1rem;
+}
+
+.agent-breakpoint-panel .breakpoint-option-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.agent-breakpoint-panel .breakpoint-option-btn.primary:hover {
+  background: var(--accent-hover);
+}
+
+.agent-breakpoint-panel .breakpoint-option-btn.proceed {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+}
+
+.agent-breakpoint-panel .breakpoint-option-btn.proceed:hover {
+  background: #059669;
+}
+
+.agent-breakpoint-panel .breakpoint-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.agent-breakpoint-panel .breakpoint-actions.hidden {
+  display: none;
+}
+
+.agent-breakpoint-panel .breakpoint-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.agent-breakpoint-panel .breakpoint-btn.proceed {
+  background: #10b981;
+  border: none;
+  color: white;
+}
+
+.agent-breakpoint-panel .breakpoint-btn.proceed:hover {
+  background: #059669;
+}
+
+.agent-breakpoint-panel .breakpoint-btn.custom {
+  background: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: var(--text-primary);
+}
+
+.agent-breakpoint-panel .breakpoint-btn.custom:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.agent-breakpoint-panel .breakpoint-custom-input {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.agent-breakpoint-panel .breakpoint-custom-input.hidden {
+  display: none;
+}
+
+.agent-breakpoint-panel .breakpoint-custom-input input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.agent-breakpoint-panel .breakpoint-custom-input input:focus {
+  border-color: var(--accent);
+}
+
+.agent-breakpoint-panel .breakpoint-search-submit {
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: white;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.agent-breakpoint-panel .breakpoint-search-submit:hover {
+  background: var(--accent-hover);
+}
+
+/* AI Suggested Actions Panel */
+/* Suggested Actions inside TODO section */
+.todo-suggestions {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  animation: fadeIn 0.3s ease;
+}
+
+.todo-suggestions.hidden {
+  display: none;
+}
+
+.todo-suggestions-header {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #10b981;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.todo-suggestions-header svg {
+  color: #10b981;
+}
+
+.todo-suggestions-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.todo-suggestions-input {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.todo-suggestions-input input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.todo-suggestions-input input:focus {
+  border-color: var(--accent);
+}
+
+.todo-suggestions-input input::placeholder {
+  color: var(--text-secondary);
+}
+
+/* Legacy support - keep old class for JS compatibility */
+.suggested-actions-panel {
+  margin-bottom: 0.75rem;
+  padding: 0.625rem;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(20, 184, 166, 0.08));
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  border-radius: 8px;
+  animation: fadeIn 0.3s ease;
+}
+
+.suggested-actions-panel.hidden {
+  display: none;
+}
+
+.suggested-actions-header {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #10b981;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.suggested-actions-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.suggested-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.suggested-action-btn:hover {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.suggested-action-btn .action-icon {
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+
+.suggested-action-btn .action-label {
+  white-space: nowrap;
+}
+
+/* Different action types */
+.suggested-action-btn[data-action="vision"] {
+  border-color: rgba(59, 130, 246, 0.3);
+}
+.suggested-action-btn[data-action="vision"]:hover {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.suggested-action-btn[data-action="search"] {
+  border-color: rgba(245, 158, 11, 0.3);
+}
+.suggested-action-btn[data-action="search"]:hover {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.suggested-action-btn[data-action="canvas"] {
+  border-color: rgba(16, 185, 129, 0.3);
+}
+.suggested-action-btn[data-action="canvas"]:hover {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.suggested-action-btn[data-action="genImage"] {
+  border-color: rgba(168, 85, 247, 0.3);
+}
+.suggested-action-btn[data-action="genImage"]:hover {
+  background: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
+}
+
+/* Suggested Quick Input */
+.suggested-quick-input {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.suggested-quick-input input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.suggested-quick-input input:focus {
+  border-color: var(--accent);
+}
+
+.suggested-quick-input input::placeholder {
+  color: var(--text-secondary);
+}
+
+.quick-submit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.quick-submit-btn:hover {
+  background: var(--accent-hover);
+  transform: scale(1.05);
+}
+
+.quick-submit-btn:active {
+  transform: scale(0.95);
 }
 
 /* Vision Upload Section */

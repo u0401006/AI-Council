@@ -182,14 +182,10 @@ window.LOCALE_EN_US = {
     stepReview: 'Review',
     stepSynthesis: 'Synthesis',
     
-    // Stages
-    stage1Label: 'Stage 1',
+    // Stages (no numbered labels, icon-based UI)
     stage1Title: 'Model Responses',
-    stage2Label: 'Stage 2',
     stage2Title: 'Peer Review',
-    stage3Label: 'Stage 3',
     stage3Title: 'Search Options',
-    stage4Label: 'Stage 4',
     stage4Title: 'Chairman Synthesis',
     stageComplete: 'Complete',
     stageSkipped: 'Skipped',
@@ -236,9 +232,9 @@ window.LOCALE_EN_US = {
     
     // Conversation Cost
     conversationCostTitle: 'Conversation Cost',
-    costStage1: 'Stage 1 (Model Responses)',
-    costStage2: 'Stage 2 (Peer Review)',
-    costStage3: 'Stage 3 (Chairman Synthesis)',
+    costStage1: 'Model Responses',
+    costStage2: 'Peer Review',
+    costStage3: 'Chairman Synthesis',
     costImageGen: 'Image Generation',
     
     // Export Modal

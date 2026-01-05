@@ -63,10 +63,22 @@
     </section>
 
     <section class="card">
+      <h2 data-i18n="options.plannerSection">規劃模型</h2>
+      <div class="field">
+        <label for="plannerModel" data-i18n="options.plannerLabel">選擇負責決策規劃的模型</label>
+        <select id="plannerModel">
+          <option value="">停用（使用規則式）</option>
+          <!-- Populated by JS from council models -->
+        </select>
+        <p class="hint" data-i18n="options.plannerHint">用於複雜問題的動態決策。留空則全程使用規則式流程（省 token）</p>
+      </div>
+    </section>
+
+    <section class="card">
       <h2 data-i18n="options.optionsSection">選項</h2>
       <div class="field checkbox-field">
         <input type="checkbox" id="enableReview" checked>
-        <label for="enableReview" data-i18n="options.enableReviewLabel">啟用互評審查（階段 2）</label>
+        <label for="enableReview" data-i18n="options.enableReviewLabel">啟用互評審查</label>
       </div>
       <p class="hint" data-i18n="options.enableReviewHint">停用可節省 API 費用，但會跳過模型排名</p>
       
@@ -184,13 +196,13 @@
       <p class="hint" data-i18n-html="options.promptsHint">自訂給 AI 模型的指令。可用變數：<code>{query}</code> 使用者問題、<code>{responses}</code> 模型回應、<code>{ranking}</code> 審查排名。</p>
       
       <div class="field">
-        <label for="reviewPrompt" data-i18n="options.reviewPromptLabel">審查提示詞（階段 2）</label>
+        <label for="reviewPrompt" data-i18n="options.reviewPromptLabel">審查提示詞</label>
         <p class="hint" data-i18n="options.reviewPromptHint">模型互相評估回應的指令</p>
         <textarea id="reviewPrompt" rows="10" data-i18n-placeholder="options.reviewPromptPlaceholder" placeholder="輸入審查指令..."></textarea>
       </div>
 
       <div class="field">
-        <label for="chairmanPrompt" data-i18n="options.chairmanPromptLabel">主席提示詞（階段 3）</label>
+        <label for="chairmanPrompt" data-i18n="options.chairmanPromptLabel">主席提示詞</label>
         <p class="hint" data-i18n="options.chairmanPromptHint">主席彙整最終答案的指令</p>
         <textarea id="chairmanPrompt" rows="10" data-i18n-placeholder="options.chairmanPromptPlaceholder" placeholder="輸入主席指令..."></textarea>
       </div>

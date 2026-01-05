@@ -99,6 +99,7 @@ const apiKeyInput = document.getElementById('apiKey');
 const braveApiKeyInput = document.getElementById('braveApiKey');
 const modelListEl = document.getElementById('modelList');
 const chairmanSelect = document.getElementById('chairmanModel');
+const plannerSelect = document.getElementById('plannerModel');
 const enableReviewCheckbox = document.getElementById('enableReview');
 const maxSearchIterationsSelect = document.getElementById('maxSearchIterations');
 const maxCardDepthSelect = document.getElementById('maxCardDepth');
@@ -127,6 +128,7 @@ async function init() {
   await loadAvailableModels();
   renderModelList();
   renderChairmanSelect();
+  renderPlannerSelect();
   await loadSettings();
   
   saveBtn.addEventListener('click', saveSettings);
@@ -149,6 +151,7 @@ async function handleLanguageChange() {
   
   // Re-render dynamic content
   renderChairmanSelect();
+  renderPlannerSelect();
   handleLearnerModeChange();
   
   // Update document title
@@ -213,6 +216,15 @@ function renderChairmanSelect() {
   chairmanSelect.innerHTML = reviewWinnerOption + modelOptions;
 }
 
+function renderPlannerSelect() {
+  const disabledText = t('options.plannerDisabled') || '停用（使用規則式）';
+  const disabledOption = `<option value="">${disabledText}</option>`;
+  const modelOptions = AVAILABLE_MODELS.map(model => 
+    `<option value="${model.id}">${model.name} (${model.provider})</option>`
+  ).join('');
+  plannerSelect.innerHTML = disabledOption + modelOptions;
+}
+
 async function loadSettings() {
   const currentLanguage = i18n.getLocale();
   
@@ -222,6 +234,7 @@ async function loadSettings() {
     braveApiKey: '',
     councilModels: DEFAULT_MODELS,
     chairmanModel: DEFAULT_CHAIRMAN,
+    plannerModel: '',  // Empty string means disabled (rule-based only)
     enableReview: true,
     maxSearchIterations: 5,
     maxCardDepth: 3,
@@ -247,6 +260,7 @@ async function loadSettings() {
   maxSearchIterationsSelect.value = result.maxSearchIterations;
   if (maxCardDepthSelect) maxCardDepthSelect.value = result.maxCardDepth;
   chairmanSelect.value = result.chairmanModel;
+  plannerSelect.value = result.plannerModel || '';
   
   // Use stored prompts or generate defaults based on current language
   reviewPromptTextarea.value = result.reviewPrompt || getDefaultReviewPrompt(result.language);
@@ -283,6 +297,7 @@ async function saveSettings() {
   const maxSearchIterations = parseInt(maxSearchIterationsSelect.value, 10) || 5;
   const maxCardDepth = parseInt(maxCardDepthSelect?.value, 10) || 3;
   const chairmanModel = chairmanSelect.value;
+  const plannerModel = plannerSelect.value;  // Empty string means disabled
   const reviewPrompt = reviewPromptTextarea.value.trim() || getDefaultReviewPrompt(language);
   const chairmanPrompt = chairmanPromptTextarea.value.trim() || getDefaultChairmanPrompt(language);
   
@@ -308,6 +323,7 @@ async function saveSettings() {
     braveApiKey,
     councilModels,
     chairmanModel,
+    plannerModel,
     enableReview,
     maxSearchIterations,
     maxCardDepth,

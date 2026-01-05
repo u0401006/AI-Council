@@ -23,7 +23,8 @@ const PLANNER_SYSTEM_PROMPT = `你是 AI Council 的任務規劃者。你的職�
    - web_search → query_council → synthesize → final_answer
 
 3. **複雜分析問題**（比較、評估、深度分析）：
-   - query_council → peer_review → synthesize → final_answer
+   - query_council → peer_review → synthesize → **request_user_input** → final_answer
+   - 在 synthesize 後，使用 request_user_input 詢問使用者是否要延伸搜尋
 
 4. **事實查核問題**（真的嗎、是否正確）：
    - web_search → query_council → peer_review → synthesize
@@ -35,8 +36,12 @@ const PLANNER_SYSTEM_PROMPT = `你是 AI Council 的任務規劃者。你的職�
 6. **資訊不足時**：
    - 追加 web_search 獲取更多資料
 
-7. **回答品質已足夠**：
-   - 直接 final_answer 結束
+7. **回答品質已足夠但可延伸探索**：
+   - 使用 request_user_input 提供搜尋建議，讓使用者決定是否深入
+
+8. **使用者互動**：
+   - synthesize 完成後，若問題有深入探索空間，使用 request_user_input
+   - 提供 2-4 個精簡搜尋建議讓使用者選擇
 
 ## 狀態評估
 
@@ -60,14 +65,96 @@ const PLANNER_SYSTEM_PROMPT = `你是 AI Council 的任務規劃者。你的職�
 }
 \`\`\`
 
+## web_search 使用指引
+
+- **每次搜尋只用 2-4 個精練關鍵字**
+- 避免使用完整句子作為搜尋查詢
+- 如需查多個主題，分開多次搜尋
+- 使用空格分隔關鍵詞
+- 範例：
+  - ✓ 「美股券商 複委託 手續費」
+  - ✓ 「克里米亞 兼併 國際法」
+  - ✗ 「研究美股券商與台灣證券公司複委託的差異」（太長）
+
+## request_user_input 使用指引
+
+**互動類型 (inputType)**：
+- \`choice\`: 提供多個選項按鈕讓使用者選擇
+- \`search\`: 搜尋建議模式（顯示搜尋 pills）
+- \`text\`: 需要使用者輸入文字（如澄清問題）
+- \`confirm\`: 簡單確認（繼續/取消）
+
+**可用 action 類型**：
+- \`search\`: 執行搜尋，value 為搜尋關鍵字
+- \`proceed\`: 直接產出結論，結束流程
+- \`deepen\`: 深入分析當前主題，value 為聚焦方向
+- \`rephrase\`: 重新提問，value 為建議的新問題
+- \`switch_focus\`: 切換探索焦點，value 為新焦點
+- \`clarify\`: 請求使用者澄清
+
+**何時使用**：
+- synthesize 完成後，問題有延伸探索價值
+- 問題範圍太大，需要使用者選擇聚焦方向
+- 回答涉及主觀判斷，需要了解使用者偏好
+- 資訊可能過時，建議搜尋驗證
+
+**何時不使用**：
+- 簡單事實問題（直接 final_answer）
+- 已經搜尋過 2 次以上
+- 迭代次數接近上限
+
+**參數範例**：
+
+搜尋建議模式：
+\`\`\`json
+{
+  "tool": "request_user_input",
+  "parameters": {
+    "message": "目前已整合分析結果。若想進一步驗證，可以搜尋：",
+    "inputType": "search",
+    "suggestedSearches": ["美股券商 手續費比較", "複委託 稅務優惠"]
+  }
+}
+\`\`\`
+
+多選項模式：
+\`\`\`json
+{
+  "tool": "request_user_input",
+  "parameters": {
+    "message": "這個問題可以從多個角度探討，請選擇你最關心的方向：",
+    "inputType": "choice",
+    "options": [
+      { "label": "成本分析", "action": "deepen", "value": "聚焦成本結構分析", "icon": "💰" },
+      { "label": "風險評估", "action": "deepen", "value": "聚焦風險因素", "icon": "⚠️" },
+      { "label": "直接給結論", "action": "proceed", "icon": "✅" }
+    ]
+  }
+}
+\`\`\`
+
+澄清問題模式：
+\`\`\`json
+{
+  "tool": "request_user_input",
+  "parameters": {
+    "message": "你的問題涉及多種情境，請說明你的具體需求：",
+    "inputType": "text",
+    "placeholder": "例如：我是新手投資者，主要關心..."
+  }
+}
+\`\`\`
+
 ## 重要限制
 
 - **query_council 參數**：只需提供 query，不要指定 models（系統會自動使用用戶設定的模型）
+- **web_search query**：精簡為 2-4 個關鍵字，長度不超過 30 字
 - **避免重複執行相同工具**（除非參數不同）
 - 若迭代次數接近上限，應儘快 synthesize 並 final_answer
 - 不要過度搜尋，通常 1-2 次搜尋就夠
 - peer_review 只在有 2+ 個回答時才有意義
-- **has_responses 為 true 時，表示已有足夠回答，應進入 synthesize 而非再次 query_council**`;
+- **has_responses 為 true 時，表示已有足夠回答，應進入 synthesize 而非再次 query_council**
+- **synthesize 後考慮使用 request_user_input**，除非問題很簡單或已搜尋多次`;
 
 /**
  * Format tools for planner prompt
@@ -240,7 +327,7 @@ class Planner {
       }
       
       // Validate tool exists
-      const validTools = ['query_council', 'web_search', 'peer_review', 'synthesize', 'final_answer'];
+      const validTools = ['query_council', 'web_search', 'peer_review', 'synthesize', 'final_answer', 'request_user_input'];
       if (!validTools.includes(action.tool)) {
         console.warn(`Unknown tool: ${action.tool}, using default strategy`);
         return this._defaultAction(context);
@@ -492,7 +579,48 @@ class RuleBasedPlanner {
     
     const rules = [];
     
-    // Rule 0 (highest priority): If synthesis already done, return final_answer
+    // Rule 0 (highest priority): If user already confirmed (after breakpoint), return final_answer
+    rules.push({
+      condition: (s, ctx) => {
+        const lastAction = s.lastActions?.[s.lastActions.length - 1];
+        return lastAction === 'request_user_input' && ctx.lastSynthesis;
+      },
+      action: (s, ctx) => ({
+        tool: 'final_answer',
+        parameters: { content: ctx.lastSynthesis },
+        reasoning: 'User confirmed, returning final answer'
+      })
+    });
+    
+    // Rule: After synthesis, ask user if they want to extend search (for complex skills)
+    const isComplexSkill = ['researcher', 'factChecker', 'technical'].includes(this.skill?.id);
+    const searchCount = context?.searches?.length || 0;
+    
+    rules.push({
+      condition: (s, ctx) => {
+        const lastAction = s.lastActions?.[s.lastActions.length - 1];
+        // Only offer breakpoint after synthesize, for complex skills, and not too many searches already
+        return lastAction === 'synthesize' && 
+               isComplexSkill && 
+               searchCount < 2 &&
+               ctx.lastSynthesis;
+      },
+      action: (s, ctx) => {
+        // Extract search suggestions from responses if available
+        const suggestedSearches = this._extractSearchSuggestions(ctx);
+        
+        return {
+          tool: 'request_user_input',
+          parameters: {
+            message: '目前已完成初步分析。若想進一步驗證或深入探索，可以選擇以下搜尋：',
+            suggestedSearches: suggestedSearches.slice(0, 4)
+          },
+          reasoning: 'Offering user option to extend search before final answer'
+        };
+      }
+    });
+    
+    // Rule: If synthesis already done and breakpoint not needed, return final_answer
     rules.push({
       condition: (s, ctx) => ctx.lastSynthesis !== null && ctx.lastSynthesis !== undefined,
       action: (s, ctx) => ({
@@ -628,6 +756,54 @@ class RuleBasedPlanner {
     
     return rules;
   }
+  
+  /**
+   * Extract search suggestions from model responses
+   */
+  _extractSearchSuggestions(context) {
+    const suggestions = [];
+    
+    // Try to extract from responses
+    if (context.responses) {
+      for (const response of context.responses) {
+        const content = response.content || '';
+        
+        // Look for JSON search_queries block
+        const jsonMatch = content.match(/```json\s*\{[^}]*"search_queries"\s*:\s*\[(.*?)\]/s);
+        if (jsonMatch) {
+          try {
+            const queries = jsonMatch[1].match(/"([^"]+)"/g)?.map(q => q.replace(/"/g, ''));
+            if (queries) suggestions.push(...queries);
+          } catch (e) {}
+        }
+        
+        // Look for inline suggestions
+        const inlineMatch = content.match(/(?:建議搜尋|搜尋關鍵字|進一步搜尋)[：:]\s*(.+?)(?:\n|$)/);
+        if (inlineMatch) {
+          const parts = inlineMatch[1].split(/[,、；;]+/).map(s => s.trim()).filter(s => s.length > 0 && s.length < 50);
+          suggestions.push(...parts);
+        }
+      }
+    }
+    
+    // Deduplicate and limit
+    const unique = [...new Set(suggestions)];
+    
+    // If no suggestions found, generate some based on the query
+    if (unique.length === 0 && context.query) {
+      const query = context.query;
+      // Extract potential keywords from the query
+      const keywords = query.match(/[\u4e00-\u9fa5a-zA-Z]{2,}/g) || [];
+      if (keywords.length >= 2) {
+        unique.push(`${keywords[0]} ${keywords[1]} 最新`);
+        if (keywords.length >= 3) {
+          unique.push(`${keywords[2]} 比較`);
+        }
+      }
+    }
+    
+    return unique.slice(0, 4);
+  }
 }
 
 /**
@@ -666,6 +842,97 @@ class OrchestratedPlanner extends RuleBasedPlanner {
   }
 }
 
+/**
+ * HybridPlanner - switches between LLM and Rule-based planning based on complexity
+ * Automatically assesses query complexity to decide which planner to use
+ */
+class HybridPlanner {
+  constructor(config = {}) {
+    this.llmPlanner = new Planner(config);
+    this.rulePlanner = new RuleBasedPlanner(config);
+    this.complexityThreshold = config.complexityThreshold || 0.5;
+    this.model = config.model || null;
+  }
+  
+  setSkillHint(hint) {
+    this.llmPlanner.setSkillHint(hint);
+    this.rulePlanner.setSkillHint(hint);
+  }
+  
+  setTools(tools) {
+    this.llmPlanner.setTools(tools);
+  }
+  
+  setPreferredTools(tools) {
+    this.rulePlanner.setPreferredTools(tools);
+  }
+  
+  setSkill(skill) {
+    this.rulePlanner.setSkill(skill);
+  }
+  
+  setOrchestrator(orchestrator) {
+    this.rulePlanner.setOrchestrator(orchestrator);
+  }
+  
+  /**
+   * Plan using either LLM or rules based on complexity
+   */
+  async plan(context) {
+    const complexity = this.assessComplexity(context);
+    const useLLM = complexity > this.complexityThreshold && this.model;
+    
+    console.log('[HybridPlanner] Complexity:', complexity.toFixed(2), 
+                useLLM ? '-> LLM' : '-> Rule');
+    
+    if (useLLM) {
+      try {
+        return await this.llmPlanner.plan(context);
+      } catch (err) {
+        console.warn('[HybridPlanner] LLM failed, falling back to rules:', err.message);
+        return this.rulePlanner.plan(context);
+      }
+    }
+    
+    return this.rulePlanner.plan(context);
+  }
+  
+  /**
+   * Assess query complexity to determine which planner to use
+   * Returns a score between 0 and 1
+   */
+  assessComplexity(context) {
+    let score = 0;
+    const query = context.query || '';
+    const skill = context.skill || this.rulePlanner.skill;
+    
+    // Factor 1: Query length (0-0.3)
+    // Longer queries tend to be more complex
+    score += Math.min(query.length / 500, 0.3);
+    
+    // Factor 2: Skill complexity (0-0.4)
+    // Some skills inherently require more sophisticated planning
+    const complexSkills = ['researcher', 'factChecker', 'technical'];
+    if (skill && complexSkills.includes(skill.id)) {
+      score += 0.4;
+    }
+    
+    // Factor 3: Multi-step keywords (0-0.3)
+    // Keywords indicating the need for sophisticated reasoning
+    const complexKeywords = [
+      '比較', '分析', '評估', '研究', '差異', '優缺點',
+      'compare', 'analyze', 'evaluate', 'research', 'difference',
+      '為什麼', '如何', '怎麼', 'why', 'how'
+    ];
+    const keywordMatches = complexKeywords.filter(k => 
+      query.toLowerCase().includes(k.toLowerCase())
+    ).length;
+    score += Math.min(keywordMatches * 0.1, 0.3);
+    
+    return Math.min(score, 1.0);
+  }
+}
+
 // Export for use in other modules
 if (typeof window !== 'undefined') {
   window.MAVPlanner = {
@@ -676,6 +943,7 @@ if (typeof window !== 'undefined') {
     Planner,
     RuleBasedPlanner,
     OrchestratedPlanner,
+    HybridPlanner,
     createPlanner
   };
 }

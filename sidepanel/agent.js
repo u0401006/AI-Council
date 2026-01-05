@@ -213,6 +213,7 @@ class AgentContext {
           results: data.results,
           timestamp: Date.now()
         });
+        console.log('[AgentContext] Searches updated:', this.searches.length, 'total,', data.results?.length || 0, 'new results');
         break;
         
       case 'peer_review':
@@ -284,6 +285,7 @@ class AgentLoop {
     
     // Callbacks for UI updates
     this.onIterationStart = config.onIterationStart || (() => {});
+    this.onPlanDecision = config.onPlanDecision || (() => {});  // Called after planner decides
     this.onToolStart = config.onToolStart || (() => {});
     this.onToolEnd = config.onToolEnd || (() => {});
     this.onIterationEnd = config.onIterationEnd || (() => {});
@@ -382,6 +384,11 @@ class AgentLoop {
         // Get next action from planner
         const action = await this._plan(context);
         
+        // Notify UI of planner decision (with reasoning)
+        if (this.onPlanDecision) {
+          this.onPlanDecision(action, context);
+        }
+        
         if (!action || action.tool === 'final_answer') {
           // If planner returns final_answer or null, we're done
           const content = action?.parameters?.content || context.lastSynthesis;
@@ -423,6 +430,91 @@ class AgentLoop {
         const result = await this._execute(action, context);
         
         this.onToolEnd(action, result, context);
+        
+        // Handle request_user_input breakpoint
+        // Note: ToolRegistry wraps result in { success, data }, so we need result.data
+        if (action.tool === 'request_user_input') {
+          console.log('[AgentLoop] request_user_input raw result:', JSON.stringify(result).slice(0, 200));
+          const toolData = result.data || result; // Handle both wrapped and unwrapped
+          console.log('[AgentLoop] request_user_input toolData:', JSON.stringify(toolData).slice(0, 200));
+          console.log('[AgentLoop] toolData.spawnChild:', toolData.spawnChild);
+          console.log('[AgentLoop] toolData.continueLoop:', toolData.continueLoop);
+          console.log('[AgentLoop] toolData.action:', toolData.action);
+          
+          // Handle spawn_child action - user action creates a new child card
+          if (toolData.spawnChild && toolData.childCardId) {
+            console.log('[AgentLoop] Spawning child card:', toolData.childCardId);
+            context.completed = true;
+            
+            // Return with spawn signal for app.js to handle
+            this.onComplete({
+              success: true,
+              content: context.lastSynthesis || '',
+              context,
+              spawnChild: true,
+              childCardId: toolData.childCardId,
+              childQuery: toolData.childQuery
+            });
+            
+            return {
+              success: true,
+              content: context.lastSynthesis || '',
+              context: context.getSummary(),
+              spawnChild: true,
+              childCardId: toolData.childCardId,
+              childQuery: toolData.childQuery
+            };
+          }
+          
+          if (toolData.continueLoop) {
+            // User wants to continue with some action
+            console.log('[AgentLoop] User action:', toolData.action, 'continueLoop:', toolData.continueLoop);
+            
+            switch (toolData.action) {
+              case 'search':
+                // User chose to search, continue loop with new search results
+                context.updateFromResult('web_search', toolData);
+                break;
+                
+              case 'deepen':
+              case 'switch_focus':
+              case 'rephrase':
+              case 'clarify':
+              case 'custom':
+                // User provided input that modifies the query/focus
+                if (toolData.modifiedQuery) {
+                  context.query = toolData.modifiedQuery;
+                  console.log('[AgentLoop] Query modified:', toolData.modifiedQuery.slice(0, 50) + '...');
+                }
+                // Reset responses to get new answers with modified context
+                context.responses = [];
+                context.reviews = null;
+                context.lastSynthesis = null;
+                break;
+            }
+            
+            context.addHistory(action, toolData);
+            continue;
+          } else {
+            // User chose to proceed, output final answer
+            console.log('[AgentLoop] User chose to proceed with conclusion');
+            const content = context.lastSynthesis;
+            if (content) {
+              context.completed = true;
+              this.onComplete({
+                success: true,
+                content: content,
+                context
+              });
+              return {
+                success: true,
+                content: content,
+                context: context.getSummary()
+              };
+            }
+            break;
+          }
+        }
         
         // Update context with result
         context.updateFromResult(action.tool, result);

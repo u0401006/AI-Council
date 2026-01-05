@@ -158,6 +158,53 @@ const TOOL_DEFINITIONS = {
       },
       required: ['content']
     }
+  },
+  
+  request_user_input: {
+    name: 'request_user_input',
+    description: '暫停執行並詢問使用者下一步行動。可用於：(1) 提供搜尋建議 (2) 請求澄清問題 (3) 提供多個探索方向 (4) 確認是否繼續深入',
+    parameters: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          description: '顯示給使用者的訊息，說明目前狀態與選項'
+        },
+        inputType: {
+          type: 'string',
+          enum: ['choice', 'search', 'text', 'confirm'],
+          default: 'choice',
+          description: '互動類型：choice=選擇選項, search=搜尋建議, text=自由輸入, confirm=確認繼續'
+        },
+        options: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              label: { type: 'string', description: '按鈕顯示文字' },
+              action: { 
+                type: 'string', 
+                enum: ['search', 'proceed', 'deepen', 'rephrase', 'switch_focus', 'clarify'],
+                description: 'search=搜尋, proceed=直接結論, deepen=深入分析, rephrase=重新提問, switch_focus=切換焦點, clarify=澄清'
+              },
+              value: { type: 'string', description: '附帶值（如搜尋關鍵字、新問題）' },
+              icon: { type: 'string', description: '按鈕圖示（emoji）' }
+            }
+          },
+          description: '提供給使用者的選項按鈕'
+        },
+        suggestedSearches: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '快速搜尋建議（2-4 個精簡詞組）'
+        },
+        placeholder: {
+          type: 'string',
+          description: '自由輸入框的 placeholder 文字'
+        }
+      },
+      required: ['message']
+    }
   }
 };
 

@@ -556,6 +556,7 @@ const LEARNER_TASK_SUFFIXES = {
 
 let councilModels = [];
 let chairmanModel = '';
+let plannerModel = '';  // Empty means disabled (use rule-based planner)
 const REVIEW_WINNER_VALUE = '__review_winner__'; // 互評勝者選項的特殊值
 let enableReview = true;
 let enableImage = false;
@@ -1808,6 +1809,18 @@ const skillBadgeIcon = document.getElementById('skillBadgeIcon');
 const skillBadgeName = document.getElementById('skillBadgeName');
 const skillBadgeStrategy = document.getElementById('skillBadgeStrategy');
 
+// Agent Progress Section elements (stage-level section)
+const agentProgressSection = document.getElementById('agentProgressSection');
+const agentProgressSummary = document.getElementById('agentProgressSummary');
+const progressStep = document.getElementById('progressStep');
+const progressContent = document.getElementById('progressContent');
+
+// Suggested Actions Panel elements
+const suggestedActionsPanel = document.getElementById('suggestedActionsPanel');
+const suggestedActionsContent = document.getElementById('suggestedActionsContent');
+const suggestedQuickInput = document.getElementById('suggestedQuickInput');
+const suggestedQuickSubmit = document.getElementById('suggestedQuickSubmit');
+
 // Task Planner / TODO elements
 const todoSection = document.getElementById('todoSection');
 const todoCount = document.getElementById('todoCount');
@@ -2132,6 +2145,628 @@ function detectAndShowSkillBadge() {
 }
 
 // ============================================
+// Agent Progress Panel Functions
+// ============================================
+
+/**
+ * Show the agent progress panel
+ */
+function showAgentProgress() {
+  if (agentProgressSection) {
+    agentProgressSection.classList.remove('hidden');
+  }
+}
+
+/**
+ * Hide the agent progress panel
+ */
+function hideAgentProgress() {
+  if (agentProgressSection) {
+    agentProgressSection.classList.add('hidden');
+    agentProgressSection.classList.remove('collapsed');
+    // Don't clear content on hide - preserve for debugging
+    // Content is cleared at start of new query via clearAgentProgress()
+  }
+}
+
+/**
+ * Collapse agent progress panel (keep visible but minimize)
+ */
+function collapseAgentProgress() {
+  if (agentProgressSection) {
+    agentProgressSection.classList.add('collapsed');
+    agentProgressSection.classList.remove('hidden');
+  }
+}
+
+/**
+ * Expand agent progress panel
+ */
+function expandAgentProgress() {
+  if (agentProgressSection) {
+    agentProgressSection.classList.remove('collapsed');
+  }
+}
+
+/**
+ * Toggle agent progress panel collapsed state
+ */
+function toggleAgentProgress() {
+  if (agentProgressSection) {
+    agentProgressSection.classList.toggle('collapsed');
+  }
+}
+
+/**
+ * Clear agent progress panel content
+ * Called at start of new query
+ */
+function clearAgentProgress() {
+  if (progressContent) progressContent.innerHTML = '';
+  if (progressStep) progressStep.textContent = '';
+  // Also remove collapsed state for fresh start
+  if (agentProgressSection) {
+    agentProgressSection.classList.remove('collapsed');
+  }
+}
+
+/**
+ * Update the agent progress panel with current tool status
+ * @param {string} tool - Current tool being executed
+ * @param {string} status - 'loading', 'done', or 'error'
+ * @param {Object} details - Additional details to display
+ */
+function updateAgentProgress(tool, status, details = {}) {
+  if (!agentProgressSection || !progressContent) return;
+  
+  // Tool display configurations
+  const toolConfig = {
+    planning: {
+      icon: '💭',
+      label: '規劃決策',
+      loadingText: '思考下一步...',
+      doneText: (d) => d.nextTool ? `→ ${d.nextTool}` : '決策完成'
+    },
+    web_search: {
+      icon: '🔍',
+      label: '網路搜尋',
+      loadingText: '搜尋中...',
+      doneText: (d) => `找到 ${d.resultCount || 0} 筆結果`
+    },
+    query_council: {
+      icon: '🤖',
+      label: '模型議會',
+      loadingText: (d) => `${d.modelCount || 3} 個模型回應中...`,
+      doneText: (d) => `${d.successCount || 0}/${d.totalCount || 3} 模型完成`
+    },
+    peer_review: {
+      icon: '📊',
+      label: '互評審查',
+      loadingText: '模型互評中...',
+      doneText: (d) => d.winner ? `勝出: ${getModelName(d.winner)}` : '審查完成'
+    },
+    synthesize: {
+      icon: '✨',
+      label: '主席彙整',
+      loadingText: (d) => d.chairman ? `${getModelName(d.chairman)} 彙整中...` : '彙整中...',
+      doneText: () => '彙整完成'
+    },
+    error: {
+      icon: '⚠️',
+      label: '錯誤',
+      loadingText: '',
+      doneText: (d) => d.error || '執行錯誤'
+    },
+    breakpoint: {
+      icon: '⏸️',
+      label: '等待確認',
+      loadingText: '等待使用者輸入...',
+      doneText: (d) => d.action === 'search' ? `搜尋: ${d.query}` : '繼續執行'
+    },
+    request_user_input: {
+      icon: '⏸️',
+      label: '使用者互動',
+      loadingText: '等待使用者選擇...',
+      doneText: (d) => d.action === 'search' ? `搜尋: ${d.query?.slice(0, 20)}...` : '直接產出結論'
+    }
+  };
+  
+  const config = toolConfig[tool];
+  if (!config) return;
+  
+  // Show panel
+  showAgentProgress();
+  
+  // Update step counter
+  if (progressStep && details.iteration) {
+    progressStep.textContent = `Step ${details.iteration}/${details.maxIterations || 10}`;
+  }
+  
+  // Get status text
+  let statusText = '';
+  if (status === 'loading') {
+    statusText = typeof config.loadingText === 'function' 
+      ? config.loadingText(details) 
+      : config.loadingText;
+  } else if (status === 'done') {
+    statusText = typeof config.doneText === 'function' 
+      ? config.doneText(details) 
+      : config.doneText;
+  } else if (status === 'error') {
+    // Format error message with context
+    const toolLabel = details.tool && details.tool !== 'unknown' ? ` (${details.tool})` : '';
+    const iterLabel = details.iteration ? ` [Step ${details.iteration}]` : '';
+    statusText = `${details.error || '執行錯誤'}${toolLabel}${iterLabel}`;
+  }
+  
+  // For planning, create a unique ID per iteration to avoid overwriting
+  const itemId = tool === 'planning' ? `planning-${details.iteration || 0}` : tool;
+  
+  // Check if item already exists
+  let item = progressContent.querySelector(`[data-tool="${itemId}"]`);
+  
+  if (!item) {
+    // Create new item
+    item = document.createElement('div');
+    item.className = 'progress-item';
+    item.setAttribute('data-tool', itemId);
+    item.innerHTML = `
+      <span class="icon">${config.icon}</span>
+      <span class="label">${config.label}</span>
+      <span class="status">${statusText}</span>
+    `;
+    progressContent.appendChild(item);
+  } else {
+    // Update existing item
+    const statusEl = item.querySelector('.status');
+    if (statusEl) statusEl.textContent = statusText;
+  }
+  
+  // Add reasoning block if provided (for planning decisions)
+  if (details.reasoning && !item.querySelector('.progress-reasoning')) {
+    const reasoningEl = document.createElement('div');
+    reasoningEl.className = 'progress-reasoning';
+    reasoningEl.textContent = details.reasoning;
+    item.appendChild(reasoningEl);
+  }
+  
+  // Update item status class
+  item.classList.remove('loading', 'done', 'error', 'active');
+  item.classList.add(status);
+  if (status === 'loading') {
+    item.classList.add('active');
+  }
+}
+
+// ============================================
+// Agent Breakpoint Functions
+// ============================================
+
+// Breakpoint panel DOM elements
+const agentBreakpointPanel = document.getElementById('agentBreakpointPanel');
+const breakpointMessage = document.getElementById('breakpointMessage');
+const breakpointOptions = document.getElementById('breakpointOptions');
+const breakpointSearches = document.getElementById('breakpointSearches');
+const breakpointDefaultActions = document.getElementById('breakpointDefaultActions');
+const breakpointProceed = document.getElementById('breakpointProceed');
+const breakpointCustom = document.getElementById('breakpointCustom');
+const breakpointCustomInput = document.getElementById('breakpointCustomInput');
+const breakpointTextInput = document.getElementById('breakpointTextInput');
+const breakpointTextSubmit = document.getElementById('breakpointTextSubmit');
+
+// Store current breakpoint resolve function and config
+let breakpointResolve = null;
+let currentBreakpointConfig = null;
+
+/**
+ * Show breakpoint panel and wait for user response
+ * Now supports dynamic options from planner
+ * @param {string} message - Message to display
+ * @param {string[]} suggestedSearches - Suggested search queries (legacy)
+ * @param {Object} config - Full configuration from planner
+ * @returns {Promise<{action: string, value?: string, query?: string}>}
+ */
+function showBreakpointAndWait(message, suggestedSearches = [], config = {}) {
+  return new Promise((resolve) => {
+    if (!agentBreakpointPanel) {
+      console.warn('[Breakpoint] Panel not found, skipping');
+      resolve({ action: 'proceed' });
+      return;
+    }
+    
+    breakpointResolve = resolve;
+    currentBreakpointConfig = config;
+    
+    const { inputType = 'choice', options = [], placeholder = '' } = config;
+    
+    console.log('[Breakpoint] Showing panel, inputType:', inputType, 'options:', options.length);
+    
+    // Update message
+    if (breakpointMessage) {
+      breakpointMessage.textContent = message || '請選擇下一步行動：';
+    }
+    
+    // Clear previous content
+    if (breakpointOptions) breakpointOptions.innerHTML = '';
+    if (breakpointSearches) breakpointSearches.innerHTML = '';
+    
+    // Render based on inputType
+    if (inputType === 'choice' && options.length > 0) {
+      // Dynamic options mode
+      renderBreakpointOptions(options);
+      breakpointSearches?.classList.add('hidden');
+      breakpointDefaultActions?.classList.add('hidden');
+    } else if (inputType === 'search' || suggestedSearches.length > 0) {
+      // Search suggestions mode
+      const searches = suggestedSearches.length > 0 ? suggestedSearches : (config.suggestedSearches || []);
+      renderBreakpointSearches(searches);
+      breakpointSearches?.classList.remove('hidden');
+      breakpointDefaultActions?.classList.remove('hidden');
+    } else if (inputType === 'text') {
+      // Free text input mode
+      breakpointSearches?.classList.add('hidden');
+      breakpointDefaultActions?.classList.add('hidden');
+      breakpointCustomInput?.classList.remove('hidden');
+      if (breakpointTextInput) {
+        breakpointTextInput.placeholder = placeholder || '請輸入...';
+        breakpointTextInput.value = '';
+        breakpointTextInput.focus();
+      }
+    } else if (inputType === 'confirm') {
+      // Simple confirm mode
+      renderBreakpointOptions([
+        { label: '繼續', action: 'proceed', icon: '✅' },
+        { label: '取消', action: 'cancel', icon: '❌' }
+      ]);
+      breakpointSearches?.classList.add('hidden');
+      breakpointDefaultActions?.classList.add('hidden');
+    } else {
+      // Default fallback
+      breakpointSearches?.classList.add('hidden');
+      breakpointDefaultActions?.classList.remove('hidden');
+    }
+    
+    // Reset custom input for non-text modes
+    if (inputType !== 'text') {
+      breakpointCustomInput?.classList.add('hidden');
+      if (breakpointTextInput) breakpointTextInput.value = '';
+    }
+    
+    // Show panel
+    agentBreakpointPanel.classList.remove('hidden');
+    
+    // Update progress panel to show waiting state
+    updateAgentProgress('request_user_input', 'loading', {
+      inputType,
+      optionCount: options.length
+    });
+  });
+}
+
+/**
+ * Render dynamic option buttons
+ */
+function renderBreakpointOptions(options) {
+  if (!breakpointOptions) return;
+  
+  breakpointOptions.innerHTML = '';
+  
+  console.log('[Breakpoint] renderBreakpointOptions called with', options.length, 'options');
+  
+  options.forEach((opt, index) => {
+    const btn = document.createElement('button');
+    btn.className = 'breakpoint-option-btn';
+    
+    // Add special class for proceed action
+    if (opt.action === 'proceed') {
+      btn.classList.add('proceed');
+    }
+    
+    // Build button content
+    let content = '';
+    if (opt.icon) {
+      content += `<span class="option-icon">${opt.icon}</span>`;
+    }
+    content += `<span class="option-label">${opt.label}</span>`;
+    btn.innerHTML = content;
+    
+    // Click handler with explicit closure
+    const optionCopy = { ...opt }; // Ensure we capture the option correctly
+    btn.addEventListener('click', (e) => {
+      console.log('[Breakpoint] Button clicked, index:', index);
+      e.preventDefault();
+      e.stopPropagation();
+      handleBreakpointOption(optionCopy);
+    });
+    
+    breakpointOptions.appendChild(btn);
+    console.log('[Breakpoint] Button added:', opt.action, opt.label?.slice(0, 30));
+  });
+}
+
+/**
+ * Render search suggestion buttons
+ */
+function renderBreakpointSearches(searches) {
+  if (!breakpointSearches) return;
+  
+  breakpointSearches.innerHTML = '';
+  
+  searches.forEach(query => {
+    const btn = document.createElement('button');
+    btn.className = 'breakpoint-search-btn';
+    btn.textContent = query;
+    btn.addEventListener('click', () => handleBreakpointSearch(query));
+    breakpointSearches.appendChild(btn);
+  });
+}
+
+/**
+ * Handle user clicking a dynamic option button
+ */
+function handleBreakpointOption(option) {
+  console.log('[Breakpoint] handleBreakpointOption called with:', option);
+  
+  try {
+    hideBreakpoint();
+    
+    const response = {
+      action: option.action,
+      value: option.value || null,
+      label: option.label
+    };
+    
+    // For search action, set query
+    if (option.action === 'search' && option.value) {
+      response.query = option.value;
+    }
+    
+    console.log('[Breakpoint] Option selected:', response);
+    console.log('[Breakpoint] breakpointResolve exists:', !!breakpointResolve);
+    
+    if (breakpointResolve) {
+      breakpointResolve(response);
+      breakpointResolve = null;
+    } else {
+      console.error('[Breakpoint] No resolver found! Promise may have timed out or been cancelled.');
+    }
+  } catch (err) {
+    console.error('[Breakpoint] Error in handleBreakpointOption:', err);
+  }
+}
+
+/**
+ * Handle user clicking a suggested search button
+ */
+function handleBreakpointSearch(query) {
+  hideBreakpoint();
+  if (breakpointResolve) {
+    breakpointResolve({ action: 'search', query });
+    breakpointResolve = null;
+  }
+}
+
+/**
+ * Handle user clicking "proceed" button
+ */
+function handleBreakpointProceed() {
+  hideBreakpoint();
+  if (breakpointResolve) {
+    breakpointResolve({ action: 'proceed' });
+    breakpointResolve = null;
+  }
+}
+
+/**
+ * Handle user clicking "custom input" button
+ */
+function handleBreakpointCustom() {
+  if (breakpointCustomInput) {
+    breakpointCustomInput.classList.toggle('hidden');
+    if (!breakpointCustomInput.classList.contains('hidden') && breakpointTextInput) {
+      breakpointTextInput.focus();
+    }
+  }
+}
+
+/**
+ * Handle text input submit
+ */
+function handleBreakpointTextSubmit() {
+  if (!breakpointTextInput) return;
+  const value = breakpointTextInput.value.trim();
+  if (!value) return;
+  
+  hideBreakpoint();
+  
+  // Determine action based on current config
+  const inputType = currentBreakpointConfig?.inputType || 'text';
+  let action = 'custom';
+  
+  // If it looks like a search query, treat as search
+  if (value.length < 50 && !value.includes('\n')) {
+    action = 'search';
+  }
+  
+  console.log('[Breakpoint] Text submitted:', { action, value });
+  
+  if (breakpointResolve) {
+    breakpointResolve({ action, value, query: action === 'search' ? value : null });
+    breakpointResolve = null;
+  }
+}
+
+/**
+ * Hide the breakpoint panel
+ */
+function hideBreakpoint() {
+  if (agentBreakpointPanel) {
+    agentBreakpointPanel.classList.add('hidden');
+  }
+  currentBreakpointConfig = null;
+}
+
+// Attach breakpoint event listeners
+if (breakpointProceed) {
+  breakpointProceed.addEventListener('click', handleBreakpointProceed);
+}
+if (breakpointCustom) {
+  breakpointCustom.addEventListener('click', handleBreakpointCustom);
+}
+if (breakpointTextSubmit) {
+  breakpointTextSubmit.addEventListener('click', handleBreakpointTextSubmit);
+}
+if (breakpointTextInput) {
+  breakpointTextInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      handleBreakpointTextSubmit();
+    }
+  });
+}
+
+// ============================================
+// AI Suggested Actions Functions
+// ============================================
+
+/**
+ * Show suggested actions panel with context-aware suggestions
+ * @param {Object} result - The agent result
+ * @param {Object} skill - The skill that was used
+ */
+function showSuggestedActions(result, skill) {
+  if (!suggestedActionsPanel || !suggestedActionsContent) return;
+  
+  const suggestions = [];
+  const resultContent = result?.content || '';
+  
+  // Check for conditions to show specific actions
+  const hasImages = checkForImages(resultContent);
+  const hasSearchQueries = currentSearchQueries.length > 0;
+  const isResearchSkill = skill?.id === 'researcher' || skill?.id === 'factChecker';
+  const isImageSkill = skill?.id === 'imageDesign';
+  
+  // Vision analysis - if there are generated images or uploaded images
+  if (hasImages || (multiImageState && multiImageState.generatedImages?.length > 0)) {
+    suggestions.push({
+      icon: '👁️',
+      label: '分析圖片',
+      action: 'vision',
+      handler: () => handleBranchVision()
+    });
+  }
+  
+  // Extended search - always show if Brave API is available
+  if (hasBraveApiKey && searchIteration < maxSearchIterations) {
+    suggestions.push({
+      icon: '🔍',
+      label: '延伸搜尋',
+      action: 'search',
+      handler: () => handleBranchSearch()
+    });
+  }
+  
+  // Canvas/Notes - always show
+  suggestions.push({
+    icon: '📝',
+    label: '做筆記',
+    action: 'canvas',
+    handler: () => handleBranchCanvas()
+  });
+  
+  // Image generation - show if not already in image skill
+  if (!isImageSkill) {
+    suggestions.push({
+      icon: '🎨',
+      label: '生成圖像',
+      action: 'genImage',
+      handler: () => handleBranchGenerate()
+    });
+  }
+  
+  // If no suggestions, hide panel
+  if (suggestions.length === 0) {
+    hideSuggestedActions();
+    return;
+  }
+  
+  // Render suggestions
+  renderSuggestedActions(suggestions);
+  suggestedActionsPanel.classList.remove('hidden');
+  
+  // Show parent todoSection if it exists and is hidden
+  if (todoSection && todoSection.classList.contains('hidden')) {
+    todoSection.classList.remove('hidden');
+  }
+  
+  // Set default quick input value based on search queries
+  if (suggestedQuickInput) {
+    if (currentSearchQueries.length > 0) {
+      // Pre-fill with first search suggestion
+      suggestedQuickInput.value = currentSearchQueries[0];
+      suggestedQuickInput.placeholder = '進一步提問...';
+    } else {
+      // Generate a follow-up prompt based on skill
+      const followUpPrompts = {
+        'researcher': '深入分析這個主題的具體細節',
+        'factChecker': '查證其他相關說法',
+        'currentEvents': '查詢最新進展',
+        'imageDesign': '調整設計風格或構圖',
+        'default': '針對這個回答提出更多問題'
+      };
+      suggestedQuickInput.value = '';
+      suggestedQuickInput.placeholder = followUpPrompts[skill?.id] || followUpPrompts.default;
+    }
+  }
+}
+
+/**
+ * Hide suggested actions panel
+ */
+function hideSuggestedActions() {
+  if (suggestedActionsPanel) {
+    suggestedActionsPanel.classList.add('hidden');
+  }
+  if (suggestedActionsContent) {
+    suggestedActionsContent.innerHTML = '';
+  }
+}
+
+/**
+ * Render suggested action buttons
+ * @param {Array} suggestions - Array of suggestion objects
+ */
+function renderSuggestedActions(suggestions) {
+  if (!suggestedActionsContent) return;
+  
+  suggestedActionsContent.innerHTML = suggestions.map(s => `
+    <button class="suggested-action-btn" data-action="${s.action}">
+      <span class="action-icon">${s.icon}</span>
+      <span class="action-label">${s.label}</span>
+    </button>
+  `).join('');
+  
+  // Attach event listeners
+  suggestedActionsContent.querySelectorAll('.suggested-action-btn').forEach((btn, index) => {
+    btn.addEventListener('click', () => {
+      suggestions[index].handler();
+      hideSuggestedActions();
+    });
+  });
+}
+
+/**
+ * Check if content contains images
+ * @param {string} content - The result content
+ * @returns {boolean}
+ */
+function checkForImages(content) {
+  // Check for markdown image syntax or base64 images
+  return /!\[.*?\]\(.*?\)/.test(content) || 
+         /data:image\//.test(content) ||
+         /<img\s+src=/.test(content);
+}
+
+// ============================================
 // Storage Quota Utilities
 // ============================================
 async function checkStorageQuota() {
@@ -2308,7 +2943,8 @@ let outputFormat = 'mixed';
 async function loadSettings() {
   const result = await chrome.storage.sync.get({ 
     councilModels: [], 
-    chairmanModel: 'anthropic/claude-sonnet-4.5', 
+    chairmanModel: 'anthropic/claude-sonnet-4.5',
+    plannerModel: '',  // Empty means disabled (rule-based only)
     enableReview: true,
     maxSearchIterations: 5,
     maxCardDepth: 3,
@@ -2320,6 +2956,7 @@ async function loadSettings() {
   });
   councilModels = result.councilModels;
   chairmanModel = result.chairmanModel;
+  plannerModel = result.plannerModel || '';  // Store globally for HybridPlanner
   enableReview = result.enableReview;
   maxSearchIterations = result.maxSearchIterations || 5;
   maxCardDepth = result.maxCardDepth || 3;
@@ -2418,6 +3055,22 @@ function setupEventListeners() {
   settingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
   newChatBtn.addEventListener('click', startNewChat);
   dismissError.addEventListener('click', () => errorBanner.classList.add('hidden'));
+  
+  // Quick input submit (from suggested actions panel)
+  if (suggestedQuickSubmit) {
+    suggestedQuickSubmit.addEventListener('click', handleQuickSubmit);
+  }
+  if (suggestedQuickInput) {
+    suggestedQuickInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleQuickSubmit();
+    });
+  }
+  
+  // Agent progress panel toggle (accordion)
+  const progressHeader = document.getElementById('progressHeader');
+  if (progressHeader) {
+    progressHeader.addEventListener('click', toggleAgentProgress);
+  }
   
   // Auto-grow textarea and detect skill
   queryInput.addEventListener('input', () => {
@@ -4169,6 +4822,89 @@ function formatCharCount(count) {
   return `${count} 字元`;
 }
 
+/**
+ * Split a long search query into shorter keyword-based queries
+ * @param {string} query - Long query to split
+ * @returns {string[]} - Array of shorter queries (max 30 chars each)
+ */
+function splitSearchQuery(query) {
+  if (!query || query.length <= 30) return [query];
+  
+  // Common stop words to filter out
+  const stopWords = new Set([
+    '的', '是', '在', '和', '與', '以及', '或者', '等', '等等',
+    '這個', '那個', '一個', '什麼', '如何', '怎麼', '為什麼',
+    '可以', '能夠', '應該', '需要', '想要', '哪些', '有哪些',
+    '分析', '研究', '比較', '評估', '請', '幫', '給我',
+    'the', 'a', 'an', 'is', 'are', 'and', 'or', 'of', 'in', 'on',
+    'what', 'how', 'why', 'which', 'please', 'help', 'me'
+  ]);
+  
+  // Extract meaningful keywords
+  // Split by common delimiters and filter
+  const words = query
+    .replace(/[，。？！、；：""''（）【】《》\[\]\(\)\{\}]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 2 && !stopWords.has(w.toLowerCase()));
+  
+  if (words.length <= 4) {
+    // If few keywords, join them
+    return [words.join(' ')];
+  }
+  
+  // Group into chunks of 2-4 keywords
+  const queries = [];
+  for (let i = 0; i < words.length; i += 3) {
+    const chunk = words.slice(i, i + 3).join(' ');
+    if (chunk.length > 0) {
+      queries.push(chunk);
+    }
+  }
+  
+  // Return max 3 queries
+  return queries.slice(0, 3);
+}
+
+/**
+ * Execute a single web search via background script
+ * @param {string} query - Search query
+ * @param {Object} options - Search options
+ * @returns {Promise<Array>} - Search results
+ */
+function executeWebSearch(query, options = {}) {
+  const { count = 10, freshness = 'pm' } = options;
+  
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: 'WEB_SEARCH', query, options: { count, freshness } },
+      (response) => {
+        if (response?.error) {
+          reject(new Error(response.error));
+        } else {
+          resolve(response?.results || []);
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Format search results for injection into prompt
+ * Used by Agent Framework's query_council tool
+ */
+function formatSearchResultsForPrompt(results) {
+  if (!results || results.length === 0) return '';
+  
+  const formattedResults = results.slice(0, 5).map((r, i) => {
+    const title = r.title || '無標題';
+    const url = r.url || '';
+    const description = r.description || r.snippet || '無摘要';
+    return `[${i + 1}] ${title}\nURL: ${url}\n摘要: ${description}`;
+  }).join('\n\n');
+  
+  return `## 網路搜尋結果\n\n以下是相關搜尋結果，請參考這些資訊回答問題：\n\n${formattedResults}\n\n---\n\n`;
+}
+
 function buildPromptWithContext(query) {
   // Get output style instructions
   const styleInstructions = getOutputStyleInstructions();
@@ -4214,6 +4950,27 @@ ${contextText}
 function toggleCanvasDropdown(e) {
   e.stopPropagation();
   canvasDropdown.classList.toggle('hidden');
+}
+
+/**
+ * Handle quick submit from suggested actions panel
+ */
+function handleQuickSubmit() {
+  if (!suggestedQuickInput) return;
+  
+  const query = suggestedQuickInput.value.trim();
+  if (!query) {
+    showToast('請輸入問題', true);
+    return;
+  }
+  
+  // Set the query input and trigger send
+  queryInput.value = query;
+  suggestedQuickInput.value = '';
+  hideSuggestedActions();
+  
+  // Trigger send
+  handleSend();
 }
 
 // Branch action handlers
@@ -5637,13 +6394,13 @@ function generateMarkdown(conv) {
   md += `**日期：** ${new Date(conv.timestamp).toLocaleString('zh-TW')}\n\n`;
   md += `---\n\n`;
 
-  md += `## 階段 1：模型回應\n\n`;
+  md += `## 模型回應\n\n`;
   (conv.responses || []).forEach(r => {
     md += `### ${getModelName(r.model)}\n\n${r.content}\n\n`;
   });
 
   if (conv.ranking && conv.ranking.length > 0) {
-    md += `## 階段 2：互評排名\n\n`;
+    md += `## 互評排名\n\n`;
     conv.ranking.forEach((r, i) => {
       md += `${i + 1}. ${getModelName(r.model)}（平均：${r.avgRank.toFixed(2)}）\n`;
     });
@@ -5651,7 +6408,7 @@ function generateMarkdown(conv) {
   }
 
   if (conv.finalAnswer) {
-    md += `## 階段 3：最終答案\n\n`;
+    md += `## 主席彙整\n\n`;
     md += `**主席：** ${getModelName(conv.chairmanModel || chairmanModel)}\n\n`;
     md += conv.finalAnswer;
   }
@@ -5675,6 +6432,714 @@ function showToast(message, isError = false) {
   toast.textContent = message;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 2000);
+}
+
+// ============================================
+// Agent Framework Integration
+// ============================================
+
+// Flag to enable Agent Framework (set to true to use new flow)
+let useAgentFramework = true;
+
+// Current skill (detected from query)
+let currentSkill = null;
+
+// Orchestrator instance
+let orchestratorInstance = null;
+
+/**
+ * Initialize Agent Framework components
+ */
+function initAgentFramework() {
+  console.log('[AgentFramework] Initializing...');
+  
+  // Initialize Orchestrator
+  if (window.MAVOrchestrator) {
+    orchestratorInstance = new window.MAVOrchestrator.Orchestrator({
+      chairmanModel: chairmanModel,
+      availableModels: councilModels
+    });
+    console.log('[AgentFramework] Orchestrator initialized');
+  }
+  
+  // Register tool executors if not already done
+  if (window.MAVTools && !window.MAVTools.toolRegistry.has('query_council')) {
+    registerAgentTools();
+  }
+}
+
+/**
+ * Register tool executors connecting to existing app functions
+ */
+function registerAgentTools() {
+  console.log('[AgentFramework] Registering tools...');
+  
+  const toolRegistry = window.MAVTools.toolRegistry;
+  
+  // query_council - parallel query to models
+  toolRegistry.register('query_council', async (params, context) => {
+    const { query, models, includeSearchSuffix = true, skillId, taskDescription } = params;
+    const targetModels = models || councilModels;
+    
+    console.log('[Tool:query_council] Querying', targetModels.length, 'models');
+    console.log('[Tool:query_council] Current skill:', currentSkill?.id, currentSkill?.name);
+    console.log('[Tool:query_council] Context received:', context ? 'yes' : 'no');
+    console.log('[Tool:query_council] Context.searches:', context?.searches?.length || 0, 'searches');
+    
+    // Build base prompt with context
+    let promptWithContext = buildPromptWithContext(query);
+    
+    // === Inject search results from context.searches ===
+    if (context?.searches?.length > 0) {
+      const allSearchResults = context.searches.flatMap(s => s.results || []);
+      console.log('[Tool:query_council] Total search results to inject:', allSearchResults.length);
+      if (allSearchResults.length > 0) {
+        const searchContext = formatSearchResultsForPrompt(allSearchResults);
+        promptWithContext = searchContext + promptWithContext;
+        console.log('[Tool:query_council] Search context injected into prompt');
+      }
+    } else {
+      console.log('[Tool:query_council] No searches in context - query will not include search results');
+    }
+    
+    // === NEW: Inject skill-specific instructions (user message style) ===
+    if (currentSkill?.instructions) {
+      const skillInstruction = `## 技能指引：${currentSkill.name}\n\n${currentSkill.instructions}\n\n---\n\n`;
+      promptWithContext = skillInstruction + promptWithContext;
+      console.log('[Tool:query_council] Skill instructions applied:', currentSkill.id);
+    } else if (currentSkill) {
+      console.log('[Tool:query_council] Skill has no instructions:', currentSkill.id);
+    }
+    
+    // Add search suffix if requested
+    if (includeSearchSuffix) {
+      promptWithContext += COUNCIL_SEARCH_SUFFIX;
+    }
+    
+    // Clear previous responses
+    responses.clear();
+    
+    // Query all models in parallel
+    await Promise.allSettled(
+      targetModels.map(model => queryModel(model, promptWithContext))
+    );
+    
+    // Collect results
+    const successfulResponses = Array.from(responses.entries())
+      .filter(([_, r]) => r.status === 'done')
+      .map(([model, r]) => ({ 
+        model, 
+        content: r.content, 
+        latency: r.latency,
+        task: taskDescription || query,
+        skill: skillId || currentSkill?.id
+      }));
+    
+    const failures = Array.from(responses.entries())
+      .filter(([_, r]) => r.status === 'error')
+      .map(([model, r]) => ({ model, error: r.error }));
+    
+    console.log('[Tool:query_council] Complete:', successfulResponses.length, 'success,', failures.length, 'failed');
+    
+    return {
+      responses: successfulResponses,
+      failures,
+      successCount: successfulResponses.length,
+      totalCount: targetModels.length
+    };
+  });
+  
+  // web_search - Brave Search API
+  toolRegistry.register('web_search', async (params, context) => {
+    const { query, queries, count = 10, freshness = 'pm' } = params;
+    
+    // Build list of queries to execute
+    let queryList = queries || [query];
+    
+    // Split long queries into shorter keywords (max 30 chars, 2-4 keywords)
+    queryList = queryList.flatMap(q => {
+      if (!q) return [];
+      if (q.length <= 30) return [q];
+      
+      // Extract keywords from long query
+      const extracted = splitSearchQuery(q);
+      console.log('[Tool:web_search] Split query:', q.slice(0, 30) + '...', '->', extracted);
+      return extracted;
+    });
+    
+    // Limit to max 3 queries
+    queryList = queryList.slice(0, 3);
+    console.log('[Tool:web_search] Executing', queryList.length, 'queries:', queryList);
+    
+    // Execute searches
+    const allResults = [];
+    const executedQueries = [];
+    
+    for (const q of queryList) {
+      try {
+        const results = await executeWebSearch(q, { count: Math.ceil(count / queryList.length), freshness });
+        allResults.push(...results);
+        executedQueries.push(q);
+      } catch (error) {
+        console.error('[Tool:web_search] Error for query:', q, error);
+      }
+    }
+    
+    console.log('[Tool:web_search] Total results:', allResults.length, 'from', executedQueries.length, 'queries');
+    
+    // Add search results to UI contextItems
+    if (allResults.length > 0) {
+      const searchContent = allResults.slice(0, 5).map((r, i) => 
+        `[${i+1}] ${r.title}\n來源: ${r.url}\n${r.description || r.snippet || ''}`
+      ).join('\n\n');
+      
+      await addContextItem({
+        title: `搜尋: ${executedQueries.join(', ').slice(0, 30)}${executedQueries.join(', ').length > 30 ? '...' : ''}`,
+        content: searchContent,
+        url: '',
+        type: 'search',
+        urlsWithStatus: allResults.slice(0, 5).map(r => ({ url: r.url, title: r.title, status: 'pending' }))
+      });
+      console.log('[Tool:web_search] Added to contextItems:', allResults.length, 'results');
+    }
+    
+    return {
+      query: executedQueries.join('; '),
+      queries: executedQueries,
+      results: allResults,
+      resultCount: allResults.length
+    };
+  });
+  
+  // peer_review - anonymous cross-evaluation
+  toolRegistry.register('peer_review', async (params, context) => {
+    // Get responses from context if not provided in params (planner may not pass them)
+    const inputResponses = params.responses || context?.responses;
+    const query = params.query || context?.query;
+    const { modelWeights = {}, evaluationMode = 'standard' } = params;
+    
+    console.log('[Tool:peer_review] Starting review of', inputResponses?.length || 0, 'responses, mode:', evaluationMode);
+    console.log('[Tool:peer_review] Responses source:', params.responses ? 'params' : 'context');
+    
+    if (!inputResponses || inputResponses.length < 2) {
+      console.error('[Tool:peer_review] Not enough responses:', inputResponses?.length || 0);
+      throw new Error('Need at least 2 responses for peer review');
+    }
+    
+    // Clear previous reviews
+    reviews.clear();
+    
+    // Run reviews in parallel
+    await Promise.allSettled(
+      councilModels.map(model => runReview(model, query, inputResponses))
+    );
+    
+    // Aggregate rankings
+    const aggregatedRanking = aggregateRankings(inputResponses);
+    
+    // Calculate weighted ranking if weights provided
+    let weightedRanking = null;
+    if (evaluationMode === 'weighted' && Object.keys(modelWeights).length > 0) {
+      weightedRanking = aggregatedRanking.map(item => {
+        const weight = modelWeights[item.model] || 1.0;
+        return {
+          ...item,
+          weightedScore: item.score * weight,
+          taskWeight: weight
+        };
+      }).sort((a, b) => b.weightedScore - a.weightedScore);
+    }
+    
+    const winner = weightedRanking?.[0]?.model || aggregatedRanking[0]?.model || null;
+    
+    console.log('[Tool:peer_review] Complete. Winner:', winner);
+    
+    return {
+      reviews: Array.from(reviews.values()),
+      aggregatedRanking,
+      weightedRanking,
+      reviewCount: reviews.size,
+      winner,
+      evaluationMode
+    };
+  });
+  
+  // synthesize - chairman synthesis
+  toolRegistry.register('synthesize', async (params, context) => {
+    // Get data from context if not provided in params (planner may not pass them)
+    const query = params.query || context?.query;
+    const inputResponses = params.responses || context?.responses;
+    const inputReviews = params.reviews || context?.reviews;
+    const searches = params.searches || context?.searches;
+    const { useWeightedIntegration = false, chairmanOverride = null } = params;
+    
+    console.log('[Tool:synthesize] Responses source:', params.responses ? 'params' : 'context');
+    console.log('[Tool:synthesize] Responses count:', inputResponses?.length || 0);
+    
+    const ranking = inputReviews?.weightedRanking || inputReviews?.aggregatedRanking || null;
+    const searchResults = searches || null;
+    
+    // Resolve actual chairman
+    const actualChairman = chairmanOverride || resolveChairmanModel(ranking, inputResponses);
+    
+    console.log('[Tool:synthesize] Chairman:', actualChairman);
+    
+    const content = await runChairman(
+      query, 
+      inputResponses, 
+      ranking, 
+      enableSearchMode,
+      null, // targetCardId
+      searchResults
+    );
+    
+    return {
+      content,
+      chairmanModel: actualChairman,
+      winner: inputReviews?.winner || null
+    };
+  });
+  
+  // final_answer - output result
+  toolRegistry.register('final_answer', async (params, context) => {
+    const { content, summary } = params;
+    console.log('[Tool:final_answer] Returning final answer');
+    return {
+      content,
+      summary: summary || content?.slice(0, 100) + '...',
+      completed: true
+    };
+  });
+  
+  // request_user_input - breakpoint for user interaction
+  toolRegistry.register('request_user_input', async (params, context) => {
+    const { 
+      message, 
+      inputType = 'choice',
+      options = [], 
+      suggestedSearches = [],
+      placeholder = ''
+    } = params;
+    
+    console.log('[Tool:request_user_input] Showing breakpoint panel');
+    console.log('[Tool:request_user_input] inputType:', inputType);
+    console.log('[Tool:request_user_input] Options:', options.length);
+    console.log('[Tool:request_user_input] Message:', message);
+    
+    // Show breakpoint panel and wait for user response
+    const userResponse = await showBreakpointAndWait(message, suggestedSearches, {
+      inputType,
+      options,
+      suggestedSearches,
+      placeholder
+    });
+    
+    console.log('[Tool:request_user_input] User response:', userResponse);
+    
+    // Update progress panel
+    updateAgentProgress('request_user_input', 'done', {
+      action: userResponse.action,
+      value: userResponse.value
+    });
+    
+    // Handle different action types
+    switch (userResponse.action) {
+      case 'search': {
+        // Execute search
+        const query = userResponse.query || userResponse.value;
+        if (!query) {
+          return { action: 'proceed', continueLoop: false };
+        }
+        
+        console.log('[Tool:request_user_input] Executing search:', query);
+        const searchResults = await executeWebSearch(query, { count: 10 });
+        
+        // Add to context items
+        if (searchResults.length > 0) {
+          const searchContent = searchResults.slice(0, 5).map((r, i) => 
+            `[${i+1}] ${r.title}\n來源: ${r.url}\n${r.description || r.snippet || ''}`
+          ).join('\n\n');
+          
+          await addContextItem({
+            title: `搜尋: ${query.slice(0, 30)}${query.length > 30 ? '...' : ''}`,
+            content: searchContent,
+            url: '',
+            type: 'search',
+            urlsWithStatus: searchResults.slice(0, 5).map(r => ({ url: r.url, title: r.title, status: 'pending' }))
+          });
+        }
+        
+        return {
+          action: 'search',
+          query,
+          results: searchResults,
+          resultCount: searchResults.length,
+          continueLoop: true
+        };
+      }
+      
+      case 'deepen':
+      case 'rephrase':
+      case 'switch_focus':
+      case 'clarify':
+      case 'custom': {
+        // All these actions create a child card as a sub-task
+        const value = userResponse.value || userResponse.label;
+        console.log(`[Tool:request_user_input] Action: ${userResponse.action}, value: ${value?.slice(0, 50)}`);
+        console.log(`[Tool:request_user_input] currentCard exists:`, !!currentCard, currentCard?.id);
+        
+        // Build query for child card based on action type
+        let childQuery;
+        const parentQuery = context?.query || '';
+        
+        switch (userResponse.action) {
+          case 'deepen':
+            childQuery = `【聚焦方向】${value}\n\n基於上層討論：${parentQuery.slice(0, 200)}${parentQuery.length > 200 ? '...' : ''}`;
+            break;
+          case 'rephrase':
+            childQuery = value; // Pure new question
+            break;
+          case 'switch_focus':
+            childQuery = `【轉換焦點】${value}`;
+            break;
+          case 'clarify':
+          case 'custom':
+          default:
+            childQuery = `${value}\n\n參考上層脈絡：${parentQuery.slice(0, 150)}${parentQuery.length > 150 ? '...' : ''}`;
+        }
+        
+        console.log(`[Tool:request_user_input] childQuery: ${childQuery.slice(0, 80)}...`);
+        
+        // Create child card
+        if (currentCard) {
+          // Add as task first
+          const taskId = generateId();
+          const task = {
+            id: taskId,
+            content: value.slice(0, 100),
+            priority: 'high',
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            suggestedFeatures: []
+          };
+          currentCard.tasks.push(task);
+          console.log(`[Tool:request_user_input] Task created: ${taskId}`);
+          
+          // Create child card from task
+          const childCard = createChildCard(currentCard.id, taskId, childQuery);
+          console.log(`[Tool:request_user_input] Child card created:`, !!childCard, childCard?.id);
+          
+          if (childCard) {
+            // Return signal to hand off to child card
+            return {
+              action: 'spawn_child',
+              childCardId: childCard.id,
+              childQuery: childQuery,
+              continueLoop: false, // Stop current loop
+              spawnChild: true     // Signal to agent.js to spawn new loop
+            };
+          } else {
+            console.error('[Tool:request_user_input] Failed to create child card');
+          }
+        } else {
+          console.warn('[Tool:request_user_input] No currentCard available');
+        }
+        
+        // Fallback: continue in current loop if child creation fails
+        console.log('[Tool:request_user_input] Fallback: continuing in current loop');
+        return {
+          action: userResponse.action,
+          value: value,
+          modifiedQuery: childQuery,
+          continueLoop: true
+        };
+      }
+      
+      case 'cancel':
+      case 'proceed':
+      default:
+        // User chose to proceed or cancel
+        return {
+          action: 'proceed',
+          continueLoop: false
+        };
+    }
+  });
+  
+  console.log('[AgentFramework] Tools registered');
+}
+
+/**
+ * Get current skill based on query
+ */
+function getCurrentSkillForQuery(query) {
+  const skillSelector = window.MAVSkills?.skillSelector;
+  if (!skillSelector) {
+    console.warn('[AgentFramework] SkillSelector not available');
+    return null;
+  }
+  
+  const settings = {
+    visionMode: visionMode,
+    learnerMode: learnerMode
+  };
+  
+  const skill = skillSelector.select(query, settings);
+  console.log('[AgentFramework] Selected skill:', skill?.id, skill?.name);
+  return skill;
+}
+
+/**
+ * Run Council using Agent Framework
+ */
+async function runWithAgentLoop(query, options = {}) {
+  const { targetCardId, savedResponsesRef } = options;
+  
+  console.log('[AgentFramework] Starting AgentLoop for query:', query.substring(0, 50) + '...');
+  
+  // Clear previous progress and suggestions for new query
+  clearAgentProgress();
+  hideSuggestedActions();
+  
+  // Get skill
+  currentSkill = getCurrentSkillForQuery(query);
+  if (currentSkill) {
+    updateSkillBadge(currentSkill);
+  }
+  
+  // Create planner (HybridPlanner auto-switches between LLM and rule-based)
+  const preferredTools = currentSkill?.preferredTools || ['query_council', 'peer_review', 'synthesize'];
+  const planner = new window.MAVPlanner.HybridPlanner({
+    model: plannerModel || null,  // Empty string means use rule-based only
+    complexityThreshold: 0.5,
+    useWeightedEvaluation: false
+  });
+  planner.setPreferredTools(preferredTools);
+  planner.setSkill(currentSkill);
+  if (currentSkill?.plannerHint) {
+    planner.setSkillHint(currentSkill.plannerHint);
+  }
+  
+  console.log('[AgentFramework] Preferred tools:', preferredTools);
+  console.log('[AgentFramework] Planner model:', plannerModel || '(rule-based)');
+  
+  // Create agent loop
+  const agentLoop = new window.MAVAgent.AgentLoop({
+    toolRegistry: window.MAVTools.toolRegistry,
+    planner: planner,
+    maxIterations: currentSkill?.maxIterations || 10,
+    
+    // UI Callbacks
+    onIterationStart: (context) => {
+      console.log('[AgentLoop] Iteration', context.iteration, 'start');
+      // Show planning in progress
+      updateAgentProgress('planning', 'loading', {
+        iteration: context.iteration,
+        maxIterations: context.maxIterations
+      });
+    },
+    
+    onPlanDecision: (action, context) => {
+      console.log('[AgentLoop] Plan decision:', action?.tool, 'reasoning:', action?.reasoning);
+      // Update planning with decision and reasoning
+      if (action) {
+        updateAgentProgress('planning', 'done', {
+          iteration: context.iteration,
+          nextTool: action.tool,
+          reasoning: action.reasoning
+        });
+      }
+    },
+    
+    onToolStart: (action, context) => {
+      console.log('[AgentLoop] Tool start:', action.tool);
+      
+      // Update progress panel
+      const progressDetails = {
+        iteration: context.iteration,
+        maxIterations: context.maxIterations,
+        modelCount: councilModels.length,
+        chairman: chairmanModel !== REVIEW_WINNER_VALUE ? chairmanModel : null
+      };
+      updateAgentProgress(action.tool, 'loading', progressDetails);
+      
+      // Update legacy UI based on tool
+      switch (action.tool) {
+        case 'query_council':
+          currentStage = 'stage1';
+          stage1Status.textContent = '查詢中...';
+          stage1Status.classList.add('loading');
+          renderTabs();
+          renderResponsePanels();
+          if (councilModels.length > 0) setActiveTab(councilModels[0]);
+          break;
+          
+        case 'peer_review':
+          currentStage = 'stage2';
+          setStepActive(2);
+          stage2Status.textContent = '審查中...';
+          stage2Status.classList.add('loading');
+          document.getElementById('stage2Content').classList.add('expanded');
+          reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">模型正在互相審查...</span></div>`;
+          break;
+          
+        case 'synthesize':
+          currentStage = 'stage3';
+          setStepActive(3);
+          stage3Status.textContent = '彙整中...';
+          stage3Status.classList.add('loading');
+          document.getElementById('stage3Content').classList.add('expanded');
+          
+          const chairman = resolveChairmanModel(null, context.responses);
+          finalAnswer.innerHTML = `
+            <div class="chairman-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+              ${getModelName(chairman)}
+            </div>
+            <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
+          `;
+          break;
+      }
+    },
+    
+    onToolEnd: (action, result, context) => {
+      console.log('[AgentLoop] Tool end:', action.tool, 'success:', result.success);
+      
+      // Update progress panel
+      const progressDetails = {
+        iteration: context.iteration,
+        maxIterations: context.maxIterations,
+        ...result.data
+      };
+      updateAgentProgress(action.tool, result.success ? 'done' : 'error', progressDetails);
+      
+      // Update legacy UI based on tool completion
+      switch (action.tool) {
+        case 'web_search':
+          // web_search has no legacy UI, progress panel already updated
+          break;
+          
+        case 'query_council':
+          if (result.success) {
+            const successCount = result.data.successCount;
+            const totalCount = result.data.totalCount;
+            stage1Status.textContent = `${successCount}/${totalCount} 完成`;
+            stage1Status.classList.remove('loading');
+            stage1Status.classList.add('done');
+            setStepDone(1);
+            
+            // Update saved responses
+            if (savedResponsesRef) {
+              savedResponsesRef.value = result.data.responses;
+            }
+            
+            updateStage1Summary(result.data.responses.map(r => ({ ...r, status: 'done' })));
+            document.getElementById('stage1Content').classList.remove('expanded');
+            stage1Section.classList.add('collapsed');
+          }
+          break;
+          
+        case 'peer_review':
+          if (result.success) {
+            const ranking = result.data.aggregatedRanking;
+            renderReviewResults(ranking);
+            stage2Status.textContent = t('sidepanel.stageComplete');
+            stage2Status.classList.remove('loading');
+            stage2Status.classList.add('done');
+            setStepDone(2);
+            updateStage2Summary(ranking);
+            document.getElementById('stage2Content').classList.remove('expanded');
+            stage2Section.classList.add('collapsed');
+          }
+          break;
+          
+        case 'synthesize':
+          if (result.success) {
+            stage3Status.textContent = t('sidepanel.stageComplete');
+            stage3Status.classList.remove('loading');
+            stage3Status.classList.add('done');
+            setAllStepsDone();
+            updateStage3Summary(result.data.chairmanModel);
+          }
+          break;
+      }
+    },
+    
+    onComplete: async (result) => {
+      console.log('[AgentLoop] Complete:', result.success);
+      
+      // Check if we need to spawn a child card
+      if (result.spawnChild && result.childCardId) {
+        console.log('[AgentLoop] Spawning child card loop:', result.childCardId);
+        
+        // Switch to child card
+        const childCard = sessionState.cards.get(result.childCardId);
+        if (childCard) {
+          // Update current card reference
+          currentCard = childCard;
+          
+          // Update UI
+          renderBreadcrumb();
+          renderCarousel();
+          renderTodoSection(currentCard.tasks);
+          
+          // Clear and prepare for new query
+          clearAgentProgress();
+          
+          // Small delay then start agent loop on child card
+          setTimeout(async () => {
+            try {
+              console.log('[AgentLoop] Starting child card agent loop:', result.childQuery);
+              await runWithAgentLoop(result.childQuery);
+            } catch (err) {
+              console.error('[AgentLoop] Child card error:', err);
+            }
+          }, 300);
+          
+          return; // Don't show suggested actions - new loop is starting
+        }
+      }
+      
+      // Keep progress panel visible (no collapse/hide)
+      // Show suggested actions for next steps after brief delay
+      setTimeout(() => {
+        if (result.success) {
+          showSuggestedActions(result, currentSkill);
+        }
+      }, 1500);
+    },
+    
+    onError: (error, context) => {
+      console.error('[AgentLoop] Error:', error);
+      // Update progress panel to show error - don't auto-hide to preserve error info
+      updateAgentProgress('error', 'error', { 
+        error: error.message,
+        tool: context?.lastAction?.tool || 'unknown',
+        iteration: context?.iteration || 0
+      });
+      // Do NOT auto-hide - let user see the error
+      // The panel will be cleared on next query via clearAgentProgress()
+    },
+    
+    onSkillSelected: (skill) => {
+      console.log('[AgentLoop] Skill applied:', skill.id);
+    }
+  });
+  
+  // Apply skill
+  if (currentSkill) {
+    agentLoop.applySkill(currentSkill);
+  }
+  
+  // Run the agent loop
+  const result = await agentLoop.run(query, {
+    skill: currentSkill,
+    chairmanModel: chairmanModel
+  });
+  
+  return result;
 }
 
 // ============================================
@@ -5818,165 +7283,207 @@ async function handleSend() {
   let savedResponses = [];
   let aggregatedRanking = null;
   let finalAnswerContent = '';
+  
+  // Reference for passing to callbacks
+  const savedResponsesRef = { value: [] };
 
   try {
-    // === STAGE 1 ===
-    currentStage = 'stage1';
-    stage1Status.textContent = '查詢中...';
-    stage1Status.classList.add('loading');
+    // Initialize Agent Framework if needed
+    initAgentFramework();
     
-    renderTabs();
-    renderResponsePanels();
-    if (councilModels.length > 0) setActiveTab(councilModels[0]);
-
-    // Build prompt with context if available
-    let promptWithContext = buildPromptWithContext(query);
-    
-    // 總是要求模型提供搜尋建議
-    promptWithContext += COUNCIL_SEARCH_SUFFIX;
-    
-    await Promise.allSettled(councilModels.map(model => queryModel(model, promptWithContext)));
-    
-    const successfulResponses = Array.from(responses.entries())
-      .filter(([_, r]) => r.status === 'done')
-      .map(([model, r]) => ({ model, content: r.content, latency: r.latency }));
-
-    savedResponses = successfulResponses;
-    stage1Status.textContent = `${successfulResponses.length}/${councilModels.length} 完成`;
-    stage1Status.classList.remove('loading');
-    stage1Status.classList.add('done');
-    
-    // Update stepper: Stage 1 done
-    setStepDone(1);
-    
-    // Update Stage 1 summary
-    updateStage1Summary(successfulResponses.map(r => ({ ...r, status: 'done' })));
-
-    document.getElementById('stage1Content').classList.remove('expanded');
-    stage1Section.classList.add('collapsed');
-
-    if (successfulResponses.length < 2) {
-      showError('Council 需要至少 2 個模型成功回應。');
-      resetButton();
-      return;
-    }
-
-    // === STAGE 2 ===
-    if (enableReview && successfulResponses.length >= 2) {
-      currentStage = 'stage2';
-      // Update stepper: Stage 2 active
-      setStepActive(2);
+    // =========================================
+    // Agent Framework Flow (new)
+    // =========================================
+    if (useAgentFramework && window.MAVAgent && window.MAVTools) {
+      console.log('[handleSend] Using Agent Framework');
       
-      stage2Status.textContent = '審查中...';
-      stage2Status.classList.add('loading');
-      document.getElementById('stage2Content').classList.add('expanded');
-
-      reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">模型正在互相審查...</span></div>`;
-
-      await Promise.allSettled(councilModels.map(model => runReview(model, query, successfulResponses)));
-
-      aggregatedRanking = aggregateRankings(successfulResponses);
-      renderReviewResults(aggregatedRanking);
-
-      stage2Status.textContent = t('sidepanel.stageComplete');
-      stage2Status.classList.remove('loading');
-      stage2Status.classList.add('done');
+      const result = await runWithAgentLoop(query, {
+        targetCardId,
+        savedResponsesRef
+      });
       
-      // Update stepper: Stage 2 done
-      setStepDone(2);
-      
-      // Update Stage 2 summary
-      updateStage2Summary(aggregatedRanking);
-      
-      document.getElementById('stage2Content').classList.remove('expanded');
-      stage2Section.classList.add('collapsed');
-    } else {
-      stage2Section.classList.add('stage-skipped');
-      stage2Status.textContent = t('sidepanel.stageSkipped');
-      reviewResults.innerHTML = '<div class="skipped-message">互評審查已停用</div>';
-      
-      // Update stepper: Stage 2 skipped
-      setStepSkipped(2);
-    }
-
-    // === STAGE 3: Search Suggestions (僅當有建議時顯示) ===
-    let searchResults = null;
-    // 提取所有模型的搜尋建議
-    const allSuggestions = extractAllSearchSuggestions(responses);
-    
-    if (allSuggestions.some(s => s.queries.length > 0)) {
-      // 有搜尋建議，顯示 Stage 3 讓用戶選擇
-      const userAction = await showStage25AndWaitForAction(allSuggestions);
-      
-      if (userAction.action === 'search' && userAction.queries.length > 0) {
-        // Execute search
-        stage25Status.textContent = '搜尋中...';
-        stage25Status.className = 'stage-status loading';
+      if (result.success) {
+        finalAnswerContent = result.content;
+        savedResponses = savedResponsesRef.value;
         
-        try {
-          searchResults = await executeMultipleSearches(userAction.queries.slice(0, 3));
-          searchIteration++;
-          updateSearchIterationCounter();
-          
-          stage25Status.textContent = t('sidepanel.stageComplete');
-          stage25Status.className = 'stage-status done';
-          stage25Section.classList.add('collapsed');
-          
-          // Add search results to context (auto scope: root → session, subtask → card)
-          if (searchResults && searchResults.length > 0) {
-            for (const r of searchResults) {
-              if (contextItems.length < 20) {
-                await addContextItem({
-                  title: `搜尋: ${r.query}`,
-                  content: r.results.map(item => `${item.title}\n${item.snippet}`).join('\n\n'),
-                  url: '',
-                  type: 'search'
-                }); // Uses 'auto' scope
-              }
-            }
-          }
-        } catch (searchErr) {
-          console.error('Search failed:', searchErr);
-          stage25Status.textContent = '搜尋失敗';
-          stage25Status.className = 'stage-status error';
-          showToast('搜尋失敗，將繼續生成結論', true);
+        // Agent Framework handles search via web_search tool
+        // Use suggested actions panel for non-blocking extended search option
+        // Skip legacy Stage 2.5 blocking flow
+        stage25Section.classList.add('hidden');
+        
+        // Store search queries for suggested actions if available
+        const allSuggestions = extractAllSearchSuggestions(responses);
+        if (allSuggestions.some(s => s.queries.length > 0)) {
+          currentSearchQueries = allSuggestions.flatMap(s => s.queries).slice(0, 5);
+          console.log('[AgentFramework] Search queries for suggested actions:', currentSearchQueries);
         }
       } else {
-        // User skipped search
-        stage25Section.classList.add('collapsed');
+        throw new Error(result.error || 'Agent Framework execution failed');
       }
-    } else {
-      // No suggestions from models, hide stage 3
-      stage25Section.classList.add('hidden');
-    }
+    } 
+    // =========================================
+    // Legacy Flow (original three-stage)
+    // =========================================
+    else {
+      console.log('[handleSend] Using legacy flow');
+      
+      // === STAGE 1 ===
+      currentStage = 'stage1';
+      stage1Status.textContent = '查詢中...';
+      stage1Status.classList.add('loading');
+      
+      renderTabs();
+      renderResponsePanels();
+      if (councilModels.length > 0) setActiveTab(councilModels[0]);
 
-    // === STAGE 3 ===
-    currentStage = 'stage3';
-    // Update stepper: Stage 3 active
-    setStepActive(3);
-    
-    // 決定實際使用的主席模型
-    const actualChairman = resolveChairmanModel(aggregatedRanking, successfulResponses);
-    
-    // Update Stage 3 summary
-    updateStage3Summary(actualChairman);
-    
-    stage3Status.textContent = '彙整中...';
-    stage3Status.classList.add('loading');
-    document.getElementById('stage3Content').classList.add('expanded');
+      // Build prompt with context if available
+      let promptWithContext = buildPromptWithContext(query);
+      
+      // 總是要求模型提供搜尋建議
+      promptWithContext += COUNCIL_SEARCH_SUFFIX;
+      
+      await Promise.allSettled(councilModels.map(model => queryModel(model, promptWithContext)));
+      
+      const successfulResponses = Array.from(responses.entries())
+        .filter(([_, r]) => r.status === 'done')
+        .map(([model, r]) => ({ model, content: r.content, latency: r.latency }));
 
-    finalAnswer.innerHTML = `
-      <div class="chairman-badge">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-        </svg>
-        ${getModelName(actualChairman)}
-      </div>
-      <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
-    `;
+      savedResponses = successfulResponses;
+      stage1Status.textContent = `${successfulResponses.length}/${councilModels.length} 完成`;
+      stage1Status.classList.remove('loading');
+      stage1Status.classList.add('done');
+      
+      // Update stepper: Stage 1 done
+      setStepDone(1);
+      
+      // Update Stage 1 summary
+      updateStage1Summary(successfulResponses.map(r => ({ ...r, status: 'done' })));
 
-    try {
-      finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking, enableSearchMode, targetCardId, searchResults);
+      document.getElementById('stage1Content').classList.remove('expanded');
+      stage1Section.classList.add('collapsed');
+
+      if (successfulResponses.length < 2) {
+        showError('Council 需要至少 2 個模型成功回應。');
+        resetButton();
+        return;
+      }
+
+      // === STAGE 2 ===
+      if (enableReview && successfulResponses.length >= 2) {
+        currentStage = 'stage2';
+        // Update stepper: Stage 2 active
+        setStepActive(2);
+        
+        stage2Status.textContent = '審查中...';
+        stage2Status.classList.add('loading');
+        document.getElementById('stage2Content').classList.add('expanded');
+
+        reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">模型正在互相審查...</span></div>`;
+
+        await Promise.allSettled(councilModels.map(model => runReview(model, query, successfulResponses)));
+
+        aggregatedRanking = aggregateRankings(successfulResponses);
+        renderReviewResults(aggregatedRanking);
+
+        stage2Status.textContent = t('sidepanel.stageComplete');
+        stage2Status.classList.remove('loading');
+        stage2Status.classList.add('done');
+        
+        // Update stepper: Stage 2 done
+        setStepDone(2);
+        
+        // Update Stage 2 summary
+        updateStage2Summary(aggregatedRanking);
+        
+        document.getElementById('stage2Content').classList.remove('expanded');
+        stage2Section.classList.add('collapsed');
+      } else {
+        stage2Section.classList.add('stage-skipped');
+        stage2Status.textContent = t('sidepanel.stageSkipped');
+        reviewResults.innerHTML = '<div class="skipped-message">互評審查已停用</div>';
+        
+        // Update stepper: Stage 2 skipped
+        setStepSkipped(2);
+      }
+
+      // === STAGE 3: Search Suggestions (僅當有建議時顯示) ===
+      let searchResults = null;
+      // 提取所有模型的搜尋建議
+      const allSuggestions = extractAllSearchSuggestions(responses);
+      
+      if (allSuggestions.some(s => s.queries.length > 0)) {
+        // 有搜尋建議，顯示 Stage 3 讓用戶選擇
+        const userAction = await showStage25AndWaitForAction(allSuggestions);
+        
+        if (userAction.action === 'search' && userAction.queries.length > 0) {
+          // Execute search
+          stage25Status.textContent = '搜尋中...';
+          stage25Status.className = 'stage-status loading';
+          
+          try {
+            searchResults = await executeMultipleSearches(userAction.queries.slice(0, 3));
+            searchIteration++;
+            updateSearchIterationCounter();
+            
+            stage25Status.textContent = t('sidepanel.stageComplete');
+            stage25Status.className = 'stage-status done';
+            stage25Section.classList.add('collapsed');
+            
+            // Add search results to context (auto scope: root → session, subtask → card)
+            if (searchResults && searchResults.length > 0) {
+              for (const r of searchResults) {
+                if (contextItems.length < 20) {
+                  await addContextItem({
+                    title: `搜尋: ${r.query}`,
+                    content: r.results.map(item => `${item.title}\n${item.snippet}`).join('\n\n'),
+                    url: '',
+                    type: 'search'
+                  }); // Uses 'auto' scope
+                }
+              }
+            }
+          } catch (searchErr) {
+            console.error('Search failed:', searchErr);
+            stage25Status.textContent = '搜尋失敗';
+            stage25Status.className = 'stage-status error';
+            showToast('搜尋失敗，將繼續生成結論', true);
+          }
+        } else {
+          // User skipped search
+          stage25Section.classList.add('collapsed');
+        }
+      } else {
+        // No suggestions from models, hide stage 3
+        stage25Section.classList.add('hidden');
+      }
+
+      // === STAGE 3 ===
+      currentStage = 'stage3';
+      // Update stepper: Stage 3 active
+      setStepActive(3);
+      
+      // 決定實際使用的主席模型
+      const actualChairman = resolveChairmanModel(aggregatedRanking, successfulResponses);
+      
+      // Update Stage 3 summary
+      updateStage3Summary(actualChairman);
+      
+      stage3Status.textContent = '彙整中...';
+      stage3Status.classList.add('loading');
+      document.getElementById('stage3Content').classList.add('expanded');
+
+      finalAnswer.innerHTML = `
+        <div class="chairman-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+          ${getModelName(actualChairman)}
+        </div>
+        <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
+      `;
+
+      try {
+        finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking, enableSearchMode, targetCardId, searchResults);
 
       stage3Status.textContent = t('sidepanel.stageComplete');
       stage3Status.classList.remove('loading');
@@ -6033,6 +7540,7 @@ async function handleSend() {
       resetButton();
       return;
     }
+    } // End of legacy flow else block
 
     // === IMAGE GENERATION (if enabled) ===
     if (enableImage && finalAnswerContent) {

@@ -182,14 +182,10 @@ window.LOCALE_JA_JP = {
     stepReview: 'レビュー',
     stepSynthesis: '統合',
     
-    // Stages
-    stage1Label: 'ステージ 1',
+    // Stages (no numbered labels, icon-based UI)
     stage1Title: 'モデル回答',
-    stage2Label: 'ステージ 2',
     stage2Title: '相互レビュー',
-    stage3Label: 'ステージ 3',
     stage3Title: '検索オプション',
-    stage4Label: 'ステージ 4',
     stage4Title: '議長統合',
     stageComplete: '完了',
     stageSkipped: 'スキップ',
@@ -236,9 +232,9 @@ window.LOCALE_JA_JP = {
     
     // Conversation Cost
     conversationCostTitle: '会話コスト',
-    costStage1: 'ステージ 1（モデル回答）',
-    costStage2: 'ステージ 2（相互レビュー）',
-    costStage3: 'ステージ 3（議長統合）',
+    costStage1: 'モデル回答',
+    costStage2: '相互レビュー',
+    costStage3: '議長統合',
     costImageGen: '画像生成',
     
     // Export Modal

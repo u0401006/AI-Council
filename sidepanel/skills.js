@@ -25,6 +25,15 @@ const SKILLS = {
     // Planner guidance
     plannerHint: '這是一個研究型問題。優先使用 web_search 收集多方資料，再 query_council 進行分析比較，確保使用 peer_review 驗證分析品質。',
     
+    // Skill instructions (injected into user prompt)
+    instructions: `你正在處理一個研究分析型問題。請遵循以下指引：
+
+1. **深度分析**：這是研究型問題，需要收集多方資料進行深入分析
+2. **資料來源**：參考搜尋結果或已知資訊，進行交叉比對
+3. **多元觀點**：從不同角度分析問題，呈現各方觀點
+4. **結構化輸出**：使用標題、清單、表格等結構化格式呈現分析結果
+5. **標註來源**：引用資料時使用 [1]、[2] 等編號標註來源`,
+    
     // Tool preferences
     preferredTools: ['web_search', 'query_council', 'peer_review', 'synthesize'],
     
@@ -54,6 +63,15 @@ const SKILLS = {
     },
     
     plannerHint: '這是一個學習引導型問題。使用 query_council 獲取多元觀點，不需要 web_search 除非問題涉及最新資訊。重點在於產出探索式任務而非直接答案。',
+    
+    // Skill instructions (injected into user prompt)
+    instructions: `你正在引導一位學習者探索知識。請遵循以下指引：
+
+1. **引導式教學**：使用蘇格拉底式問答，引導學習者自己發現答案
+2. **漸進揭露**：不要一次給出完整答案，保留探索空間
+3. **探索任務**：提供 2-4 個探索式任務或延伸問題
+4. **連結已知**：連結到學習者可能已知的概念
+5. **鼓勵思考**：使用「你覺得呢？」「你猜猜看」等引導語`,
     
     preferredTools: ['query_council', 'synthesize'],
     
@@ -90,6 +108,13 @@ const SKILLS = {
     
     plannerHint: '這是一個簡單問題。直接 query_council 獲取回答，跳過 peer_review，快速 synthesize 即可。',
     
+    // Skill instructions (injected into user prompt)
+    instructions: `這是一個簡單直接的問題。請遵循以下指引：
+
+1. **簡潔回答**：直接回答問題，避免冗長說明
+2. **重點優先**：先給出答案，再補充必要說明
+3. **避免過度展開**：不需要深入分析或多方比較`,
+    
     preferredTools: ['query_council', 'synthesize'],
     
     maxIterations: 3,
@@ -116,6 +141,15 @@ const SKILLS = {
     },
     
     plannerHint: '這是一個事實查核問題。必須先 web_search 取得可靠來源，再 query_council 進行交叉驗證，使用 peer_review 確保結論可靠。',
+    
+    // Skill instructions (injected into user prompt)
+    instructions: `你正在進行事實查核。請遵循以下指引：
+
+1. **驗證資訊**：查核問題中的陳述是否正確
+2. **引用來源**：必須提供可靠來源支持你的結論
+3. **明確判定**：給出明確的「正確」「錯誤」「部分正確」或「無法確認」判定
+4. **解釋原因**：說明判定的理由和依據
+5. **標註出處**：使用 [1]、[2] 等編號標註引用來源`,
     
     preferredTools: ['web_search', 'query_council', 'peer_review', 'synthesize'],
     
@@ -145,6 +179,15 @@ const SKILLS = {
     
     plannerHint: '這是一個創意發想問題。使用 query_council 獲取多元觀點最重要，不需要 web_search。peer_review 可以幫助篩選最佳創意。',
     
+    // Skill instructions (injected into user prompt)
+    instructions: `你正在進行創意發想。請遵循以下指引：
+
+1. **多元觀點**：提供多種不同角度的想法和方案
+2. **創新思維**：鼓勵跳脫框架的創意思考
+3. **列舉選項**：提供 3-5 個不同的方案或建議
+4. **分析優缺**：簡要說明各方案的優缺點
+5. **開放討論**：不要過早否定任何可能性`,
+    
     preferredTools: ['query_council', 'peer_review', 'synthesize'],
     
     maxIterations: 5,
@@ -172,6 +215,15 @@ const SKILLS = {
     
     plannerHint: '這是一個技術問題。query_council 獲取多個模型的解決方案，peer_review 評估程式碼品質，如需查詢文件可使用 web_search。',
     
+    // Skill instructions (injected into user prompt)
+    instructions: `你正在處理一個技術問題。請遵循以下指引：
+
+1. **程式碼品質**：提供可運行、結構良好的程式碼
+2. **說明清楚**：解釋程式碼的邏輯和設計決策
+3. **最佳實踐**：遵循該語言/框架的最佳實踐
+4. **錯誤處理**：考慮邊界情況和錯誤處理
+5. **文件參考**：如需要，引用官方文件或可靠來源`,
+    
     preferredTools: ['query_council', 'peer_review', 'web_search', 'synthesize'],
     
     maxIterations: 6,
@@ -198,6 +250,15 @@ const SKILLS = {
     },
     
     plannerHint: '這是一個時事問題。必須先 web_search 獲取最新資訊，query_council 分析整理，不需要 peer_review（新聞重時效）。',
+    
+    // Skill instructions (injected into user prompt)
+    instructions: `你正在處理時事新聞相關問題。請遵循以下指引：
+
+1. **最新資訊**：參考搜尋結果中的最新資訊
+2. **時效性**：標註資訊的時間點（如果有）
+3. **多方來源**：綜合多個來源的報導
+4. **客觀呈現**：客觀陳述事實，區分事實與觀點
+5. **標註出處**：使用 [1]、[2] 等編號標註新聞來源`,
     
     preferredTools: ['web_search', 'query_council', 'synthesize'],
     
@@ -243,6 +304,15 @@ const SKILLS = {
     
     // Static fallback hint
     plannerHint: '這是圖像設計問題。使用 query_council 獲取多個設計方案，不需要 web_search 或 peer_review。synthesize 後顯示風格選擇。',
+    
+    // Skill instructions (injected into user prompt)
+    instructions: `你正在處理圖像設計相關問題。請遵循以下指引：
+
+1. **視覺描述**：提供詳細的視覺元素描述（構圖、色彩、風格）
+2. **多方案設計**：提供 2-3 個不同方向的設計方案
+3. **風格參考**：如果用戶提到特定風格，說明該風格的特徵
+4. **技術細節**：說明適合的尺寸、格式、用途
+5. **創意說明**：解釋設計背後的創意理念`,
     
     // Dynamic tool preferences
     getPreferredTools: (query, settings) => {
@@ -299,6 +369,15 @@ const SKILLS = {
     },
     
     plannerHint: '用戶上傳了圖片需要分析。使用 query_council 讓視覺模型解析圖片內容，可搭配 web_search 查詢相關背景資訊，複雜分析可用 peer_review 交叉驗證。',
+    
+    // Skill instructions (injected into user prompt)
+    instructions: `你正在分析用戶上傳的圖片。請遵循以下指引：
+
+1. **詳細描述**：描述圖片中的主要元素、物件、場景
+2. **風格分析**：分析圖片的藝術風格、色調、構圖
+3. **文字辨識**：如有文字，提取並翻譯（如需要）
+4. **背景資訊**：如果是特定地點/人物/藝術品，提供相關背景資訊
+5. **回答問題**：根據用戶的具體問題提供針對性分析`,
     
     preferredTools: ['query_council', 'web_search', 'peer_review', 'synthesize'],
     
