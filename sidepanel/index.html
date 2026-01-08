@@ -187,11 +187,51 @@
         </button>
       </div>
 
-      <!-- Skill Badge -->
-      <div id="skillBadge" class="skill-badge hidden">
-        <span id="skillBadgeIcon" class="skill-badge-icon"></span>
-        <span id="skillBadgeName" class="skill-badge-name"></span>
-        <span id="skillBadgeStrategy" class="skill-badge-strategy hidden"></span>
+      <!-- Unified Skill Selector -->
+      <div id="skillSelector" class="skill-selector">
+        <button id="skillSelectorBtn" class="skill-selector-btn" data-i18n-title="sidepanel.selectSkill" title="選擇技能模式">
+          <span id="skillSelectorIcon" class="skill-selector-icon">⚡</span>
+          <span id="skillSelectorName" class="skill-selector-name" data-i18n="sidepanel.autoDetect">自動偵測</span>
+          <span id="skillSelectorSource" class="skill-selector-source hidden"></span>
+          <svg class="skill-selector-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+        <div id="skillDropdown" class="skill-dropdown hidden">
+          <div class="skill-dropdown-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="skillSearchInput" class="skill-search-input" data-i18n-placeholder="sidepanel.searchSkills" placeholder="搜尋技能...">
+          </div>
+          <div id="skillDropdownContent" class="skill-dropdown-content">
+            <!-- Recommended section -->
+            <div id="skillRecommendedSection" class="skill-dropdown-section hidden">
+              <div class="skill-section-header">
+                <span class="skill-section-icon">✨</span>
+                <span class="skill-section-title" data-i18n="sidepanel.recommended">推薦</span>
+              </div>
+              <div id="skillRecommendedList" class="skill-option-list">
+                <!-- Recommended skills rendered here -->
+              </div>
+            </div>
+            <!-- Category sections will be rendered by JS -->
+            <div id="skillCategorySections" class="skill-category-sections">
+              <!-- Categories rendered here -->
+            </div>
+            <!-- Clear selection -->
+            <div class="skill-dropdown-footer">
+              <button id="clearSkillSelection" class="skill-clear-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+                <span data-i18n="sidepanel.clearSkillSelection">清除選擇（使用自動偵測）</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <textarea 
@@ -200,6 +240,7 @@
         placeholder="輸入您的問題..."
         rows="1"
       ></textarea>
+      
       <!-- Vision Image Upload Area -->
       <div id="visionUploadSection" class="vision-upload-section hidden">
         <div id="visionUploadArea" class="vision-upload-area">
@@ -232,28 +273,6 @@
       </div>
 
       <div class="input-actions">
-        <label class="vision-toggle" data-i18n-title="sidepanel.visionToggle" title="Vision Council：上傳圖片讓多個 AI 分析">
-          <input type="checkbox" id="visionToggle">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-          </svg>
-        </label>
-        <label class="image-toggle" data-i18n-title="sidepanel.imageToggle" title="啟用圖片生成（支援特定模型）">
-          <input type="checkbox" id="imageToggle">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <circle cx="8.5" cy="8.5" r="1.5"></circle>
-            <polyline points="21 15 16 10 5 21"></polyline>
-          </svg>
-        </label>
-        <label class="search-toggle" data-i18n-title="sidepanel.searchToggle" title="啟用 AI 網搜迭代模式">
-          <input type="checkbox" id="searchModeToggle">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-        </label>
         <span id="modelCount" class="model-count">0 個模型</span>
         <button id="sendBtn" class="btn-send">
           <span data-i18n="sidepanel.sendBtn">送出</span>
@@ -262,6 +281,11 @@
           </svg>
         </button>
       </div>
+      
+      <!-- Hidden toggles for backward compatibility (controlled by skill selector) -->
+      <input type="checkbox" id="visionToggle" hidden>
+      <input type="checkbox" id="imageToggle" hidden>
+      <input type="checkbox" id="searchModeToggle" hidden>
 
       <!-- Cost Tracker Panel -->
       <div id="costTracker" class="cost-tracker hidden">
@@ -290,288 +314,149 @@
       </div>
     </div>
 
-    <!-- Stepper Progress Indicator -->
-    <div id="stepper" class="stepper hidden">
-      <div class="step" data-step="1">
-        <div class="step-indicator">
-          <span class="step-number">1</span>
-          <svg class="step-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+    <!-- Planner Timeline Container (動態段落會追加到這裡) -->
+    <div id="plannerTimeline" class="planner-timeline hidden">
+      <!-- 段落會由 JS 動態追加 -->
+    </div>
+
+    <!-- Agent Breakpoint Panel (獨立區塊，可在任何段落後顯示) -->
+    <div id="agentBreakpointPanel" class="agent-breakpoint-panel hidden">
+      <div class="breakpoint-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span class="breakpoint-title">等待確認</span>
+      </div>
+      <div id="breakpointMessage" class="breakpoint-message">
+        <!-- Dynamic message -->
+      </div>
+      <!-- Dynamic options container -->
+      <div id="breakpointOptions" class="breakpoint-options">
+        <!-- Dynamically rendered option buttons -->
+      </div>
+      <!-- Search suggestions (for inputType: search) -->
+      <div id="breakpointSearches" class="breakpoint-searches hidden">
+        <!-- Suggested search buttons -->
+      </div>
+      <!-- Default actions (fallback) -->
+      <div id="breakpointDefaultActions" class="breakpoint-actions">
+        <button id="breakpointProceed" class="breakpoint-btn proceed">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
-        </div>
-        <span class="step-label" data-i18n="sidepanel.stepResponse">回應</span>
-      </div>
-      <div class="step-connector"></div>
-      <div class="step" data-step="2">
-        <div class="step-indicator">
-          <span class="step-number">2</span>
-          <svg class="step-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-            <polyline points="20 6 9 17 4 12"></polyline>
+          <span>直接產出結論</span>
+        </button>
+        <button id="breakpointCustom" class="breakpoint-btn custom">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
-        </div>
-        <span class="step-label" data-i18n="sidepanel.stepReview">審查</span>
+          <span>自訂輸入</span>
+        </button>
       </div>
-      <div class="step-connector"></div>
-      <div class="step" data-step="3">
-        <div class="step-indicator">
-          <span class="step-number">3</span>
-          <svg class="step-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
-        </div>
-        <span class="step-label" data-i18n="sidepanel.stepSynthesis">彙整</span>
+      <!-- Custom input area -->
+      <div id="breakpointCustomInput" class="breakpoint-custom-input hidden">
+        <input type="text" id="breakpointTextInput" placeholder="輸入...">
+        <button id="breakpointTextSubmit" class="breakpoint-text-submit">送出</button>
       </div>
     </div>
 
-    <!-- Stage 1: Model Responses -->
-    <div id="stage1Section" class="stage-section hidden">
-      <div class="stage-header" data-stage="1">
-        <span class="stage-title" data-i18n="sidepanel.stage1Title">模型回應</span>
-        <span class="stage-summary" id="stage1Summary"></span>
-        <span class="stage-status" id="stage1Status"></span>
-        <button class="toggle-btn" data-target="stage1Content">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
-      </div>
-      <div id="stage1Content" class="stage-content">
-        <div class="tabs" id="modelTabs"></div>
-        <div class="response-container" id="responseContainer"></div>
-      </div>
-    </div>
-
-    <!-- Stage 2: Peer Review -->
-    <div id="stage2Section" class="stage-section hidden">
-      <div class="stage-header" data-stage="2">
-        <span class="stage-title" data-i18n="sidepanel.stage2Title">互評審查</span>
-        <span class="stage-summary" id="stage2Summary"></span>
-        <span class="stage-status" id="stage2Status"></span>
-        <button class="toggle-btn" data-target="stage2Content">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
-      </div>
-      <div id="stage2Content" class="stage-content">
-        <div id="reviewResults" class="review-results"></div>
-      </div>
-    </div>
-
-    <!-- Stage 3: Search Options (shown when suggestions available) -->
-    <div id="stage25Section" class="stage-section hidden">
-      <div class="stage-header" data-stage="search">
-        <span class="stage-title" data-i18n="sidepanel.stage3Title">搜尋選擇</span>
-        <span class="stage-summary" id="stage25Summary"></span>
-        <span class="stage-status" id="stage25Status"></span>
-        <button class="toggle-btn" data-target="stage25Content">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
-      </div>
-      <div id="stage25Content" class="stage-content expanded">
-        <div id="searchSuggestions" class="search-suggestions">
-          <p class="search-suggestions-intro" data-i18n="sidepanel.searchSuggestionsIntro">根據模型回答，以下是建議的搜尋關鍵詞（最多選擇 3 項）：</p>
-          <div id="searchSuggestionList" class="search-suggestion-list"></div>
-          <!-- Custom search suggestion input -->
-          <div class="custom-suggestion-row">
-            <input type="text" id="customSuggestionInput" class="custom-suggestion-input" data-i18n-placeholder="sidepanel.customKeywordPlaceholder" placeholder="輸入自訂關鍵字...">
-            <button id="addCustomSuggestionBtn" class="add-suggestion-btn" data-i18n-title="sidepanel.addKeyword" title="新增為選項">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              <span data-i18n="sidepanel.addKeyword">新增</span>
-            </button>
-          </div>
-          <div class="search-actions">
-            <button id="executeSearchBtn" class="btn-primary">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"></circle>
-                <path d="M21 21l-4.35-4.35"></path>
-              </svg>
-              <span data-i18n="sidepanel.executeSearch">執行搜尋</span>
-            </button>
-            <button id="skipSearchBtn" class="btn-secondary" data-i18n="sidepanel.skipSearch">跳過搜尋</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Stage 4: Final Answer -->
-    <div id="stage3Section" class="stage-section hidden">
-      <div class="stage-header" data-stage="synthesis">
-        <span class="stage-title" data-i18n="sidepanel.stage4Title">主席彙整</span>
-        <span class="stage-summary" id="stage3Summary"></span>
-        <span class="stage-status" id="stage3Status"></span>
-        <button class="toggle-btn" data-target="stage3Content">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
-      </div>
-      <div id="stage3Content" class="stage-content expanded">
-        <div id="finalAnswer" class="final-answer"></div>
-        
-        <!-- Task Planner Section -->
-        <!-- Unified TODO + Suggested Actions Section -->
-        <div id="todoSection" class="todo-section hidden">
-          <div class="todo-header">
-            <div class="todo-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 11l3 3L22 4"></path>
-                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-              </svg>
-              <span data-i18n="sidepanel.todoTitle">待辦任務</span>
-              <span id="todoCount" class="todo-count">0</span>
-            </div>
-            <button id="addTaskBtn" class="add-task-btn" data-i18n-title="sidepanel.addTask" title="新增任務">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-            </button>
-          </div>
-          <div id="todoList" class="todo-list">
-            <!-- Task items will be rendered here -->
-          </div>
-          <div id="addTaskForm" class="add-task-form hidden">
-            <input type="text" id="newTaskInput" class="new-task-input" data-i18n-placeholder="sidepanel.newTaskPlaceholder" placeholder="輸入新任務... (Ctrl+Enter 確認)">
-            <span class="add-task-hint" data-i18n="sidepanel.newTaskHint">按 Ctrl+Enter 或點擊右側 ✓ 確認新增</span>
-            <div class="add-task-actions">
-              <select id="newTaskPriority" class="task-priority-select">
-                <option value="high" data-i18n="sidepanel.priorityHigh">高優先</option>
-                <option value="medium" selected data-i18n="sidepanel.priorityMedium">中優先</option>
-                <option value="low" data-i18n="sidepanel.priorityLow">低優先</option>
-              </select>
-              <button id="confirmAddTask" class="confirm-add-btn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </button>
-              <button id="cancelAddTask" class="cancel-add-btn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
-            </div>
-          </div>
-          
-          <!-- Suggested Actions (inside TODO section) -->
-          <div id="suggestedActionsPanel" class="todo-suggestions hidden">
-            <div class="todo-suggestions-header">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-              </svg>
-              <span data-i18n="sidepanel.suggestedActions">建議下一步</span>
-            </div>
-            <div id="suggestedActionsContent" class="todo-suggestions-content">
-              <!-- Dynamic suggested actions will be rendered here -->
-            </div>
-            <div class="todo-suggestions-input">
-              <input type="text" id="suggestedQuickInput" placeholder="進一步提問..." data-i18n-placeholder="sidepanel.quickInputPlaceholder">
-              <button id="suggestedQuickSubmit" class="quick-submit-btn" title="送出">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Conversation Cost Summary -->
-        <div id="conversationCost" class="conversation-cost hidden">
-          <div class="cost-summary-header">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="1" x2="12" y2="23"></line>
-              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-            </svg>
-            <span data-i18n="sidepanel.conversationCostTitle">本次對話費用</span>
-            <span id="conversationCostTotal" class="cost-summary-total">$0.0000</span>
-          </div>
-          <div class="cost-summary-details">
-            <div class="cost-detail-row">
-              <span class="cost-detail-label" data-i18n="sidepanel.costStage1">模型回應</span>
-              <span id="costStage1" class="cost-detail-value">$0.0000</span>
-            </div>
-            <div class="cost-detail-row">
-              <span class="cost-detail-label" data-i18n="sidepanel.costStage2">互評審查</span>
-              <span id="costStage2" class="cost-detail-value">$0.0000</span>
-            </div>
-            <div class="cost-detail-row">
-              <span class="cost-detail-label" data-i18n="sidepanel.costStage3">主席彙整</span>
-              <span id="costStage3" class="cost-detail-value">$0.0000</span>
-            </div>
-            <div class="cost-detail-row cost-detail-image hidden" id="costImageRow">
-              <span class="cost-detail-label" data-i18n="sidepanel.costImageGen">圖片生成</span>
-              <span id="costImageGen" class="cost-detail-value">$0.0000</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Agent Execution Status (same level as other stages) -->
-    <div id="agentProgressSection" class="stage-section hidden">
-      <div class="stage-header" data-stage="agent">
-        <span class="stage-title" data-i18n="sidepanel.agentProgress">執行狀態</span>
-        <span class="stage-summary" id="agentProgressSummary"></span>
-        <span id="progressStep" class="stage-status"></span>
-        <button class="toggle-btn" data-target="agentProgressContent">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
-      </div>
-      <div id="agentProgressContent" class="stage-content expanded">
-        <div id="progressContent" class="progress-content">
-          <!-- Dynamic progress items will be rendered here -->
-        </div>
-        
-        <!-- Agent Breakpoint Panel (user interaction point) -->
-        <div id="agentBreakpointPanel" class="agent-breakpoint-panel hidden">
-          <div class="breakpoint-header">
+    <!-- Next Steps Section (TODO + Suggested Actions) -->
+    <div id="nextStepsSection" class="next-steps-section hidden">
+      <div id="todoSection" class="todo-section">
+        <div class="todo-header">
+          <div class="todo-title">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              <path d="M9 11l3 3L22 4"></path>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
             </svg>
-            <span class="breakpoint-title">等待確認</span>
+            <span data-i18n="sidepanel.todoTitle">待辦任務</span>
+            <span id="todoCount" class="todo-count">0</span>
           </div>
-          <div id="breakpointMessage" class="breakpoint-message">
-            <!-- Dynamic message -->
-          </div>
-          <!-- Dynamic options container -->
-          <div id="breakpointOptions" class="breakpoint-options">
-            <!-- Dynamically rendered option buttons -->
-          </div>
-          <!-- Search suggestions (for inputType: search) -->
-          <div id="breakpointSearches" class="breakpoint-searches hidden">
-            <!-- Suggested search buttons -->
-          </div>
-          <!-- Default actions (fallback) -->
-          <div id="breakpointDefaultActions" class="breakpoint-actions">
-            <button id="breakpointProceed" class="breakpoint-btn proceed">
+          <button id="addTaskBtn" class="add-task-btn" data-i18n-title="sidepanel.addTask" title="新增任務">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </button>
+        </div>
+        <div id="todoList" class="todo-list">
+          <!-- Task items will be rendered here -->
+        </div>
+        <div id="addTaskForm" class="add-task-form hidden">
+          <input type="text" id="newTaskInput" class="new-task-input" data-i18n-placeholder="sidepanel.newTaskPlaceholder" placeholder="輸入新任務... (Ctrl+Enter 確認)">
+          <span class="add-task-hint" data-i18n="sidepanel.newTaskHint">按 Ctrl+Enter 或點擊右側 ✓ 確認新增</span>
+          <div class="add-task-actions">
+            <select id="newTaskPriority" class="task-priority-select">
+              <option value="high" data-i18n="sidepanel.priorityHigh">高優先</option>
+              <option value="medium" selected data-i18n="sidepanel.priorityMedium">中優先</option>
+              <option value="low" data-i18n="sidepanel.priorityLow">低優先</option>
+            </select>
+            <button id="confirmAddTask" class="confirm-add-btn">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="20 6 9 17 4 12"></polyline>
               </svg>
-              <span>直接產出結論</span>
             </button>
-            <button id="breakpointCustom" class="breakpoint-btn custom">
+            <button id="cancelAddTask" class="cancel-add-btn">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
               </svg>
-              <span>自訂輸入</span>
             </button>
           </div>
-          <!-- Custom input area -->
-          <div id="breakpointCustomInput" class="breakpoint-custom-input hidden">
-            <input type="text" id="breakpointTextInput" placeholder="輸入...">
-            <button id="breakpointTextSubmit" class="breakpoint-text-submit">送出</button>
+        </div>
+        
+        <!-- Suggested Actions (inside TODO section) -->
+        <div id="suggestedActionsPanel" class="todo-suggestions hidden">
+          <div class="todo-suggestions-header">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+            <span data-i18n="sidepanel.suggestedActions">建議下一步</span>
+          </div>
+          <div id="suggestedActionsContent" class="todo-suggestions-content">
+            <!-- Dynamic suggested actions will be rendered here -->
+          </div>
+          <div class="todo-suggestions-input">
+            <input type="text" id="suggestedQuickInput" placeholder="進一步提問..." data-i18n-placeholder="sidepanel.quickInputPlaceholder">
+            <button id="suggestedQuickSubmit" class="quick-submit-btn" title="送出">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Conversation Cost Summary -->
+      <div id="conversationCost" class="conversation-cost hidden">
+        <div class="cost-summary-header">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="1" x2="12" y2="23"></line>
+            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+          </svg>
+          <span data-i18n="sidepanel.conversationCostTitle">本次對話費用</span>
+          <span id="conversationCostTotal" class="cost-summary-total">$0.0000</span>
+        </div>
+        <div class="cost-summary-details">
+          <div class="cost-detail-row">
+            <span class="cost-detail-label" data-i18n="sidepanel.costStage1">模型回應</span>
+            <span id="costStage1" class="cost-detail-value">$0.0000</span>
+          </div>
+          <div class="cost-detail-row">
+            <span class="cost-detail-label" data-i18n="sidepanel.costStage2">互評審查</span>
+            <span id="costStage2" class="cost-detail-value">$0.0000</span>
+          </div>
+          <div class="cost-detail-row">
+            <span class="cost-detail-label" data-i18n="sidepanel.costStage3">主席彙整</span>
+            <span id="costStage3" class="cost-detail-value">$0.0000</span>
+          </div>
+          <div class="cost-detail-row cost-detail-image hidden" id="costImageRow">
+            <span class="cost-detail-label" data-i18n="sidepanel.costImageGen">圖片生成</span>
+            <span id="costImageGen" class="cost-detail-value">$0.0000</span>
           </div>
         </div>
       </div>

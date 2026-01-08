@@ -16,6 +16,14 @@ const SKILLS = {
     description: '適用於需要深度研究、多方資料比對的問題',
     icon: '🔬',
     
+    // Category for UI grouping
+    category: 'analysis',
+    
+    // Side effects when this skill is selected
+    sideEffects: {
+      enableSearch: true
+    },
+    
     // Trigger conditions
     trigger: (query, settings) => {
       const keywords = /研究|分析|比較|調查|評估|探討|深入|全面|詳細/;
@@ -58,6 +66,12 @@ const SKILLS = {
     description: '使用蘇格拉底式教學法，引導學習者自主探索',
     icon: '📚',
     
+    // Category for UI grouping
+    category: 'quick',
+    
+    // No side effects
+    sideEffects: null,
+    
     trigger: (query, settings) => {
       return settings?.learnerMode && settings.learnerMode !== 'standard';
     },
@@ -99,6 +113,12 @@ const SKILLS = {
     description: '適用於簡單直接的問題，快速給出答案',
     icon: '⚡',
     
+    // Category for UI grouping
+    category: 'quick',
+    
+    // No side effects
+    sideEffects: null,
+    
     trigger: (query, settings) => {
       // Short queries without complexity indicators
       const isShort = query.length < 50;
@@ -134,6 +154,14 @@ const SKILLS = {
     name: '事實查核',
     description: '驗證資訊真偽，提供可靠來源',
     icon: '✅',
+    
+    // Category for UI grouping
+    category: 'analysis',
+    
+    // Side effects when this skill is selected
+    sideEffects: {
+      enableSearch: true
+    },
     
     trigger: (query, settings) => {
       const keywords = /真的嗎|是否|確認|查證|驗證|正確嗎|有沒有|是不是/;
@@ -172,6 +200,12 @@ const SKILLS = {
     description: '適用於腦力激盪、創意發想、開放性問題',
     icon: '💡',
     
+    // Category for UI grouping
+    category: 'creative',
+    
+    // No side effects
+    sideEffects: null,
+    
     trigger: (query, settings) => {
       const keywords = /想法|創意|點子|建議|可能|方法|策略|方案|怎麼辦/;
       return keywords.test(query);
@@ -207,6 +241,12 @@ const SKILLS = {
     name: '技術專家',
     description: '適用於程式碼、技術問題、除錯',
     icon: '💻',
+    
+    // Category for UI grouping
+    category: 'quick',
+    
+    // No side effects (web_search is optional)
+    sideEffects: null,
     
     trigger: (query, settings) => {
       const keywords = /程式|code|coding|bug|錯誤|API|函數|function|實作|implement/i;
@@ -244,6 +284,14 @@ const SKILLS = {
     description: '適用於新聞、時事、即時資訊查詢',
     icon: '📰',
     
+    // Category for UI grouping
+    category: 'analysis',
+    
+    // Side effects when this skill is selected
+    sideEffects: {
+      enableSearch: true
+    },
+    
     trigger: (query, settings) => {
       const keywords = /最新|現在|今天|昨天|最近|新聞|時事|目前|當前/;
       return keywords.test(query);
@@ -280,6 +328,14 @@ const SKILLS = {
     name: '圖像設計',
     description: '適用於漫畫、插畫、圖表、視覺設計與生成',
     icon: '🎨',
+    
+    // Category for UI grouping
+    category: 'creative',
+    
+    // Side effects when this skill is selected
+    sideEffects: {
+      enableImage: true
+    },
     
     trigger: (query, settings) => {
       const keywords = /漫畫|圖像|圖片|插畫|設計圖|畫一|繪製|生成圖|圖表|視覺|海報|封面|logo|icon|Q版|卡通|動漫|風格.*圖/i;
@@ -361,6 +417,14 @@ const SKILLS = {
     description: '分析上傳圖片的內容、風格、物件',
     icon: '👁️',
     
+    // Category for UI grouping
+    category: 'visual',
+    
+    // Side effects when this skill is selected
+    sideEffects: {
+      enableVision: true
+    },
+    
     trigger: (query, settings) => {
       // Trigger when in vision mode (image uploaded) AND not an image design request
       const isVisionMode = settings?.visionMode === true;
@@ -392,6 +456,36 @@ const SKILLS = {
       format: 'structured',
       citations: true
     }
+  }
+};
+
+/**
+ * Skill categories for UI grouping
+ */
+const SKILL_CATEGORIES = {
+  creative: {
+    id: 'creative',
+    name: '創作型',
+    icon: '🎨',
+    description: '創意發想與視覺設計'
+  },
+  visual: {
+    id: 'visual',
+    name: '視覺型',
+    icon: '👁️',
+    description: '圖像分析與處理'
+  },
+  analysis: {
+    id: 'analysis',
+    name: '分析型',
+    icon: '📊',
+    description: '研究分析與事實查核'
+  },
+  quick: {
+    id: 'quick',
+    name: '快速型',
+    icon: '⚡',
+    description: '快速回答與技術問題'
   }
 };
 
@@ -736,6 +830,7 @@ const enhancedSkillSelector = new EnhancedSkillSelector();
 if (typeof window !== 'undefined') {
   window.MAVSkills = {
     SKILLS,
+    SKILL_CATEGORIES,
     LEARNER_SYSTEM_PROMPTS,
     SkillSelector,
     EnhancedSkillSelector,

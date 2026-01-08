@@ -301,7 +301,176 @@ metadata:
 2. 使用 query_council 讓視覺模型解析圖片內容
 3. 可搭配 web_search 查詢相關背景資訊
 4. 複雜分析可用 peer_review 交叉驗證
-5. synthesize 整合分析結果`
+5. synthesize 整合分析結果`,
+
+  // ============================================
+  // External Skills from SkillsMP
+  // ============================================
+
+  'image-prompt-engineering': `---
+name: image-prompt-engineering
+description: Craft effective prompts for image generation. MUST READ before any generate_image call. Provides guidelines for narrative descriptions, texture details, text rendering, iterative refinement, and layout control.
+metadata:
+  author: chufeng-huang-sipaway
+  version: "1.0"
+  icon: "🎨"
+  source: skillsmp
+  source_url: https://skillsmp.com/skills/chufeng-huang-sipaway-sip-videogen-src-sip-videogen-advisor-skills-image-prompt-engineering-skill-md
+  priority: high
+  tools_required: generate_image
+  mav-tools: query_council synthesize
+  max-iterations: 5
+  response-length: detailed
+  response-format: structured
+  citations: false
+---
+
+## When to Use
+
+- User requests image generation
+- User needs help writing image prompts
+- Before any generate_image call
+- Product photography, lifestyle images, hero shots
+- Image editing tasks (remove background, relight, colorize)
+- Layout/wireframe to polished image conversion
+- 2D to 3D or 3D to 2D dimensional translation
+
+## Trigger Keywords
+
+\`image\` \`generate_image\` \`generate image\` \`create image\` \`make image\` \`picture\` \`photo\` \`photograph\` \`visual\` \`artwork\` \`graphic\` \`illustration\` \`render\` \`remove background\` \`colorize\` \`enhance image\` \`edit image\` \`3D render\` \`wireframe\` \`sketch\` \`layout\`
+
+## Instructions
+
+### Core Principle
+**Describe scenes narratively, not as keyword lists.**
+
+| Bad (keyword soup) | Good (narrative) |
+|-------------------|------------------|
+| "coffee shop, cozy, warm lighting, minimalist" | "A minimalist coffee shop interior with warm pendant lighting casting soft shadows on blonde wood tables. Morning sunlight streams through floor-to-ceiling windows." |
+
+### Texture & Material Details
+Include surface and material properties for photorealism:
+- **Surface finish**: matte, glossy, frosted, brushed, satin, textured, polished
+- **Material properties**: soft velvet, cold steel, warm wood grain, cool ceramic, supple leather
+- **Imperfections for realism**: condensation droplets, dust particles, fingerprint smudges, micro-scratches, patina
+
+### Text Rendering
+For legible text in images:
+1. **Quote exact text** with double quotes in prompt
+2. **Specify typography**: font style (serif, sans-serif, script), size, color
+3. **Describe placement** precisely (centered, above product, along edge)
+
+### Iterative Refinement ("Edit, Don't Re-roll")
+When image is 80% correct, use previous output as reference_image with modified prompt.
+- Refinement requires BOTH previous output as reference_image AND modified prompt
+- Single product refinement: use reference_image alone OR with product_slug
+- Multi-product flows: reference_image is ignored, regenerate fresh
+
+### Image Editing via Language
+Describe WHAT you want, not HOW to do it. Trust the model to handle low-level operations.
+- Remove background: "Keep the product exactly as shown. Remove background and place on pure white backdrop."
+- Relight: "Same product, same position. Change to soft, diffused natural window light from the left."
+- Colorize: "Colorize this black-and-white photograph with realistic, period-appropriate colors."
+
+### Layout Control via Sketch/Wireframe
+When user provides sketch/wireframe:
+- The sketch defines WHERE elements go
+- Your prompt describes WHAT fills those areas
+- Set validate_identity=False (reference is layout, not product)
+
+### Prompt Template - Product Hero Shot
+\`\`\`
+A [material + finish] [product type] with [distinctive features],
+placed [position] on [surface] in [environment].
+[Style] with [lighting]. [Camera angle], shallow depth of field.
+For [purpose: e-commerce hero, social media, print campaign].
+\`\`\``,
+
+  'deep-research': `---
+name: deep-research
+description: Comprehensive multi-phase research using web search and content analysis. Produces detailed markdown reports with citations similar to academic journals or whitepapers.
+metadata:
+  author: nateberkopec
+  version: "1.0"
+  icon: "📚"
+  source: skillsmp
+  source_url: https://skillsmp.com/skills/nateberkopec-dotfiles-files-home-claude-skills-deep-research-skill-md
+  license: MIT
+  mav-tools: web_search query_council peer_review synthesize
+  max-iterations: 10
+  max-searches: 5
+  response-length: detailed
+  response-format: structured
+  citations: true
+---
+
+## When to Use
+
+- User requests comprehensive, in-depth research on a topic
+- Research requires detailed analysis similar to academic journal or whitepaper
+- Multiple sources and synthesis needed
+- Deep investigation with proper citations
+- Comparative research (technologies, approaches, solutions)
+- Technical deep-dives
+- Market/landscape research
+- Historical/evolution research
+
+## Trigger Keywords
+
+\`深度研究\` \`deep research\` \`whitepaper\` \`白皮書\` \`academic\` \`學術\` \`comprehensive analysis\` \`全面分析\` \`in-depth\` \`詳盡報告\` \`research report\` \`研究報告\` \`market research\` \`市場研究\`
+
+## When NOT to Use
+
+- Simple fact-finding queries
+- Single-source information lookup
+- Code-only research within repositories
+- Quick exploratory searches
+
+## Instructions
+
+### Research Process
+
+**Phase 1: Interview and Scope Definition**
+Start by interviewing user to understand research needs:
+- Research objectives: What are they trying to understand or decide?
+- Depth and breadth: How comprehensive should the research be?
+- Target audience: Who will read this report?
+- Key questions: What specific questions need answering?
+- Scope boundaries: What should be explicitly included or excluded?
+
+**Phase 2: Initial Reconnaissance**
+- Conduct 3-5 broad web searches to map the topic space
+- Identify key subtopics, domains, and areas of focus
+- Note promising sources, authoritative voices, and research gaps
+- Create research plan outlining 10+ specific research threads
+
+**Phase 3: Parallel Research**
+Execute multiple research threads in parallel:
+- Each thread focuses on one subtopic
+- Use web_search and query_council for each thread
+- Cross-reference findings across threads
+- Note conflicting information or perspectives
+
+**Phase 4: Report Generation**
+Synthesize all research into final report:
+- Executive Summary (2-3 paragraphs)
+- Adaptive middle sections based on topic
+- Critical Analysis
+- Conclusions
+- References (numbered citations)
+
+### Output Format
+- Use numbered citations [1], [2], etc.
+- Include tables for comparisons where appropriate
+- Note any conflicts or gaps in the research
+- Use clear, precise academic language
+
+### Common Patterns
+
+**Comparative Research**: Assign research thread per option, plus cross-cutting concerns
+**Technical Deep-Dives**: Structure from fundamentals → implementation → case studies → limitations
+**Market/Landscape Research**: Major players, emerging players, trends, analysis
+**Historical Research**: Different time periods, key events, connect to present`
 };
 
 /**

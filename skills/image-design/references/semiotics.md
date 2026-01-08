@@ -121,3 +121,4 @@ Step 5: Placeholder 替換 → 生成最終 Prompt
 - Barthes, R. (1964). Elements of Semiology
 - Chandler, D. (2007). Semiotics: The Basics
 
+

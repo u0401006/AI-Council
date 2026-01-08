@@ -171,6 +171,13 @@ window.LOCALE_JA_JP = {
     modelCount: '{count} モデル',
     sendBtn: '送信',
     
+    // Skill Selector
+    selectSkill: 'スキルモードを選択',
+    autoDetect: '自動検出',
+    searchSkills: 'スキルを検索...',
+    recommended: 'おすすめ',
+    clearSkillSelection: '選択をクリア（自動検出を使用）',
+    
     // Cost Tracker
     costTitle: 'コスト追跡',
     costInput: '入力',

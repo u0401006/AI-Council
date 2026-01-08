@@ -99,7 +99,12 @@ async function loadDynamicPricing() {
   }
 }
 
-function getModelInfo(modelId) { return MODELS[modelId] || { name: modelId.split('/').pop(), provider: modelId.split('/')[0], inputPrice: 0, outputPrice: 0 }; }
+function getModelInfo(modelId) {
+  if (!modelId || typeof modelId !== 'string') {
+    return { name: 'Unknown', provider: 'Unknown', inputPrice: 0, outputPrice: 0 };
+  }
+  return MODELS[modelId] || { name: modelId.split('/').pop(), provider: modelId.split('/')[0], inputPrice: 0, outputPrice: 0 };
+}
 function getModelName(modelId) { return getModelInfo(modelId).name; }
 function estimateTokens(text) { return Math.ceil(text.length / 4); }
 function calculateCost(modelId, inputTokens, outputTokens) {
@@ -774,6 +779,11 @@ function createCard(parentId, query) {
         visionMode: visionMode
       };
   
+  // 繼承父卡片的 context items（深拷貝以避免引用問題）
+  const inheritedContextItems = parentCard?.cardContextItems 
+    ? JSON.parse(JSON.stringify(parentCard.cardContextItems))
+    : [];
+  
   const card = {
     id: generateId(),
     parentId: parentId,
@@ -787,11 +797,15 @@ function createCard(parentId, query) {
     timestamp: Date.now(),
     searchIteration: 0,
     contextItemsSnapshot: [],
-    cardContextItems: [],            // Card-level context items (isolated per card)
+    cardContextItems: inheritedContextItems,  // 繼承父卡片的 context items
     settings: settings,              // 卡片獨立的功能設定
     inheritedContext: parentCard?.contextSummary || '',  // 繼承的上層脈絡摘要
     contextSummary: ''               // 此卡片完成後的脈絡摘要
   };
+  
+  if (inheritedContextItems.length > 0) {
+    console.log('[createCard] Inherited', inheritedContextItems.length, 'context items from parent card');
+  }
   
   sessionState.cards.set(card.id, card);
   
@@ -799,6 +813,9 @@ function createCard(parentId, query) {
   if (parentCard) {
     parentCard.childCardIds.push(card.id);
   }
+  
+  // 立即保存 session（確保卡片創建後即持久化）
+  saveSession();
   
   return card;
 }
@@ -1230,7 +1247,54 @@ let carouselCurrentIndex = 0;
 let siblingCards = []; // All cards for carousel display
 
 // 追蹤每張卡片的執行狀態 (並行 Council 支援)
-const cardExecutionState = new Map(); // cardId -> { isRunning: boolean }
+// 結構: cardId -> { 
+//   isRunning: boolean,
+//   responses: [], // 中間 responses
+//   timelineHTML: string, // timeline 快照
+//   context: { searches: [], reviews: null } // 其他中間狀態
+// }
+const cardExecutionState = new Map();
+
+/**
+ * 保存執行中卡片的 timeline 快照
+ * @param {string} cardId - 卡片 ID
+ */
+function saveCardExecutionSnapshot(cardId) {
+  const state = cardExecutionState.get(cardId);
+  if (!state?.isRunning) return;
+  
+  // 保存 timeline HTML 快照
+  if (plannerTimeline) {
+    state.timelineHTML = plannerTimeline.innerHTML;
+  }
+  
+  console.log('[CardState] Saved snapshot for card:', cardId, 'hasTimeline:', !!state.timelineHTML);
+}
+
+/**
+ * 更新執行中卡片的中間狀態
+ * @param {string} cardId - 卡片 ID
+ * @param {Object} updates - 要更新的狀態 { responses?, context? }
+ */
+function updateCardExecutionState(cardId, updates) {
+  const state = cardExecutionState.get(cardId);
+  if (!state) return;
+  
+  // 僅當 cardId 是當前顯示的卡片時才更新 timeline
+  const isCurrentCard = sessionState.currentCardId === cardId;
+  
+  if (updates.responses !== undefined) {
+    state.responses = updates.responses;
+  }
+  if (updates.context) {
+    state.context = { ...state.context, ...updates.context };
+  }
+  
+  // 同步更新 timeline 快照（僅針對當前卡片）
+  if (isCurrentCard && plannerTimeline) {
+    state.timelineHTML = plannerTimeline.innerHTML;
+  }
+}
 
 // Switch to a specific card
 function switchToCard(cardId, direction = 'right') {
@@ -1239,6 +1303,14 @@ function switchToCard(cardId, direction = 'right') {
   if (!card) {
     console.log('[switchToCard] Card not found!');
     return;
+  }
+  
+  // 切換前：保存當前執行中卡片的 timeline 狀態
+  const previousCardId = sessionState.currentCardId;
+  if (previousCardId && previousCardId !== cardId) {
+    saveCardExecutionSnapshot(previousCardId);
+    // 切換時保存 session（確保資料持久化）
+    saveSession();
   }
   
   // Update session state
@@ -1480,114 +1552,71 @@ function loadCardIntoUI(card) {
   }
   
   // 檢查卡片是否正在執行
-  const isRunning = cardExecutionState.get(card.id)?.isRunning;
+  const execState = cardExecutionState.get(card.id);
+  const isRunning = execState?.isRunning;
   
   if (isRunning) {
-    // 卡片正在執行中，顯示執行中狀態
-    console.log('[loadCardIntoUI] Card is running, showing executing state');
+    // 卡片正在執行中，還原保存的 timeline 狀態
+    console.log('[loadCardIntoUI] Card is running, restoring timeline state');
     emptyState.classList.add('hidden');
-    stage1Section.classList.remove('hidden');
-    stage3Section.classList.remove('hidden');
     
-    // 顯示執行中提示
-    const finalAnswerEl = document.getElementById('finalAnswer');
-    if (finalAnswerEl) {
-      finalAnswerEl.innerHTML = `
-        <div class="loading-indicator">
-          <div class="loading-dots"><span></span><span></span><span></span></div>
-          <span class="loading-text">此卡片正在執行 Council...</span>
-        </div>
-      `;
+    // 還原已保存的 timeline HTML（如果有）
+    if (execState.timelineHTML && plannerTimeline) {
+      plannerTimeline.innerHTML = execState.timelineHTML;
+      console.log('[loadCardIntoUI] Restored timeline HTML for running card');
     }
+    
+    showPlannerTimeline();
     return;
   }
   
-  // 根據卡片狀態更新 UI
+  // 根據卡片狀態更新 UI (使用 Timeline 系統)
   if (card.finalAnswer) {
     // === 已完成的卡片 ===
     emptyState.classList.add('hidden');
     
-    // Stage 1: 顯示已完成狀態
-    stage1Section.classList.remove('hidden');
-    stage1Section.classList.add('collapsed');
-    stage1Status.textContent = t('sidepanel.stageComplete');
-    stage1Status.className = 'stage-status done';
-    document.getElementById('stage1Content').classList.remove('expanded');
+    // 清空並重建 timeline 以顯示歷史
+    clearPlannerTimeline();
+    showPlannerTimeline();
     
-    // 如果有保存的 responses，渲染它們
+    // 如果有保存的 responses，在 timeline 中渲染它們
     if (card.responses && card.responses.length > 0) {
-      renderSavedResponses(card.responses);
+      // 創建 query_council 段落
+      appendTimelineParagraph({
+        tool: 'query_council',
+        reasoning: '已完成的模型回應'
+      }, 'done');
+      renderToolResultInParagraph('query_council', {
+        responses: card.responses
+      });
     }
     
-    // Stage 2: 根據是否有審查結果顯示
-    if (enableReview) {
-      stage2Section.classList.remove('hidden', 'stage-skipped');
-      stage2Section.classList.add('collapsed');
-      stage2Status.textContent = t('sidepanel.stageComplete');
-      stage2Status.className = 'stage-status done';
-      document.getElementById('stage2Content').classList.remove('expanded');
-    } else {
-      stage2Section.classList.add('stage-skipped');
-      stage2Status.textContent = t('sidepanel.stageSkipped');
-    }
-    
-    // Stage 3: 顯示結論
-    stage3Section.classList.remove('hidden');
-    stage3Section.classList.add('collapsed');
-    stage3Status.textContent = t('sidepanel.stageComplete');
-    stage3Status.className = 'stage-status done';
-    document.getElementById('stage3Content').classList.add('expanded');
-    
-    // Render final answer
-    const finalAnswerEl = document.getElementById('finalAnswer');
-    if (finalAnswerEl) {
-      const displayContent = enableTaskPlanner ? extractFinalAnswerDisplay(card.finalAnswer) : card.finalAnswer;
-      // 使用卡片儲存的 chairmanModel，或 fallback 到當前設定
-      const cardChairman = card.chairmanModel || chairmanModel;
-      finalAnswerEl.innerHTML = `
-        <div class="chairman-badge">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-          </svg>
-          ${getModelName(cardChairman)}
-        </div>
-        <div class="response-content">${parseMarkdown(displayContent)}</div>
-      `;
-    }
-    
-    // 更新 stepper
-    setAllStepsDone();
+    // 創建 synthesize 段落顯示最終答案
+    const displayContent = enableTaskPlanner ? extractFinalAnswerDisplay(card.finalAnswer) : card.finalAnswer;
+    const cardChairman = card.chairmanModel || chairmanModel;
+    appendTimelineParagraph({
+      tool: 'synthesize',
+      reasoning: '已完成的彙整結論'
+    }, 'done');
+    renderToolResultInParagraph('synthesize', {
+      content: displayContent,
+      chairman: cardChairman
+    });
     
     // 顯示匯出按鈕
     exportBtn.style.display = 'flex';
     
-    // 顯示下一步選項（分析圖片、生成圖片、搜尋、畫布）
+    // 顯示下一步選項
+    showNextStepsSection();
     showBranchActions();
     
   } else {
     // === 未完成的卡片（空白或新建） ===
     emptyState.classList.remove('hidden');
     
-    // 隱藏所有 stages
-    stage1Section.classList.add('hidden');
-    stage2Section.classList.add('hidden');
-    if (stage25Section) stage25Section.classList.add('hidden');
-    stage3Section.classList.add('hidden');
-    
-    // 重設 stage 狀態
-    stage1Status.textContent = '';
-    stage1Status.className = 'stage-status';
-    stage2Status.textContent = '';
-    stage2Status.className = 'stage-status';
-    stage3Status.textContent = '';
-    stage3Status.className = 'stage-status';
-    
-    // 清空內容
-    const finalAnswerEl = document.getElementById('finalAnswer');
-    if (finalAnswerEl) finalAnswerEl.innerHTML = '';
-    
-    // 隱藏 stepper
-    hideStepper();
+    // 隱藏 timeline
+    hidePlannerTimeline();
+    hideNextStepsSection();
     
     // 隱藏匯出按鈕
     exportBtn.style.display = 'none';
@@ -1803,17 +1832,31 @@ const branchImageBtn = document.getElementById('branchImageBtn');
 const branchVisionBtn = document.getElementById('branchVisionBtn');
 const branchCanvasBtn = document.getElementById('branchCanvasBtn');
 
-// Skill badge elements
+// Skill Selector elements (unified dropdown)
+const skillSelectorEl = document.getElementById('skillSelector');
+const skillSelectorBtn = document.getElementById('skillSelectorBtn');
+const skillSelectorIcon = document.getElementById('skillSelectorIcon');
+const skillSelectorName = document.getElementById('skillSelectorName');
+const skillSelectorSource = document.getElementById('skillSelectorSource');
+const skillDropdown = document.getElementById('skillDropdown');
+const skillSearchInput = document.getElementById('skillSearchInput');
+const skillDropdownContent = document.getElementById('skillDropdownContent');
+const skillRecommendedSection = document.getElementById('skillRecommendedSection');
+const skillRecommendedList = document.getElementById('skillRecommendedList');
+const skillCategorySections = document.getElementById('skillCategorySections');
+const clearSkillSelection = document.getElementById('clearSkillSelection');
+
+// Legacy skill badge elements (kept for backward compatibility)
 const skillBadge = document.getElementById('skillBadge');
 const skillBadgeIcon = document.getElementById('skillBadgeIcon');
 const skillBadgeName = document.getElementById('skillBadgeName');
 const skillBadgeStrategy = document.getElementById('skillBadgeStrategy');
 
-// Agent Progress Section elements (stage-level section)
-const agentProgressSection = document.getElementById('agentProgressSection');
-const agentProgressSummary = document.getElementById('agentProgressSummary');
-const progressStep = document.getElementById('progressStep');
-const progressContent = document.getElementById('progressContent');
+// Agent Progress Section elements (已移除，改用 Timeline 系統)
+// const agentProgressSection = document.getElementById('agentProgressSection');
+const agentProgressSummary = null; // 已移除
+// const progressStep = document.getElementById('progressStep');
+// const progressContent = document.getElementById('progressContent');
 
 // Suggested Actions Panel elements
 const suggestedActionsPanel = document.getElementById('suggestedActionsPanel');
@@ -1870,90 +1913,455 @@ const costStage3 = document.getElementById('costStage3');
 const costImageRow = document.getElementById('costImageRow');
 const costImageGen = document.getElementById('costImageGen');
 
-// Stage elements
-const stage1Section = document.getElementById('stage1Section');
-const stage2Section = document.getElementById('stage2Section');
-const stage25Section = document.getElementById('stage25Section');
-const stage3Section = document.getElementById('stage3Section');
-const modelTabs = document.getElementById('modelTabs');
-const responseContainer = document.getElementById('responseContainer');
-const reviewResults = document.getElementById('reviewResults');
+// Planner Timeline elements (新版動態段落 UI)
+const plannerTimeline = document.getElementById('plannerTimeline');
+const nextStepsSection = document.getElementById('nextStepsSection');
 
-// Stage 2.5 elements
-const stage25Status = document.getElementById('stage25Status');
-const stage25Summary = document.getElementById('stage25Summary');
-const searchSuggestionList = document.getElementById('searchSuggestionList');
-const customSuggestionInput = document.getElementById('customSuggestionInput');
-const addCustomSuggestionBtn = document.getElementById('addCustomSuggestionBtn');
-const executeSearchBtn = document.getElementById('executeSearchBtn');
-const skipSearchBtn = document.getElementById('skipSearchBtn');
-const finalAnswer = document.getElementById('finalAnswer');
-const stage1Status = document.getElementById('stage1Status');
-const stage2Status = document.getElementById('stage2Status');
-const stage3Status = document.getElementById('stage3Status');
+// Legacy stage elements (保留以供向下相容，逐步移除)
+const stage1Section = null; // 已移除
+const stage2Section = null; // 已移除
+const stage25Section = null; // 已移除
+const stage3Section = null; // 已移除
+const modelTabs = null; // 由 timeline 內部動態建立
+const responseContainer = null; // 由 timeline 內部動態建立
+const reviewResults = null; // 由 timeline 內部動態建立
 
-// Stepper element
-const stepper = document.getElementById('stepper');
+// Stage 2.5 elements (移至 timeline 內動態渲染)
+const stage25Status = null;
+const stage25Summary = null;
+const searchSuggestionList = null;
+const customSuggestionInput = null;
+const addCustomSuggestionBtn = null;
+const executeSearchBtn = null;
+const skipSearchBtn = null;
+const finalAnswer = null; // 由 timeline 內部動態建立
+
+/**
+ * 取得圖像生成 UI 的容器元素
+ * 優先使用 timeline 內的 synthesis 區域，或 plannerTimeline，或建立臨時容器
+ */
+function getImageContainer() {
+  return document.querySelector('.tool-result[data-tool="synthesize"]') 
+    || plannerTimeline 
+    || document.getElementById('mainContent');
+}
+const stage1Status = null;
+const stage2Status = null;
+const stage3Status = null;
+
+// Stepper element (已移除)
+const stepper = null;
 
 // ============================================
-// Stepper Functions
+// Planner Timeline Functions (動態段落 UI)
 // ============================================
 
-function showStepper() {
-  stepper.classList.remove('hidden');
-  // Reset all steps to pending
-  stepper.querySelectorAll('.step').forEach(step => {
-    step.classList.remove('active', 'done', 'skipped', 'pending');
-    step.classList.add('pending');
-  });
+// Track current paragraph for updates
+let currentTimelineParagraph = null;
+let timelineIteration = 0;
+
+/**
+ * Show the planner timeline
+ */
+function showPlannerTimeline() {
+  if (plannerTimeline) {
+    plannerTimeline.classList.remove('hidden');
+  }
 }
 
-function hideStepper() {
-  stepper.classList.add('hidden');
+/**
+ * Hide the planner timeline
+ */
+function hidePlannerTimeline() {
+  if (plannerTimeline) {
+    plannerTimeline.classList.add('hidden');
+  }
 }
 
-function updateStepperState(stepNumber, state) {
-  const step = stepper.querySelector(`[data-step="${stepNumber}"]`);
-  if (!step) return;
+/**
+ * Clear all paragraphs from timeline
+ */
+function clearPlannerTimeline() {
+  if (plannerTimeline) {
+    plannerTimeline.innerHTML = '';
+  }
+  currentTimelineParagraph = null;
+  timelineIteration = 0;
+}
+
+/**
+ * Append a new paragraph to the timeline
+ * @param {Object} action - Planner decision {tool, reasoning, parameters}
+ * @param {string} status - 'loading' | 'done' | 'error'
+ * @returns {HTMLElement} - The created paragraph element
+ */
+function appendTimelineParagraph(action, status = 'loading') {
+  if (!plannerTimeline) return null;
   
-  step.classList.remove('pending', 'active', 'done', 'skipped');
-  step.classList.add(state);
+  showPlannerTimeline();
+  timelineIteration++;
   
-  // Update connectors
-  if (state === 'done' && stepNumber < 3) {
-    const connector = step.nextElementSibling;
-    if (connector && connector.classList.contains('step-connector')) {
-      connector.classList.add('filled');
+  const paragraph = document.createElement('div');
+  paragraph.className = 'timeline-paragraph';
+  paragraph.setAttribute('data-iteration', timelineIteration);
+  paragraph.setAttribute('data-tool', action.tool);
+  
+  // Create decision block
+  const decisionBlock = document.createElement('div');
+  decisionBlock.className = `planner-decision ${status}`;
+  decisionBlock.innerHTML = `
+    <div class="decision-header">
+      <strong>規劃決策</strong>
+      <span class="decision-tool" data-tool="${action.tool}">${action.tool}</span>
+    </div>
+    <div class="decision-reasoning">${action.reasoning || '處理中...'}</div>
+  `;
+  
+  // Create tool result container (will be populated later)
+  const toolResult = document.createElement('div');
+  toolResult.className = 'tool-result';
+  toolResult.setAttribute('data-tool', action.tool);
+  
+  // Add loading skeleton
+  if (status === 'loading') {
+    toolResult.innerHTML = `
+      <div class="tool-result-skeleton">
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line"></div>
+      </div>
+    `;
+  }
+  
+  paragraph.appendChild(decisionBlock);
+  paragraph.appendChild(toolResult);
+  plannerTimeline.appendChild(paragraph);
+  
+  // Scroll to new paragraph
+  paragraph.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  
+  currentTimelineParagraph = paragraph;
+  return paragraph;
+}
+
+/**
+ * Update the current paragraph's decision status
+ * @param {string} status - 'loading' | 'done' | 'error'
+ */
+function updateCurrentParagraphStatus(status) {
+  if (!currentTimelineParagraph) return;
+  
+  const decision = currentTimelineParagraph.querySelector('.planner-decision');
+  if (decision) {
+    decision.classList.remove('loading', 'done', 'error');
+    decision.classList.add(status);
+  }
+  
+  // 同時清除 skeleton 動畫（如果存在且狀態為 done 或 error）
+  if (status === 'done' || status === 'error') {
+    const skeleton = currentTimelineParagraph.querySelector('.tool-result-skeleton');
+    if (skeleton) {
+      skeleton.remove();
     }
   }
 }
 
-function setStepActive(stepNumber) {
-  // Set all previous steps to done
-  for (let i = 1; i < stepNumber; i++) {
-    updateStepperState(i, 'done');
+/**
+ * Render tool result into the current paragraph
+ * @param {string} tool - Tool name
+ * @param {Object} result - Tool execution result
+ */
+function renderToolResultInParagraph(tool, result) {
+  if (!currentTimelineParagraph) return;
+  
+  const toolResultContainer = currentTimelineParagraph.querySelector('.tool-result');
+  if (!toolResultContainer) return;
+  
+  // Clear skeleton
+  toolResultContainer.innerHTML = '';
+  
+  switch (tool) {
+    case 'web_search':
+      renderSearchResultInTimeline(toolResultContainer, result);
+      break;
+    case 'query_council':
+      renderCouncilResultInTimeline(toolResultContainer, result);
+      break;
+    case 'peer_review':
+      renderPeerReviewInTimeline(toolResultContainer, result);
+      break;
+    case 'synthesize':
+      renderSynthesisInTimeline(toolResultContainer, result);
+      break;
+    case 'request_user_input':
+      renderUserInputInTimeline(toolResultContainer, result);
+      break;
+    default:
+      toolResultContainer.innerHTML = `<div class="tool-result-generic">${JSON.stringify(result, null, 2)}</div>`;
   }
-  // Set current step to active
-  updateStepperState(stepNumber, 'active');
-  // Set remaining steps to pending
-  for (let i = stepNumber + 1; i <= 3; i++) {
-    updateStepperState(i, 'pending');
+  
+  updateCurrentParagraphStatus('done');
+}
+
+/**
+ * Render web_search result
+ */
+function renderSearchResultInTimeline(container, result) {
+  const { searches = [], resultCount = 0 } = result;
+  
+  container.setAttribute('data-tool', 'web_search');
+  
+  let html = `<div class="search-result-summary">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="11" cy="11" r="8"></circle>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+    </svg>
+    找到 ${resultCount} 筆搜尋結果
+  </div>`;
+  
+  if (searches.length > 0) {
+    html += '<div class="search-result-list">';
+    // Show first 3 results as preview
+    const previewSearches = searches.slice(0, 3);
+    for (const item of previewSearches) {
+      html += `
+        <div class="search-result-item">
+          <div class="result-title">${escapeHtml(item.title || '')}</div>
+          <div class="result-snippet">${escapeHtml((item.snippet || '').substring(0, 150))}...</div>
+          <div class="result-url">${escapeHtml(item.url || '')}</div>
+        </div>
+      `;
+    }
+    if (searches.length > 3) {
+      html += `<div class="search-result-more">還有 ${searches.length - 3} 筆結果...</div>`;
+    }
+    html += '</div>';
+  }
+  
+  container.innerHTML = html;
+}
+
+/**
+ * Render query_council result with tabs
+ */
+function renderCouncilResultInTimeline(container, result) {
+  const { responses = [] } = result;
+  
+  container.setAttribute('data-tool', 'query_council');
+  
+  // Create tabs
+  let tabsHtml = '<div class="council-tabs">';
+  responses.forEach((resp, idx) => {
+    const modelName = getModelName(resp.model);
+    const statusClass = resp.error ? 'error' : (resp.content ? 'done' : 'loading');
+    tabsHtml += `
+      <button class="council-tab ${idx === 0 ? 'active' : ''}" data-index="${idx}">
+        ${modelName}
+        <span class="status-indicator ${statusClass}"></span>
+      </button>
+    `;
+  });
+  tabsHtml += '</div>';
+  
+  // Create response panels
+  let panelsHtml = '<div class="council-response-container">';
+  responses.forEach((resp, idx) => {
+    const content = resp.error 
+      ? `<div class="error-state"><p>${resp.error}</p></div>`
+      : parseMarkdown(resp.content || '回應中...');
+    panelsHtml += `
+      <div class="council-response-panel ${idx === 0 ? 'active' : ''}" data-index="${idx}">
+        <div class="response-content">${content}</div>
+      </div>
+    `;
+  });
+  panelsHtml += '</div>';
+  
+  container.innerHTML = tabsHtml + panelsHtml;
+  
+  // Add tab click handlers
+  container.querySelectorAll('.council-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const index = tab.getAttribute('data-index');
+      // Update active tab
+      container.querySelectorAll('.council-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      // Update active panel
+      container.querySelectorAll('.council-response-panel').forEach(p => p.classList.remove('active'));
+      container.querySelector(`.council-response-panel[data-index="${index}"]`)?.classList.add('active');
+    });
+  });
+}
+
+/**
+ * Render peer_review result
+ */
+function renderPeerReviewInTimeline(container, result) {
+  const { ranking = [], winner, reviews = [] } = result;
+  
+  container.setAttribute('data-tool', 'peer_review');
+  
+  // 排名列表
+  let html = '<div class="review-ranking-list">';
+  ranking.forEach((item, idx) => {
+    const rankClass = idx === 0 ? 'rank-1' : (idx === 1 ? 'rank-2' : 'rank-3');
+    html += `
+      <div class="review-ranking-item ${rankClass}">
+        <span class="review-rank-badge">${idx + 1}</span>
+        <span class="review-model-name">${getModelName(item.model)}</span>
+        <span class="review-score">${item.avgRank?.toFixed(1) || item.score?.toFixed(1) || '-'}</span>
+      </div>
+    `;
+  });
+  html += '</div>';
+  
+  // 勝出提示
+  if (winner) {
+    html += `
+      <div class="review-winner-hint">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        </svg>
+        ${getModelName(winner)} 獲選為本輪最佳回答
+      </div>
+    `;
+  }
+  
+  // 評語列表（如果有）
+  if (reviews.length > 0) {
+    html += '<div class="review-reasons-timeline">';
+    html += '<div class="review-reasons-title">審查評語</div>';
+    reviews.slice(0, 6).forEach(r => {
+      if (r.reason) {
+        const reviewer = r.reviewerName || getModelName(r.reviewer);
+        const target = r.modelName || getModelName(r.model);
+        html += `
+          <div class="review-reason-item">
+            <div class="reason-header">${reviewer} → ${target}</div>
+            <div class="reason-text">${escapeHtml(r.reason)}</div>
+          </div>
+        `;
+      }
+    });
+    html += '</div>';
+  }
+  
+  container.innerHTML = html;
+}
+
+/**
+ * Render synthesize result
+ */
+function renderSynthesisInTimeline(container, result) {
+  const { content = '', chairman } = result;
+  
+  container.setAttribute('data-tool', 'synthesize');
+  
+  // 過濾 task JSON 以便乾淨顯示
+  const displayContent = enableTaskPlanner ? extractFinalAnswerDisplay(content) : content;
+  
+  // 解析並渲染 tasks 到 TODO section
+  if (enableTaskPlanner && content) {
+    const parsedTasks = parseTasksFromResponse(content);
+    if (parsedTasks.success && parsedTasks.tasks.length > 0) {
+      renderTodoSection(parsedTasks.tasks);
+    }
+  }
+  
+  let html = '';
+  
+  // Chairman badge header
+  if (chairman) {
+    html += `
+      <div class="synthesis-header">
+        <div class="synthesis-chairman-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+          ${getModelName(chairman)}
+        </div>
+      </div>
+    `;
+  }
+  
+  // Synthesis content (已過濾 task JSON)
+  html += `
+    <div class="synthesis-content">
+      <div class="response-content">${parseMarkdown(displayContent)}</div>
+    </div>
+  `;
+  
+  container.innerHTML = html;
+}
+
+/**
+ * Render request_user_input result (顯示用戶選擇的動作)
+ */
+function renderUserInputInTimeline(container, result) {
+  container.setAttribute('data-tool', 'request_user_input');
+  
+  const { action, value, query, label } = result || {};
+  
+  // 根據用戶的動作顯示不同內容
+  let actionText = '';
+  let actionIcon = '';
+  
+  switch (action) {
+    case 'search':
+      actionIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>';
+      actionText = `延伸搜尋: ${query || value || ''}`;
+      break;
+    case 'deepen':
+      actionIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>';
+      actionText = `深入探討: ${label || value || ''}`;
+      break;
+    case 'proceed':
+      actionIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+      actionText = '繼續執行';
+      break;
+    case 'skip':
+      actionIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h4l7 8-7 8H5l7-8z"/><line x1="19" y1="4" x2="19" y2="20"/></svg>';
+      actionText = '跳過此步驟';
+      break;
+    default:
+      actionIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+      actionText = value || label || '已回應';
+  }
+  
+  container.innerHTML = `
+    <div class="user-input-completed">
+      ${actionIcon}
+      <span>${escapeHtml(actionText)}</span>
+    </div>
+  `;
+}
+
+/**
+ * Show next steps section
+ */
+function showNextStepsSection() {
+  if (nextStepsSection) {
+    nextStepsSection.classList.remove('hidden');
   }
 }
 
-function setStepDone(stepNumber) {
-  updateStepperState(stepNumber, 'done');
-}
-
-function setStepSkipped(stepNumber) {
-  updateStepperState(stepNumber, 'skipped');
-}
-
-function setAllStepsDone() {
-  for (let i = 1; i <= 3; i++) {
-    updateStepperState(i, 'done');
+/**
+ * Hide next steps section
+ */
+function hideNextStepsSection() {
+  if (nextStepsSection) {
+    nextStepsSection.classList.add('hidden');
   }
 }
+
+// Legacy stepper functions (保留空函數以避免報錯，逐步移除)
+function showStepper() { showPlannerTimeline(); }
+function hideStepper() { /* no-op */ }
+function updateStepperState(stepNumber, state) { /* no-op */ }
+function setStepActive(stepNumber) { /* no-op */ }
+function setStepDone(stepNumber) { /* no-op */ }
+function setStepSkipped(stepNumber) { /* no-op */ }
+function setAllStepsDone() { /* no-op */ }
 
 // ============================================
 // Stage Summary Functions
@@ -2065,136 +2473,663 @@ function autoGrowTextarea() {
 }
 
 // ============================================
-// Skill Badge Display
+// Unified Skill Selector UI
 // ============================================
 
 /**
- * Update skill badge display
- * @param {Object|null} skill - The skill object (null to hide)
- * @param {string|null} strategy - Assignment strategy ('homogeneous', 'heterogeneous', 'mixed')
+ * State for skill selection
  */
-function updateSkillBadge(skill, strategy = null) {
-  if (!skillBadge) return;
-  
-  if (!skill) {
-    skillBadge.classList.add('hidden');
-    console.log('[Skill] Badge hidden');
-    return;
+let userSelectedSkill = null;  // User manually selected skill (highest priority)
+let detectedSkill = null;      // Auto-detected skill from query
+let skillSelectorUI = null;    // SkillSelectorUI instance
+
+/**
+ * SkillSelectorUI - Manages the unified skill dropdown
+ */
+class SkillSelectorUI {
+  constructor() {
+    this.isOpen = false;
+    this.skills = [];
+    this.categories = {};
+    this.searchFilter = '';
+    this.initialized = false;
   }
   
-  // Show badge
-  skillBadge.classList.remove('hidden');
-  
-  // Set skill icon and name
-  if (skillBadgeIcon) {
-    skillBadgeIcon.textContent = skill.icon || '✨';
+  /**
+   * Initialize the skill selector UI
+   */
+  async init() {
+    if (this.initialized) return;
+    
+    // Get skills and categories from MAVSkills
+    const MAVSkills = window.MAVSkills;
+    if (!MAVSkills) {
+      console.warn('[SkillSelectorUI] MAVSkills not available');
+      return;
+    }
+    
+    this.skills = MAVSkills.skillSelector?.getAll() || Object.values(MAVSkills.SKILLS || {});
+    this.categories = MAVSkills.SKILL_CATEGORIES || {};
+    
+    // Render category sections
+    this.renderCategories();
+    
+    // Setup event listeners
+    this.setupEventListeners();
+    
+    this.initialized = true;
+    console.log('[SkillSelectorUI] Initialized with', this.skills.length, 'skills');
   }
-  if (skillBadgeName) {
-    skillBadgeName.textContent = skill.name || skill.id || 'Unknown';
+  
+  /**
+   * Render skill categories in dropdown
+   */
+  renderCategories() {
+    if (!skillCategorySections) return;
+    
+    // Group skills by category
+    const grouped = {};
+    for (const skill of this.skills) {
+      const cat = skill.category || 'quick';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(skill);
+    }
+    
+    // Category order
+    const categoryOrder = ['creative', 'visual', 'analysis', 'quick'];
+    
+    let html = '';
+    for (const catId of categoryOrder) {
+      const catInfo = this.categories[catId];
+      const skills = grouped[catId] || [];
+      
+      if (skills.length === 0) continue;
+      
+      html += `
+        <div class="skill-dropdown-section" data-category="${catId}">
+          <div class="skill-category-header">
+            <span class="skill-section-icon">${catInfo?.icon || '📁'}</span>
+            <span class="skill-section-title">${catInfo?.name || catId}</span>
+          </div>
+          <div class="skill-option-list">
+            ${skills.map(skill => this.renderSkillOption(skill)).join('')}
+          </div>
+        </div>
+      `;
+    }
+    
+    skillCategorySections.innerHTML = html;
   }
   
-  // Set strategy if provided
-  if (skillBadgeStrategy) {
-    if (strategy && strategy !== 'homogeneous') {
-      skillBadgeStrategy.textContent = strategy === 'heterogeneous' ? '異質分工' : '混合模式';
-      skillBadgeStrategy.classList.remove('hidden');
-      skillBadge.setAttribute('data-strategy', strategy);
+  /**
+   * Render a single skill option
+   */
+  renderSkillOption(skill, showBadge = false) {
+    return `
+      <button class="skill-option" data-skill-id="${skill.id}">
+        <span class="skill-option-icon">${skill.icon || '📄'}</span>
+        <span class="skill-option-info">
+          <span class="skill-option-name">${skill.name}</span>
+          <span class="skill-option-desc">${skill.description || ''}</span>
+        </span>
+        ${showBadge ? '<span class="skill-option-badge">推薦</span>' : ''}
+      </button>
+    `;
+  }
+  
+  /**
+   * Setup event listeners
+   */
+  setupEventListeners() {
+    // Toggle dropdown
+    if (skillSelectorBtn) {
+      skillSelectorBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggle();
+      });
+    }
+    
+    // Search input
+    if (skillSearchInput) {
+      skillSearchInput.addEventListener('input', (e) => {
+        this.searchFilter = e.target.value.trim().toLowerCase();
+        this.filterSkills();
+      });
+      
+      skillSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          this.close();
+        }
+      });
+    }
+    
+    // Skill option clicks (delegated)
+    if (skillDropdownContent) {
+      skillDropdownContent.addEventListener('click', (e) => {
+        const option = e.target.closest('.skill-option');
+        if (option) {
+          const skillId = option.dataset.skillId;
+          this.selectSkill(skillId);
+        }
+      });
+    }
+    
+    // Clear selection button
+    if (clearSkillSelection) {
+      clearSkillSelection.addEventListener('click', () => {
+        this.clearSelection();
+      });
+    }
+    
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+      if (this.isOpen && skillSelectorEl && !skillSelectorEl.contains(e.target)) {
+        this.close();
+      }
+    });
+    
+    // Close on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.isOpen) {
+        this.close();
+      }
+    });
+  }
+  
+  /**
+   * Toggle dropdown open/close
+   */
+  toggle() {
+    if (this.isOpen) {
+      this.close();
     } else {
-      skillBadgeStrategy.classList.add('hidden');
-      skillBadge.removeAttribute('data-strategy');
+      this.open();
     }
   }
   
-  console.log('[Skill] Badge updated:', {
-    id: skill.id,
-    name: skill.name,
-    icon: skill.icon,
-    strategy: strategy || 'homogeneous'
+  /**
+   * Open dropdown
+   */
+  open() {
+    if (!skillDropdown || !skillSelectorEl) return;
+    
+    skillDropdown.classList.remove('hidden');
+    skillSelectorEl.classList.add('open');
+    this.isOpen = true;
+    
+    // Focus search input
+    if (skillSearchInput) {
+      skillSearchInput.value = '';
+      this.searchFilter = '';
+      this.filterSkills();
+      skillSearchInput.focus();
+    }
+    
+    // Update recommended section
+    this.updateRecommended();
+  }
+  
+  /**
+   * Close dropdown
+   */
+  close() {
+    if (!skillDropdown || !skillSelectorEl) return;
+    
+    skillDropdown.classList.add('hidden');
+    skillSelectorEl.classList.remove('open');
+    this.isOpen = false;
+  }
+  
+  /**
+   * Filter skills based on search input
+   */
+  filterSkills() {
+    if (!skillCategorySections) return;
+    
+    const sections = skillCategorySections.querySelectorAll('.skill-dropdown-section');
+    let anyVisible = false;
+    
+    sections.forEach(section => {
+      const options = section.querySelectorAll('.skill-option');
+      let sectionVisible = false;
+      
+      options.forEach(option => {
+        const skillId = option.dataset.skillId;
+        const skill = this.skills.find(s => s.id === skillId);
+        
+        if (!skill) {
+          option.style.display = 'none';
+          return;
+        }
+        
+        const matchesFilter = !this.searchFilter ||
+          skill.name.toLowerCase().includes(this.searchFilter) ||
+          (skill.description || '').toLowerCase().includes(this.searchFilter) ||
+          skill.id.toLowerCase().includes(this.searchFilter);
+        
+        option.style.display = matchesFilter ? '' : 'none';
+        if (matchesFilter) sectionVisible = true;
+      });
+      
+      section.style.display = sectionVisible ? '' : 'none';
+      if (sectionVisible) anyVisible = true;
+    });
+    
+    // Show/hide no results message
+    let noResults = skillDropdownContent?.querySelector('.skill-no-results');
+    if (!anyVisible && this.searchFilter) {
+      if (!noResults) {
+        noResults = document.createElement('div');
+        noResults.className = 'skill-no-results';
+        noResults.textContent = '找不到符合的技能';
+        skillDropdownContent?.appendChild(noResults);
+      }
+      noResults.style.display = '';
+    } else if (noResults) {
+      noResults.style.display = 'none';
+    }
+  }
+  
+  /**
+   * Update recommended section based on current query
+   */
+  updateRecommended() {
+    if (!skillRecommendedSection || !skillRecommendedList) return;
+    
+    if (detectedSkill) {
+      skillRecommendedSection.classList.remove('hidden');
+      skillRecommendedList.innerHTML = this.renderSkillOption(detectedSkill, true);
+      
+      // Add click handler
+      const option = skillRecommendedList.querySelector('.skill-option');
+      if (option) {
+        option.addEventListener('click', () => {
+          this.selectSkill(detectedSkill.id);
+        });
+      }
+    } else {
+      skillRecommendedSection.classList.add('hidden');
+    }
+  }
+  
+  /**
+   * Select a skill
+   */
+  selectSkill(skillId) {
+    const skill = this.skills.find(s => s.id === skillId);
+    if (!skill) return;
+    
+    userSelectedSkill = skill;
+    this.updateDisplay(skill, 'user');
+    
+    // When user explicitly selects a skill, force apply its settings
+    // This includes clearing vision state if the skill doesn't require it
+    applySkillSideEffects(skill, { userSelected: true });
+    this.close();
+    
+    console.log('[SkillSelectorUI] User selected skill:', skill.id, skill.name);
+  }
+  
+  /**
+   * Clear user selection (back to auto-detect)
+   */
+  clearSelection() {
+    userSelectedSkill = null;
+    
+    // Use detected skill or show default
+    if (detectedSkill) {
+      this.updateDisplay(detectedSkill, 'auto');
+      applySkillSideEffects(detectedSkill);
+    } else {
+      this.updateDisplay(null, null);
+      applySkillSideEffects(null);
+    }
+    
+    this.close();
+    console.log('[SkillSelectorUI] Selection cleared, using auto-detect');
+  }
+  
+  /**
+   * Update the selector button display
+   */
+  updateDisplay(skill, source) {
+    if (!skillSelectorIcon || !skillSelectorName || !skillSelectorEl) return;
+    
+    if (skill) {
+      skillSelectorIcon.textContent = skill.icon || '✨';
+      skillSelectorName.textContent = skill.name;
+      
+      // Update source badge
+      if (skillSelectorSource) {
+        if (source === 'auto') {
+          skillSelectorSource.textContent = '自動';
+          skillSelectorSource.setAttribute('data-source', 'auto');
+          skillSelectorSource.classList.remove('hidden');
+        } else if (source === 'user') {
+          skillSelectorSource.textContent = '已選';
+          skillSelectorSource.setAttribute('data-source', 'user');
+          skillSelectorSource.classList.remove('hidden');
+        } else {
+          skillSelectorSource.classList.add('hidden');
+        }
+      }
+      
+      // Update category styling
+      if (skill.category) {
+        skillSelectorEl.setAttribute('data-category', skill.category);
+      } else {
+        skillSelectorEl.removeAttribute('data-category');
+      }
+      
+      // Update selected state in dropdown
+      this.updateSelectedState(skill.id);
+    } else {
+      skillSelectorIcon.textContent = '⚡';
+      skillSelectorName.textContent = i18n?.t?.('sidepanel.autoDetect') || '自動偵測';
+      skillSelectorSource?.classList.add('hidden');
+      skillSelectorEl.removeAttribute('data-category');
+      this.updateSelectedState(null);
+    }
+  }
+  
+  /**
+   * Update selected state in dropdown options
+   */
+  updateSelectedState(selectedId) {
+    if (!skillDropdownContent) return;
+    
+    const options = skillDropdownContent.querySelectorAll('.skill-option');
+    options.forEach(option => {
+      if (option.dataset.skillId === selectedId) {
+        option.classList.add('selected');
+      } else {
+        option.classList.remove('selected');
+      }
+    });
+  }
+  
+  /**
+   * Called when query changes - detect skill and update UI
+   */
+  onQueryChange(query) {
+    if (!query || query.length < 3) {
+      detectedSkill = null;
+      if (!userSelectedSkill) {
+        this.updateDisplay(null, null);
+      }
+      return;
+    }
+    
+    // Detect skill
+    const selector = window.MAVSkills?.skillSelector;
+    if (selector) {
+      const settings = {
+        visionMode: visionMode,
+        learnerMode: learnerMode
+      };
+      detectedSkill = selector.select(query, settings);
+      
+      // Only update display if user hasn't manually selected
+      if (!userSelectedSkill && detectedSkill) {
+        this.updateDisplay(detectedSkill, 'auto');
+        // Apply side effects for auto-detected skill too
+        applySkillSideEffects(detectedSkill);
+      }
+    }
+  }
+  
+  /**
+   * Get the currently active skill (user selected > detected)
+   */
+  getActiveSkill() {
+    return userSelectedSkill || detectedSkill || null;
+  }
+  
+  /**
+   * Reset state (e.g., on new conversation)
+   */
+  reset() {
+    userSelectedSkill = null;
+    detectedSkill = null;
+    this.updateDisplay(null, null);
+    
+    // Explicitly reset vision mode since applySkillSideEffects won't do it if image exists
+    visionMode = false;
+    if (visionUploadSection) {
+      visionUploadSection.classList.add('hidden');
+    }
+    if (visionToggle) visionToggle.checked = false;
+    
+    applySkillSideEffects(null);
+  }
+}
+
+/**
+ * Apply skill side effects (enable/disable features)
+ * @param {Object} skill - The skill to apply
+ * @param {Object} options - Options
+ * @param {boolean} options.userSelected - True if user explicitly selected this skill
+ */
+function applySkillSideEffects(skill, options = {}) {
+  const { userSelected = false } = options;
+  
+  // Reset all modes first
+  enableImage = false;
+  enableSearchMode = false;
+  
+  // Determine if we should enable/disable vision mode
+  const skillRequiresVision = skill?.sideEffects?.enableVision === true;
+  const hasUploadedImage = uploadedImage !== null;
+  
+  // Vision mode logic:
+  // - If skill requires vision: enable it and show upload UI
+  // - If user explicitly selected a non-vision skill: force disable vision and clear image
+  // - If skill auto-detected and doesn't require vision but image exists: keep vision
+  // - If no image uploaded: disable vision
+  if (skillRequiresVision) {
+    visionMode = true;
+    if (visionUploadSection) {
+      visionUploadSection.classList.remove('hidden');
+    }
+  } else if (userSelected) {
+    // User explicitly selected a skill that doesn't require vision
+    // Force disable vision mode and clear uploaded image
+    visionMode = false;
+    clearUploadedImage();
+    if (visionUploadSection) {
+      visionUploadSection.classList.add('hidden');
+    }
+    console.log('[SkillSideEffects] User selected non-vision skill - cleared vision state');
+  } else if (!hasUploadedImage) {
+    // Auto-detected skill, no image uploaded
+    visionMode = false;
+    if (visionUploadSection) {
+      visionUploadSection.classList.add('hidden');
+    }
+  }
+  // If auto-detected, image exists, and skill doesn't require vision: keep current state
+  
+  if (!skill?.sideEffects) {
+    // Update hidden toggles for backward compatibility
+    if (imageToggle) imageToggle.checked = enableImage;
+    if (searchModeToggle) searchModeToggle.checked = enableSearchMode;
+    if (visionToggle) visionToggle.checked = visionMode;
+    return;
+  }
+  
+  const effects = skill.sideEffects;
+  
+  if (effects.enableImage) {
+    enableImage = true;
+  }
+  if (effects.enableSearch) {
+    enableSearchMode = true;
+  }
+  
+  // Update hidden toggles for backward compatibility
+  if (imageToggle) imageToggle.checked = enableImage;
+  if (searchModeToggle) searchModeToggle.checked = enableSearchMode;
+  if (visionToggle) visionToggle.checked = visionMode;
+  
+  // Update current card settings if in task planner mode
+  updateCurrentCardSettings();
+  
+  console.log('[SkillSideEffects] Applied:', {
+    skill: skill?.id || null,
+    enableImage,
+    enableSearchMode,
+    visionMode,
+    userSelected,
+    hasUploadedImage: uploadedImage !== null
   });
 }
 
 /**
- * Detect and show skill badge based on current query
+ * Resolve the active skill to use for query execution
+ * Priority: user selection > planner recommendation > auto-detect
+ */
+function resolveActiveSkill(plannerRecommendation = null) {
+  // 1. User manual selection (highest priority)
+  if (userSelectedSkill) {
+    return { skill: userSelectedSkill, source: 'user' };
+  }
+  
+  // 2. Planner recommendation (during execution)
+  if (plannerRecommendation) {
+    return { skill: plannerRecommendation, source: 'planner' };
+  }
+  
+  // 3. Auto-detected skill
+  if (detectedSkill) {
+    return { skill: detectedSkill, source: 'auto' };
+  }
+  
+  // 4. Default to quickAnswer
+  const defaultSkill = window.MAVSkills?.SKILLS?.quickAnswer || null;
+  return { skill: defaultSkill, source: 'default' };
+}
+
+// ============================================
+// Legacy Skill Badge Display (backward compatibility)
+// ============================================
+
+/**
+ * Update skill badge display (legacy - now updates unified selector)
+ * @param {Object|null} skill - The skill object (null to hide)
+ * @param {string|null} strategy - Assignment strategy ('homogeneous', 'heterogeneous', 'mixed')
+ */
+function updateSkillBadge(skill, strategy = null) {
+  // Update the unified skill selector instead
+  if (skillSelectorUI) {
+    if (skill) {
+      // If this is from external source (not user selection), treat as auto-detected
+      if (!userSelectedSkill) {
+        detectedSkill = skill;
+        skillSelectorUI.updateDisplay(skill, 'auto');
+      }
+    } else {
+      if (!userSelectedSkill) {
+        detectedSkill = null;
+        skillSelectorUI.updateDisplay(null, null);
+      }
+    }
+  }
+  
+  // Legacy badge update (if element exists)
+  if (skillBadge) {
+    if (!skill) {
+      skillBadge.classList.add('hidden');
+      return;
+    }
+    
+    skillBadge.classList.remove('hidden');
+    if (skillBadgeIcon) skillBadgeIcon.textContent = skill.icon || '✨';
+    if (skillBadgeName) skillBadgeName.textContent = skill.name || skill.id || 'Unknown';
+    
+    if (skillBadgeStrategy) {
+      if (strategy && strategy !== 'homogeneous') {
+        skillBadgeStrategy.textContent = strategy === 'heterogeneous' ? '異質分工' : '混合模式';
+        skillBadgeStrategy.classList.remove('hidden');
+        skillBadge.setAttribute('data-strategy', strategy);
+      } else {
+        skillBadgeStrategy.classList.add('hidden');
+        skillBadge.removeAttribute('data-strategy');
+      }
+    }
+  }
+}
+
+/**
+ * Detect and show skill badge based on current query (legacy - now uses unified selector)
  */
 function detectAndShowSkillBadge() {
   const query = queryInput.value.trim();
+  
+  // Use the new SkillSelectorUI if available
+  if (skillSelectorUI) {
+    skillSelectorUI.onQueryChange(query);
+    return;
+  }
+  
+  // Legacy fallback
   if (!query || query.length < 3) {
     updateSkillBadge(null);
     return;
   }
   
-  // Use SkillSelector if available
-  const skillSelector = window.MAVSkills?.skillSelector;
-  if (skillSelector) {
+  const selector = window.MAVSkills?.skillSelector;
+  if (selector) {
     const settings = {
       visionMode: visionMode,
       learnerMode: learnerMode
     };
-    console.log('[Skill] Detecting skill for query:', query.substring(0, 50) + '...', { settings });
-    const selectedSkill = skillSelector.select(query, settings);
-    if (selectedSkill) {
-      console.log('[Skill] Selected:', selectedSkill.id, selectedSkill.name);
-      updateSkillBadge(selectedSkill);
-    } else {
-      console.log('[Skill] No matching skill found');
-      updateSkillBadge(null);
-    }
-  } else {
-    console.warn('[Skill] SkillSelector not available');
+    const selectedSkill = selector.select(query, settings);
+    updateSkillBadge(selectedSkill);
   }
 }
 
 // ============================================
-// Agent Progress Panel Functions
+// Agent Progress Panel Functions (已改用 Timeline 系統)
 // ============================================
 
+// 保留舊的 DOM 參考以供向下相容
+const agentProgressSection = null; // 已移除
+const progressContent = null; // 已移除
+const progressStep = null; // 已移除
+
 /**
- * Show the agent progress panel
+ * Show the agent progress panel (改為顯示 timeline)
  */
 function showAgentProgress() {
-  if (agentProgressSection) {
-    agentProgressSection.classList.remove('hidden');
-  }
+  showPlannerTimeline();
 }
 
 /**
  * Hide the agent progress panel
  */
 function hideAgentProgress() {
-  if (agentProgressSection) {
-    agentProgressSection.classList.add('hidden');
-    agentProgressSection.classList.remove('collapsed');
-    // Don't clear content on hide - preserve for debugging
-    // Content is cleared at start of new query via clearAgentProgress()
-  }
+  // Timeline 不需要隱藏，保持可見以顯示歷史
 }
 
 /**
- * Collapse agent progress panel (keep visible but minimize)
+ * Collapse agent progress panel (no-op for timeline)
  */
 function collapseAgentProgress() {
-  if (agentProgressSection) {
-    agentProgressSection.classList.add('collapsed');
-    agentProgressSection.classList.remove('hidden');
-  }
+  // no-op
 }
 
 /**
- * Expand agent progress panel
+ * Expand agent progress panel (no-op for timeline)
  */
 function expandAgentProgress() {
-  if (agentProgressSection) {
-    agentProgressSection.classList.remove('collapsed');
-  }
+  // no-op
 }
 
 /**
- * Toggle agent progress panel collapsed state
+ * Toggle agent progress panel collapsed state (no-op for timeline)
  */
 function toggleAgentProgress() {
-  if (agentProgressSection) {
-    agentProgressSection.classList.toggle('collapsed');
-  }
+  // no-op
 }
 
 /**
@@ -2202,139 +3137,35 @@ function toggleAgentProgress() {
  * Called at start of new query
  */
 function clearAgentProgress() {
-  if (progressContent) progressContent.innerHTML = '';
-  if (progressStep) progressStep.textContent = '';
-  // Also remove collapsed state for fresh start
-  if (agentProgressSection) {
-    agentProgressSection.classList.remove('collapsed');
-  }
+  clearPlannerTimeline();
+  hideNextStepsSection();
 }
 
 /**
  * Update the agent progress panel with current tool status
+ * 現在改為使用 timeline 段落系統
  * @param {string} tool - Current tool being executed
  * @param {string} status - 'loading', 'done', or 'error'
  * @param {Object} details - Additional details to display
  */
 function updateAgentProgress(tool, status, details = {}) {
-  if (!agentProgressSection || !progressContent) return;
-  
-  // Tool display configurations
-  const toolConfig = {
-    planning: {
-      icon: '💭',
-      label: '規劃決策',
-      loadingText: '思考下一步...',
-      doneText: (d) => d.nextTool ? `→ ${d.nextTool}` : '決策完成'
-    },
-    web_search: {
-      icon: '🔍',
-      label: '網路搜尋',
-      loadingText: '搜尋中...',
-      doneText: (d) => `找到 ${d.resultCount || 0} 筆結果`
-    },
-    query_council: {
-      icon: '🤖',
-      label: '模型議會',
-      loadingText: (d) => `${d.modelCount || 3} 個模型回應中...`,
-      doneText: (d) => `${d.successCount || 0}/${d.totalCount || 3} 模型完成`
-    },
-    peer_review: {
-      icon: '📊',
-      label: '互評審查',
-      loadingText: '模型互評中...',
-      doneText: (d) => d.winner ? `勝出: ${getModelName(d.winner)}` : '審查完成'
-    },
-    synthesize: {
-      icon: '✨',
-      label: '主席彙整',
-      loadingText: (d) => d.chairman ? `${getModelName(d.chairman)} 彙整中...` : '彙整中...',
-      doneText: () => '彙整完成'
-    },
-    error: {
-      icon: '⚠️',
-      label: '錯誤',
-      loadingText: '',
-      doneText: (d) => d.error || '執行錯誤'
-    },
-    breakpoint: {
-      icon: '⏸️',
-      label: '等待確認',
-      loadingText: '等待使用者輸入...',
-      doneText: (d) => d.action === 'search' ? `搜尋: ${d.query}` : '繼續執行'
-    },
-    request_user_input: {
-      icon: '⏸️',
-      label: '使用者互動',
-      loadingText: '等待使用者選擇...',
-      doneText: (d) => d.action === 'search' ? `搜尋: ${d.query?.slice(0, 20)}...` : '直接產出結論'
-    }
-  };
-  
-  const config = toolConfig[tool];
-  if (!config) return;
-  
-  // Show panel
-  showAgentProgress();
-  
-  // Update step counter
-  if (progressStep && details.iteration) {
-    progressStep.textContent = `Step ${details.iteration}/${details.maxIterations || 10}`;
+  // 'planning' 類型會創建新段落
+  if (tool === 'planning' && status === 'done' && details.nextTool) {
+    // Create new paragraph for the upcoming tool
+    appendTimelineParagraph({
+      tool: details.nextTool,
+      reasoning: details.reasoning || ''
+    }, 'loading');
+    return;
   }
   
-  // Get status text
-  let statusText = '';
-  if (status === 'loading') {
-    statusText = typeof config.loadingText === 'function' 
-      ? config.loadingText(details) 
-      : config.loadingText;
-  } else if (status === 'done') {
-    statusText = typeof config.doneText === 'function' 
-      ? config.doneText(details) 
-      : config.doneText;
-  } else if (status === 'error') {
-    // Format error message with context
-    const toolLabel = details.tool && details.tool !== 'unknown' ? ` (${details.tool})` : '';
-    const iterLabel = details.iteration ? ` [Step ${details.iteration}]` : '';
-    statusText = `${details.error || '執行錯誤'}${toolLabel}${iterLabel}`;
+  // 其他 tool 類型更新當前段落的結果
+  if (status === 'done' && currentTimelineParagraph) {
+    // Result will be rendered via renderToolResultInParagraph
   }
   
-  // For planning, create a unique ID per iteration to avoid overwriting
-  const itemId = tool === 'planning' ? `planning-${details.iteration || 0}` : tool;
-  
-  // Check if item already exists
-  let item = progressContent.querySelector(`[data-tool="${itemId}"]`);
-  
-  if (!item) {
-    // Create new item
-    item = document.createElement('div');
-    item.className = 'progress-item';
-    item.setAttribute('data-tool', itemId);
-    item.innerHTML = `
-      <span class="icon">${config.icon}</span>
-      <span class="label">${config.label}</span>
-      <span class="status">${statusText}</span>
-    `;
-    progressContent.appendChild(item);
-  } else {
-    // Update existing item
-    const statusEl = item.querySelector('.status');
-    if (statusEl) statusEl.textContent = statusText;
-  }
-  
-  // Add reasoning block if provided (for planning decisions)
-  if (details.reasoning && !item.querySelector('.progress-reasoning')) {
-    const reasoningEl = document.createElement('div');
-    reasoningEl.className = 'progress-reasoning';
-    reasoningEl.textContent = details.reasoning;
-    item.appendChild(reasoningEl);
-  }
-  
-  // Update item status class
-  item.classList.remove('loading', 'done', 'error', 'active');
-  item.classList.add(status);
-  if (status === 'loading') {
-    item.classList.add('active');
+  if (status === 'error') {
+    updateCurrentParagraphStatus('error');
   }
 }
 
@@ -2670,7 +3501,7 @@ function showSuggestedActions(result, skill) {
     icon: '📝',
     label: '做筆記',
     action: 'canvas',
-    handler: () => handleBranchCanvas()
+    handler: () => openCanvas(false)
   });
   
   // Image generation - show if not already in image skill
@@ -2679,7 +3510,7 @@ function showSuggestedActions(result, skill) {
       icon: '🎨',
       label: '生成圖像',
       action: 'genImage',
-      handler: () => handleBranchGenerate()
+      handler: () => handleBranchImage()
     });
   }
   
@@ -2876,6 +3707,10 @@ async function init() {
   await loadContextItems();
   setupEventListeners();
   setupStorageListener();
+  
+  // Initialize Unified Skill Selector UI
+  skillSelectorUI = new SkillSelectorUI();
+  await skillSelectorUI.init();
   
   // Check storage quota on startup
   await checkStorageQuota();
@@ -3891,25 +4726,11 @@ function getSelectedSearchQueries() {
   return Array.from(checkboxes).map(cb => cb.value);
 }
 
-// Show Stage 2.5 and wait for user action
+// Show Stage 2.5 and wait for user action (已棄用，改用 breakpoint panel)
 async function showStage25AndWaitForAction(allSuggestions) {
-  return new Promise((resolve) => {
-    stage25Resolver = resolve;
-    
-    // Show stage 2.5
-    stage25Section.classList.remove('hidden');
-    stage25Status.textContent = '等待選擇';
-    stage25Status.className = 'stage-status';
-    
-    // Render suggestions
-    renderStage25Suggestions(allSuggestions);
-    
-    // Update summary
-    const totalQueries = allSuggestions.reduce((sum, s) => sum + s.queries.length, 0);
-    if (stage25Summary) {
-      stage25Summary.textContent = `${allSuggestions.length} 個模型提供 ${totalQueries} 個建議`;
-    }
-  });
+  // 此函數已棄用，Agent Framework 使用 request_user_input tool 代替
+  console.warn('[showStage25AndWaitForAction] Deprecated, use breakpoint panel instead');
+  return { action: 'skip', queries: [] };
 }
 
 // Handle Stage 3 execute search button
@@ -3935,14 +4756,9 @@ function handleStage25ExecuteSearch() {
   stage25Resolver = null;
 }
 
-// Handle Stage 2.5 skip button
+// Handle Stage 2.5 skip button (已棄用)
 function handleStage25Skip() {
   if (!stage25Resolver) return;
-  
-  stage25Status.textContent = t('sidepanel.stageSkipped');
-  stage25Status.className = 'stage-status done';
-  stage25Section.classList.add('collapsed');
-  
   stage25Resolver({ action: 'skip', queries: [] });
   stage25Resolver = null;
 }
@@ -4338,6 +5154,16 @@ ${discussionContext.slice(0, 2000)}${discussionContext.length > 2000 ? '...(已�
 }
 
 async function runCouncilIteration() {
+  // [已棄用] 此函數使用舊的 stage UI，現在應使用 Agent Framework
+  // 重導向到 Agent Framework 流程
+  if (useAgentFramework && window.MAVAgent && window.MAVTools) {
+    console.log('[runCouncilIteration] Redirecting to Agent Framework');
+    return await runWithAgentLoop(currentQuery);
+  }
+  
+  // 以下為舊的流程，保留但不再維護
+  console.warn('[runCouncilIteration] Using legacy flow, consider migrating to Agent Framework');
+  
   // 記錄執行開始時的卡片 ID
   const iterationCardId = sessionState.currentCardId;
   
@@ -4346,25 +5172,9 @@ async function runCouncilIteration() {
   reviews.clear();
   reviewFailures.clear();
   
-  // Reset stages UI
-  stage1Section.classList.remove('collapsed');
-  stage2Section.classList.remove('collapsed', 'stage-skipped');
-  stage3Section.classList.remove('collapsed');
-  
-  document.getElementById('stage1Content').classList.add('expanded');
-  document.getElementById('stage2Content').classList.remove('expanded');
-  document.getElementById('stage3Content').classList.remove('expanded');
-  
-  stage1Status.textContent = '';
-  stage1Status.className = 'stage-status';
-  stage2Status.textContent = '';
-  stage2Status.className = 'stage-status';
-  stage3Status.textContent = '';
-  stage3Status.className = 'stage-status';
-  
-  // Reset stepper
-  showStepper();
-  setStepActive(1);
+  // 使用新的 timeline 系統
+  clearPlannerTimeline();
+  showPlannerTimeline();
   
   let savedResponses = [];
   let aggregatedRanking = null;
@@ -5050,6 +5860,9 @@ async function handleBranchImage() {
   branchImageBtn.disabled = true;
   branchImageBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px"></span><span>準備中...</span>';
   
+  // Hide branch actions section during loading to avoid confusion
+  branchActionsSection?.classList.add('hidden');
+  
   const resetButton = () => {
     branchImageBtn.disabled = false;
     branchImageBtn.innerHTML = `
@@ -5062,6 +5875,10 @@ async function handleBranchImage() {
     `;
   };
   
+  const restoreBranchActions = () => {
+    branchActionsSection?.classList.remove('hidden');
+  };
+  
   try {
     const finalAnswerContent = currentConversation.finalAnswer;
     const query = currentConversation.query;
@@ -5071,12 +5888,31 @@ async function handleBranchImage() {
     const promptLoadingEl = document.createElement('div');
     promptLoadingEl.className = 'image-prompt-loading';
     promptLoadingEl.innerHTML = `
-      <div class="loading-indicator">
-        <div class="loading-dots"><span></span><span></span><span></span></div>
-        <span class="loading-text">AI 正在分析內容並設計圖像 prompt...</span>
+      <div class="loading-header">
+        <div class="loading-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+        </div>
+        <div class="loading-info">
+          <div class="loading-title">AI 正在分析內容，規劃圖像構圖</div>
+          <div class="loading-subtitle">分析文字內容並設計視覺呈現方式</div>
+        </div>
+      </div>
+      <div class="skeleton-preview"></div>
+      <div class="skeleton-lines">
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line"></div>
+      </div>
+      <div class="loading-hint">
+        <span class="spinner-small"></span>
+        <span>約需 10-30 秒</span>
       </div>
     `;
-    finalAnswer.appendChild(promptLoadingEl);
+    getImageContainer()?.appendChild(promptLoadingEl);
     
     // Phase 1: Generate prompts with AI
     const aiResult = await generateImagePromptWithAI(query, finalAnswerContent, savedResponses);
@@ -5089,6 +5925,7 @@ async function handleBranchImage() {
     }
     
     resetButton();
+    restoreBranchActions();
     
     // Phase 2: Show style selection UI
     const startStyleSelection = (result) => {
@@ -5106,12 +5943,29 @@ async function handleBranchImage() {
           const integratingEl = document.createElement('div');
           integratingEl.className = 'image-prompt-loading';
           integratingEl.innerHTML = `
-            <div class="loading-indicator">
-              <div class="loading-dots"><span></span><span></span><span></span></div>
-              <span class="loading-text">正在將風格融入所有圖像 prompt...</span>
+            <div class="loading-header">
+              <div class="loading-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                </svg>
+              </div>
+              <div class="loading-info">
+                <div class="loading-title">正在將風格融入圖像</div>
+                <div class="loading-subtitle">結合選定風格，優化 prompt 細節</div>
+              </div>
+            </div>
+            <div class="skeleton-preview"></div>
+            <div class="skeleton-lines">
+              <div class="skeleton-line"></div>
+              <div class="skeleton-line"></div>
+              <div class="skeleton-line"></div>
+            </div>
+            <div class="loading-hint">
+              <span class="spinner-small"></span>
+              <span>約需 5-15 秒</span>
             </div>
           `;
-          finalAnswer.appendChild(integratingEl);
+          getImageContainer()?.appendChild(integratingEl);
           
           // Phase 3: Integrate style into prompts
           const integratedResult = await integrateStyleIntoPrompts(updatedResult, selectedStyle, editedGlobalContext);
@@ -5139,6 +5993,18 @@ async function handleBranchImage() {
                       conversations[idx] = currentConversation;
                       await safeStorageSet({ conversations });
                     }
+                  }
+                  
+                  // 更新卡片的圖片資料並保存 session
+                  const currentCard = getCurrentCard();
+                  if (currentCard && generatedImages.length > 0) {
+                    currentCard.generatedImages = generatedImages.map(g => ({
+                      title: g.title,
+                      prompt: g.prompt,
+                      timestamp: Date.now()
+                    }));
+                    console.log('[ImageGen] Updated card with', generatedImages.length, 'images');
+                    saveSession();
                   }
                   
                   // Show Vision button now that images are generated
@@ -5176,6 +6042,7 @@ async function handleBranchImage() {
     console.error('Branch image error:', err);
     showToast('製圖失敗：' + err.message, true);
     resetButton();
+    restoreBranchActions();
   }
 }
 
@@ -5758,6 +6625,14 @@ async function executeNewSession() {
   // Reset session cost
   resetSessionCost();
   
+  // Reset vision state completely
+  clearUploadedImage();
+  visionMode = false;
+  if (visionUploadSection) {
+    visionUploadSection.classList.add('hidden');
+  }
+  if (visionToggle) visionToggle.checked = false;
+  
   // Reset task planner state (this also clears sessionContextItems)
   initSession();
   hideTodoSection();
@@ -5769,17 +6644,25 @@ async function executeNewSession() {
   // Reset UI
   queryInput.value = '';
   autoGrowTextarea();
-  updateSkillBadge(null); // Hide skill badge
+  
+  // Reset skill selector state
+  if (skillSelectorUI) {
+    skillSelectorUI.reset();
+  } else {
+    updateSkillBadge(null); // Legacy: Hide skill badge
+  }
+  
   emptyState.classList.remove('hidden');
-  stage1Section.classList.add('hidden');
-  stage2Section.classList.add('hidden');
-  if (stage25Section) stage25Section.classList.add('hidden');
-  stage3Section.classList.add('hidden');
+  
+  // 使用新的 timeline 系統
+  clearPlannerTimeline();
+  hidePlannerTimeline();
+  hideNextStepsSection();
+  
   canvasSection.classList.add('hidden');
   hideBranchActions();
   exportBtn.style.display = 'none';
   errorBanner.classList.add('hidden');
-  hideStepper();
   clearAllSummaries();
   
   // Close history panel if open
@@ -5818,6 +6701,19 @@ function executeNewRootCard() {
   // Reset session cost
   resetSessionCost();
   
+  // Reset vision state for new card
+  clearUploadedImage();
+  visionMode = false;
+  if (visionUploadSection) {
+    visionUploadSection.classList.add('hidden');
+  }
+  if (visionToggle) visionToggle.checked = false;
+  
+  // Reset skill selector state for new card
+  if (skillSelectorUI) {
+    skillSelectorUI.reset();
+  }
+  
   // Hide todo section
   hideTodoSection();
   
@@ -5828,15 +6724,16 @@ function executeNewRootCard() {
   queryInput.value = '';
   autoGrowTextarea();
   emptyState.classList.remove('hidden');
-  stage1Section.classList.add('hidden');
-  stage2Section.classList.add('hidden');
-  if (stage25Section) stage25Section.classList.add('hidden');
-  stage3Section.classList.add('hidden');
+  
+  // 使用新的 timeline 系統
+  clearPlannerTimeline();
+  hidePlannerTimeline();
+  hideNextStepsSection();
+  
   canvasSection.classList.add('hidden');
   hideBranchActions();
   exportBtn.style.display = 'none';
   errorBanner.classList.add('hidden');
-  hideStepper();
   clearAllSummaries();
   
   // Update breadcrumb to show session name only
@@ -6058,53 +6955,49 @@ async function loadConversation(id) {
   exportBtn.style.display = 'flex';
   if (conv.finalAnswer) {
     showBranchActions();
-    canvasSection.classList.add('hidden'); // Use branch actions instead
+    canvasSection.classList.add('hidden');
   }
 
-  // Show stages
-  stage1Section.classList.remove('hidden');
-  stage2Section.classList.remove('hidden', 'stage-skipped');
-  stage3Section.classList.remove('hidden');
-
-  // Render Stage 1
-  renderSavedResponses(conv.responses || []);
-  stage1Status.textContent = t('sidepanel.stageComplete');
-  stage1Status.className = 'stage-status done';
-
-  // Render Stage 2
+  // 使用 Timeline 系統顯示已保存的對話
+  clearPlannerTimeline();
+  showPlannerTimeline();
+  
+  // Render responses in timeline
+  if (conv.responses && conv.responses.length > 0) {
+    appendTimelineParagraph({
+      tool: 'query_council',
+      reasoning: '已保存的模型回應'
+    }, 'done');
+    renderToolResultInParagraph('query_council', {
+      responses: conv.responses
+    });
+  }
+  
+  // Render ranking if available
   if (conv.ranking && conv.ranking.length > 0) {
-    renderReviewResults(conv.ranking);
-    stage2Status.textContent = t('sidepanel.stageComplete');
-    stage2Status.className = 'stage-status done';
-  } else {
-    stage2Section.classList.add('stage-skipped');
-    stage2Status.textContent = t('sidepanel.stageSkipped');
-    reviewResults.innerHTML = '<div class="skipped-message">無審查資料</div>';
+    appendTimelineParagraph({
+      tool: 'peer_review',
+      reasoning: '已保存的互評結果'
+    }, 'done');
+    renderToolResultInParagraph('peer_review', {
+      ranking: conv.ranking,
+      winner: conv.ranking[0]?.model
+    });
   }
 
-  // Render Stage 3
+  // Render final answer
   if (conv.finalAnswer) {
-    finalAnswer.innerHTML = `
-      <div class="chairman-badge">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-        </svg>
-        ${getModelName(conv.chairmanModel || chairmanModel)}
-      </div>
-      <div class="response-content">${parseMarkdown(conv.finalAnswer)}</div>
-    `;
+    appendTimelineParagraph({
+      tool: 'synthesize',
+      reasoning: '已保存的彙整結論'
+    }, 'done');
+    renderToolResultInParagraph('synthesize', {
+      content: conv.finalAnswer,
+      chairman: conv.chairmanModel || chairmanModel
+    });
     
-    // Render saved images if any
-    if (conv.generatedImages && conv.generatedImages.length > 0) {
-      const imageSection = document.createElement('div');
-      imageSection.className = 'final-image-section';
-      imageSection.innerHTML = `<div class="image-section-title">生成的圖像</div>`;
-      renderImages(conv.generatedImages, imageSection);
-      finalAnswer.appendChild(imageSection);
-    }
-    
-    stage3Status.textContent = t('sidepanel.stageComplete');
-    stage3Status.className = 'stage-status done';
+    // 顯示 Next Steps Section
+    showNextStepsSection();
     
     // 解析並渲染 tasks
     if (enableTaskPlanner) {
@@ -6118,35 +7011,25 @@ async function loadConversation(id) {
       hideTodoSection();
     }
   } else {
-    // 沒有 finalAnswer 時也要隱藏 TODO 區塊
     hideTodoSection();
   }
-
-  // Expand all stages for viewing
-  document.getElementById('stage1Content').classList.add('expanded');
-  document.getElementById('stage2Content').classList.add('expanded');
-  document.getElementById('stage3Content').classList.add('expanded');
 }
 
 function renderSavedResponses(savedResponses) {
-  const models = savedResponses.map(r => r.model);
+  // 已由 Timeline 系統處理，此函數保留以供向下相容
+  // 實際渲染邏輯已移至 renderCouncilResultInTimeline
+  if (!savedResponses || savedResponses.length === 0) return;
   
-  modelTabs.innerHTML = models.map(model => {
-    const info = getModelInfo(model);
-    return `<button class="tab" data-model="${model}" title="${info.provider}">${info.name}<span class="status-dot done"></span></button>`;
-  }).join('');
-
-  responseContainer.innerHTML = models.map(model => {
-    const resp = savedResponses.find(r => r.model === model);
-    return `
-      <div class="response-panel" data-model="${model}">
-        <div class="response-content" id="content-${cssEscape(model)}">${parseMarkdown(resp?.content || '')}</div>
-        <div class="response-meta visible">
-          <span class="meta-item">${((resp?.latency || 0) / 1000).toFixed(2)}s</span>
-        </div>
-      </div>
-    `;
-  }).join('');
+  // 重建 responses Map（供其他函數使用）
+  responses.clear();
+  savedResponses.forEach(r => {
+    responses.set(r.model, { 
+      content: r.content, 
+      status: 'done', 
+      latency: r.latency || 0,
+      images: r.images || []
+    });
+  });
 
   modelTabs.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -6322,8 +7205,7 @@ async function loadSessionFromHistory(sessionId) {
   
   // Reset UI first
   emptyState.classList.add('hidden');
-  stage1Section.classList.remove('hidden');
-  stage3Section.classList.remove('hidden');
+  showPlannerTimeline();
   
   // Load session
   const loaded = await loadSession(sessionId);
@@ -6598,7 +7480,7 @@ function registerAgentTools() {
         content: searchContent,
         url: '',
         type: 'search',
-        urlsWithStatus: allResults.slice(0, 5).map(r => ({ url: r.url, title: r.title, status: 'pending' }))
+        urlsWithStatus: allResults.slice(0, 5).map((r, i) => ({ index: i + 1, url: r.url, title: r.title, fetched: false, status: 'pending' }))
       });
       console.log('[Tool:web_search] Added to contextItems:', allResults.length, 'results');
     }
@@ -6654,8 +7536,23 @@ function registerAgentTools() {
     
     console.log('[Tool:peer_review] Complete. Winner:', winner);
     
+    // 將 reviews Map 轉換為包含 reviewer 資訊的陣列
+    const allReviews = [];
+    reviews.forEach((rankings, reviewer) => {
+      rankings.forEach(r => {
+        allReviews.push({
+          reviewer,
+          reviewerName: getModelName(reviewer),
+          model: r.model,
+          modelName: getModelName(r.model),
+          rank: r.rank,
+          reason: r.reason
+        });
+      });
+    });
+    
     return {
-      reviews: Array.from(reviews.values()),
+      reviews: allReviews,
       aggregatedRanking,
       weightedRanking,
       reviewCount: reviews.size,
@@ -6721,6 +7618,9 @@ function registerAgentTools() {
       placeholder = ''
     } = params;
     
+    // 獲取當前卡片（用於創建子卡片）
+    const currentCard = getCurrentCard();
+    
     console.log('[Tool:request_user_input] Showing breakpoint panel');
     console.log('[Tool:request_user_input] inputType:', inputType);
     console.log('[Tool:request_user_input] Options:', options.length);
@@ -6736,16 +7636,10 @@ function registerAgentTools() {
     
     console.log('[Tool:request_user_input] User response:', userResponse);
     
-    // Update progress panel
-    updateAgentProgress('request_user_input', 'done', {
-      action: userResponse.action,
-      value: userResponse.value
-    });
-    
     // Handle different action types
     switch (userResponse.action) {
       case 'search': {
-        // Execute search
+        // Execute search and create child card for project mode
         const query = userResponse.query || userResponse.value;
         if (!query) {
           return { action: 'proceed', continueLoop: false };
@@ -6765,10 +7659,50 @@ function registerAgentTools() {
             content: searchContent,
             url: '',
             type: 'search',
-            urlsWithStatus: searchResults.slice(0, 5).map(r => ({ url: r.url, title: r.title, status: 'pending' }))
+            urlsWithStatus: searchResults.slice(0, 5).map((r, i) => ({ index: i + 1, url: r.url, title: r.title, fetched: false, status: 'pending' }))
           });
         }
         
+        // 創建子卡片以進入專案模式
+        if (currentCard && searchResults.length > 0) {
+          const parentQuery = context?.query || '';
+          const childQuery = `【延伸搜尋】${query}\n\n基於搜尋結果深入分析以下主題：${parentQuery.slice(0, 150)}${parentQuery.length > 150 ? '...' : ''}`;
+          
+          // 添加為任務
+          const taskId = generateId();
+          const task = {
+            id: taskId,
+            content: `延伸搜尋: ${query.slice(0, 50)}`,
+            priority: 'high',
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            suggestedFeatures: ['search']
+          };
+          currentCard.tasks.push(task);
+          
+          // 創建子卡片
+          const childCard = createChildCard(currentCard, childQuery);
+          if (childCard) {
+            childCard.taskId = taskId;
+            task.cardId = childCard.id;
+            task.status = 'in_progress';
+            
+            console.log('[Tool:request_user_input] Created search child card:', childCard.id);
+            
+            return {
+              action: 'spawn_child',
+              childCardId: childCard.id,
+              childQuery: childQuery,
+              query,
+              results: searchResults,
+              resultCount: searchResults.length,
+              continueLoop: false,
+              spawnChild: true
+            };
+          }
+        }
+        
+        // 如果無法創建子卡片，繼續在當前循環
         return {
           action: 'search',
           query,
@@ -6871,10 +7805,20 @@ function registerAgentTools() {
 
 /**
  * Get current skill based on query
+ * Now uses the unified skill selector with priority: user selection > detected
  */
 function getCurrentSkillForQuery(query) {
-  const skillSelector = window.MAVSkills?.skillSelector;
-  if (!skillSelector) {
+  // Use the unified resolveActiveSkill function
+  const { skill, source } = resolveActiveSkill();
+  
+  if (skill) {
+    console.log('[AgentFramework] Selected skill:', skill.id, skill.name, '(source:', source + ')');
+    return skill;
+  }
+  
+  // Fallback to direct detection if resolveActiveSkill didn't find anything
+  const selector = window.MAVSkills?.skillSelector;
+  if (!selector) {
     console.warn('[AgentFramework] SkillSelector not available');
     return null;
   }
@@ -6884,9 +7828,9 @@ function getCurrentSkillForQuery(query) {
     learnerMode: learnerMode
   };
   
-  const skill = skillSelector.select(query, settings);
-  console.log('[AgentFramework] Selected skill:', skill?.id, skill?.name);
-  return skill;
+  const detected = selector.select(query, settings);
+  console.log('[AgentFramework] Fallback detected skill:', detected?.id, detected?.name);
+  return detected;
 }
 
 /**
@@ -6901,14 +7845,49 @@ async function runWithAgentLoop(query, options = {}) {
   clearAgentProgress();
   hideSuggestedActions();
   
-  // Get skill
+  // Get skill using unified selector
   currentSkill = getCurrentSkillForQuery(query);
   if (currentSkill) {
-    updateSkillBadge(currentSkill);
+    // Update skill selector display
+    const source = userSelectedSkill ? 'user' : 'auto';
+    if (skillSelectorUI) {
+      skillSelectorUI.updateDisplay(currentSkill, source);
+    }
+    
+    // Apply skill side effects (enableImage, enableSearchMode, etc.)
+    // This is the canonical place where skill effects are applied
+    applySkillSideEffects(currentSkill);
+    updateCurrentCardSettings();
+    
+    console.log('[AgentFramework] Skill applied:', currentSkill.id, {
+      enableImage,
+      enableSearchMode,
+      visionMode,
+      showImageStyleSelector: currentSkill.showImageStyleSelector
+    });
   }
   
   // Create planner (HybridPlanner auto-switches between LLM and rule-based)
-  const preferredTools = currentSkill?.preferredTools || ['query_council', 'peer_review', 'synthesize'];
+  let preferredTools = currentSkill?.preferredTools || ['query_council', 'peer_review', 'synthesize'];
+  
+  // 根據用戶設定調整 preferredTools
+  // 如果用戶啟用了 enableReview 但 skill 沒有包含 peer_review，則加入
+  if (enableReview && !preferredTools.includes('peer_review')) {
+    // 在 query_council 後、synthesize 前插入 peer_review
+    const synthesizeIdx = preferredTools.indexOf('synthesize');
+    if (synthesizeIdx > 0) {
+      preferredTools = [...preferredTools.slice(0, synthesizeIdx), 'peer_review', ...preferredTools.slice(synthesizeIdx)];
+    } else {
+      preferredTools = [...preferredTools, 'peer_review'];
+    }
+    console.log('[AgentFramework] Added peer_review based on enableReview setting');
+  }
+  // 如果用戶關閉了 enableReview，則移除 peer_review
+  if (!enableReview && preferredTools.includes('peer_review')) {
+    preferredTools = preferredTools.filter(t => t !== 'peer_review');
+    console.log('[AgentFramework] Removed peer_review based on enableReview setting');
+  }
+  
   const planner = new window.MAVPlanner.HybridPlanner({
     model: plannerModel || null,  // Empty string means use rule-based only
     complexityThreshold: 0.5,
@@ -6921,6 +7900,7 @@ async function runWithAgentLoop(query, options = {}) {
   }
   
   console.log('[AgentFramework] Preferred tools:', preferredTools);
+  console.log('[AgentFramework] enableReview:', enableReview);
   console.log('[AgentFramework] Planner model:', plannerModel || '(rule-based)');
   
   // Create agent loop
@@ -6954,121 +7934,88 @@ async function runWithAgentLoop(query, options = {}) {
     onToolStart: (action, context) => {
       console.log('[AgentLoop] Tool start:', action.tool);
       
-      // Update progress panel
-      const progressDetails = {
-        iteration: context.iteration,
-        maxIterations: context.maxIterations,
-        modelCount: councilModels.length,
-        chairman: chairmanModel !== REVIEW_WINNER_VALUE ? chairmanModel : null
-      };
-      updateAgentProgress(action.tool, 'loading', progressDetails);
-      
-      // Update legacy UI based on tool
-      switch (action.tool) {
-        case 'query_council':
-          currentStage = 'stage1';
-          stage1Status.textContent = '查詢中...';
-          stage1Status.classList.add('loading');
-          renderTabs();
-          renderResponsePanels();
-          if (councilModels.length > 0) setActiveTab(councilModels[0]);
-          break;
-          
-        case 'peer_review':
-          currentStage = 'stage2';
-          setStepActive(2);
-          stage2Status.textContent = '審查中...';
-          stage2Status.classList.add('loading');
-          document.getElementById('stage2Content').classList.add('expanded');
-          reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">模型正在互相審查...</span></div>`;
-          break;
-          
-        case 'synthesize':
-          currentStage = 'stage3';
-          setStepActive(3);
-          stage3Status.textContent = '彙整中...';
-          stage3Status.classList.add('loading');
-          document.getElementById('stage3Content').classList.add('expanded');
-          
-          const chairman = resolveChairmanModel(null, context.responses);
-          finalAnswer.innerHTML = `
-            <div class="chairman-badge">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-              </svg>
-              ${getModelName(chairman)}
-            </div>
-            <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
-          `;
-          break;
-      }
+      // Timeline 系統已在 onPlanDecision 中創建段落
+      // 這裡只需要更新狀態
+      currentStage = action.tool;
     },
     
     onToolEnd: (action, result, context) => {
       console.log('[AgentLoop] Tool end:', action.tool, 'success:', result.success);
       
-      // Update progress panel
-      const progressDetails = {
-        iteration: context.iteration,
-        maxIterations: context.maxIterations,
-        ...result.data
-      };
-      updateAgentProgress(action.tool, result.success ? 'done' : 'error', progressDetails);
-      
-      // Update legacy UI based on tool completion
-      switch (action.tool) {
-        case 'web_search':
-          // web_search has no legacy UI, progress panel already updated
-          break;
-          
-        case 'query_council':
-          if (result.success) {
-            const successCount = result.data.successCount;
-            const totalCount = result.data.totalCount;
-            stage1Status.textContent = `${successCount}/${totalCount} 完成`;
-            stage1Status.classList.remove('loading');
-            stage1Status.classList.add('done');
-            setStepDone(1);
+      if (result.success) {
+        // 使用新的 timeline 系統渲染結果
+        switch (action.tool) {
+          case 'web_search':
+            renderToolResultInParagraph('web_search', {
+              searches: result.data.searches || [],
+              resultCount: result.data.resultCount || 0
+            });
+            break;
             
-            // Update saved responses
+          case 'query_council':
+            // Update saved responses for later use
             if (savedResponsesRef) {
               savedResponsesRef.value = result.data.responses;
             }
+            renderToolResultInParagraph('query_council', {
+              responses: result.data.responses || []
+            });
+            break;
             
-            updateStage1Summary(result.data.responses.map(r => ({ ...r, status: 'done' })));
-            document.getElementById('stage1Content').classList.remove('expanded');
-            stage1Section.classList.add('collapsed');
-          }
-          break;
-          
-        case 'peer_review':
-          if (result.success) {
-            const ranking = result.data.aggregatedRanking;
-            renderReviewResults(ranking);
-            stage2Status.textContent = t('sidepanel.stageComplete');
-            stage2Status.classList.remove('loading');
-            stage2Status.classList.add('done');
-            setStepDone(2);
-            updateStage2Summary(ranking);
-            document.getElementById('stage2Content').classList.remove('expanded');
-            stage2Section.classList.add('collapsed');
-          }
-          break;
-          
-        case 'synthesize':
-          if (result.success) {
-            stage3Status.textContent = t('sidepanel.stageComplete');
-            stage3Status.classList.remove('loading');
-            stage3Status.classList.add('done');
-            setAllStepsDone();
-            updateStage3Summary(result.data.chairmanModel);
-          }
-          break;
+          case 'peer_review':
+            renderToolResultInParagraph('peer_review', {
+              ranking: result.data.aggregatedRanking || [],
+              winner: result.data.winner,
+              reviews: result.data.reviews || []
+            });
+            break;
+            
+          case 'synthesize':
+            const chairman = resolveChairmanModel(null, context.responses);
+            renderToolResultInParagraph('synthesize', {
+              content: result.data.content || '',
+              chairman: chairman
+            });
+            break;
+            
+          case 'request_user_input':
+            renderToolResultInParagraph('request_user_input', result.data);
+            break;
+            
+          case 'final_answer':
+            // final_answer 不需要特別渲染，只需更新狀態
+            updateCurrentParagraphStatus('done');
+            break;
+            
+          default:
+            // 其他未處理的工具，至少要更新狀態以停止 skeleton 動畫
+            updateCurrentParagraphStatus('done');
+            break;
+        }
+        
+        // 更新卡片執行中間狀態（支援切換時還原）
+        if (targetCardId) {
+          updateCardExecutionState(targetCardId, {
+            responses: savedResponsesRef?.value || context.responses,
+            context: {
+              searches: context.searches,
+              reviews: context.reviews
+            }
+          });
+        }
+      } else {
+        // Error case
+        updateCurrentParagraphStatus('error');
       }
     },
     
     onComplete: async (result) => {
       console.log('[AgentLoop] Complete:', result.success);
+      
+      // 確保當前段落的 skeleton 動畫被停止（處理 final_answer 不觸發 onToolEnd 的情況）
+      if (currentTimelineParagraph) {
+        updateCurrentParagraphStatus(result.success ? 'done' : 'error');
+      }
       
       // Check if we need to spawn a child card
       if (result.spawnChild && result.childCardId) {
@@ -7090,11 +8037,37 @@ async function runWithAgentLoop(query, options = {}) {
           
           // Small delay then start agent loop on child card
           setTimeout(async () => {
+            const childCardId = result.childCardId;
             try {
               console.log('[AgentLoop] Starting child card agent loop:', result.childQuery);
-              await runWithAgentLoop(result.childQuery);
+              // 設定子卡片執行狀態
+              cardExecutionState.set(childCardId, {
+                isRunning: true,
+                responses: [],
+                timelineHTML: '',
+                context: { searches: [], reviews: null }
+              });
+              const childSavedResponsesRef = { value: [] };
+              const childResult = await runWithAgentLoop(result.childQuery, {
+                targetCardId: childCardId,
+                savedResponsesRef: childSavedResponsesRef
+              });
+              
+              // 子卡片完成後更新卡片資料
+              const childCard = sessionState.cards.get(childCardId);
+              if (childCard && childResult.success) {
+                childCard.responses = childSavedResponsesRef.value;
+                childCard.finalAnswer = childResult.content;
+                childCard.timestamp = Date.now();
+                saveSession();
+              }
             } catch (err) {
               console.error('[AgentLoop] Child card error:', err);
+            } finally {
+              // 清除子卡片執行狀態
+              cardExecutionState.delete(childCardId);
+              updateSiblingCards();
+              renderCarousel();
             }
           }, 300);
           
@@ -7102,13 +8075,19 @@ async function runWithAgentLoop(query, options = {}) {
         }
       }
       
-      // Keep progress panel visible (no collapse/hide)
-      // Show suggested actions for next steps after brief delay
+      // Show next steps section after completion
       setTimeout(() => {
         if (result.success) {
+          showNextStepsSection();
           showSuggestedActions(result, currentSkill);
+          
+          // Image skill: 自動進入圖像生成流程
+          if (currentSkill?.id === 'imageDesign' && currentConversation?.finalAnswer) {
+            console.log('[AgentLoop] Image skill detected - auto-triggering image generation');
+            setTimeout(() => handleBranchImage(), 300);
+          }
         }
-      }, 1500);
+      }, 500);
     },
     
     onError: (error, context) => {
@@ -7226,9 +8205,14 @@ async function handleSend() {
       return;
     }
     
-    // 設定執行狀態
+    // 設定執行狀態（含完整結構以支援切換還原）
     console.log('[handleSend] Setting execution state for card:', activeCard.id);
-    cardExecutionState.set(activeCard.id, { isRunning: true });
+    cardExecutionState.set(activeCard.id, { 
+      isRunning: true,
+      responses: [],
+      timelineHTML: '',
+      context: { searches: [], reviews: null }
+    });
     console.log('[handleSend] cardExecutionState:', Array.from(cardExecutionState.entries()));
     updateSiblingCards();
     renderCarousel(); // 更新 carousel 顯示執行中狀態
@@ -7254,31 +8238,11 @@ async function handleSend() {
   canvasSection.classList.add('hidden');
   hideBranchActions();
 
-  // Clear summaries
+  // Clear summaries and prepare timeline
   clearAllSummaries();
-
-  // Show stepper and set initial state
-  showStepper();
-  setStepActive(1);
-
-  stage1Section.classList.remove('hidden');
-  stage2Section.classList.remove('hidden', 'stage-skipped');
-  if (stage25Section) {
-    stage25Section.classList.add('hidden');
-    stage25Section.classList.remove('collapsed');
-  }
-  stage3Section.classList.remove('hidden');
-  
-  document.getElementById('stage1Content').classList.add('expanded');
-  document.getElementById('stage2Content').classList.remove('expanded');
-  document.getElementById('stage3Content').classList.remove('expanded');
-
-  stage1Status.textContent = '';
-  stage1Status.className = 'stage-status';
-  stage2Status.textContent = '';
-  stage2Status.className = 'stage-status';
-  stage3Status.textContent = '';
-  stage3Status.className = 'stage-status';
+  clearPlannerTimeline();
+  hideNextStepsSection();
+  showPlannerTimeline();
 
   let savedResponses = [];
   let aggregatedRanking = null;
@@ -7308,33 +8272,58 @@ async function handleSend() {
         
         // Agent Framework handles search via web_search tool
         // Use suggested actions panel for non-blocking extended search option
-        // Skip legacy Stage 2.5 blocking flow
-        stage25Section.classList.add('hidden');
         
         // Store search queries for suggested actions if available
-        const allSuggestions = extractAllSearchSuggestions(responses);
+        const allSuggestions = extractAllSearchSuggestions(savedResponses);
         if (allSuggestions.some(s => s.queries.length > 0)) {
           currentSearchQueries = allSuggestions.flatMap(s => s.queries).slice(0, 5);
           console.log('[AgentFramework] Search queries for suggested actions:', currentSearchQueries);
         }
+        
+        // Update card with results (Agent Framework 完成後更新卡片)
+        if (enableTaskPlanner && activeCard) {
+          activeCard.responses = savedResponses;
+          activeCard.finalAnswer = finalAnswerContent;
+          activeCard.timestamp = Date.now();
+          activeCard.chairmanModel = chairmanModel;
+          
+          console.log('[AgentFramework] Updated card:', activeCard.id, 'hasAnswer:', !!activeCard.finalAnswer);
+          
+          // 立即保存 session（確保切換卡片時資料已持久化）
+          saveSession();
+          
+          // 生成脈絡摘要供子卡片繼承（非阻塞）
+          generateContextSummary(query, finalAnswerContent).then(summary => {
+            if (summary && activeCard) {
+              activeCard.contextSummary = summary;
+              console.log('[AgentFramework] Generated context summary for card:', activeCard.id);
+              saveSession();
+            }
+          });
+          
+          // Update breadcrumb and carousel
+          updateBreadcrumb(activeCard.id);
+          updateSiblingCards();
+          renderCarousel();
+        }
+        
+        // Show branch actions and export button
+        showBranchActions();
+        exportBtn.style.display = 'flex';
+        
       } else {
         throw new Error(result.error || 'Agent Framework execution failed');
       }
     } 
     // =========================================
-    // Legacy Flow (original three-stage)
+    // Legacy Flow (已棄用 - 改用 Agent Framework)
     // =========================================
     else {
-      console.log('[handleSend] Using legacy flow');
-      
-      // === STAGE 1 ===
-      currentStage = 'stage1';
-      stage1Status.textContent = '查詢中...';
-      stage1Status.classList.add('loading');
-      
-      renderTabs();
-      renderResponsePanels();
-      if (councilModels.length > 0) setActiveTab(councilModels[0]);
+      console.error('[handleSend] Legacy flow is deprecated. Stage elements have been removed.');
+      console.error('[handleSend] Please ensure useAgentFramework is true and Agent Framework is loaded.');
+      showError('舊版流程已棄用，請確認 Agent Framework 已正確載入。');
+      resetButton();
+      return;
 
       // Build prompt with context if available
       let promptWithContext = buildPromptWithContext(query);
@@ -7549,12 +8538,31 @@ async function handleSend() {
       const promptLoadingEl = document.createElement('div');
       promptLoadingEl.className = 'image-prompt-loading';
       promptLoadingEl.innerHTML = `
-        <div class="loading-indicator">
-          <div class="loading-dots"><span></span><span></span><span></span></div>
-          <span class="loading-text">AI 正在分析內容並設計圖像 prompt...</span>
+        <div class="loading-header">
+          <div class="loading-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+          </div>
+          <div class="loading-info">
+            <div class="loading-title">AI 正在分析內容，規劃圖像構圖</div>
+            <div class="loading-subtitle">分析文字內容並設計視覺呈現方式</div>
+          </div>
+        </div>
+        <div class="skeleton-preview"></div>
+        <div class="skeleton-lines">
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line"></div>
+        </div>
+        <div class="loading-hint">
+          <span class="spinner-small"></span>
+          <span>約需 10-30 秒</span>
         </div>
       `;
-      finalAnswer.appendChild(promptLoadingEl);
+      getImageContainer()?.appendChild(promptLoadingEl);
       
       // Phase 1: Generate prompts with AI (now supports multiple images)
       const aiResult = await generateImagePromptWithAI(query, finalAnswerContent, savedResponses);
@@ -7585,6 +8593,17 @@ async function handleSend() {
           }
         }
         
+        // 更新卡片的圖片資料並保存 session
+        if (activeCard && generatedImages.length > 0) {
+          activeCard.generatedImages = generatedImages.map(g => ({
+            title: g.title,
+            prompt: g.prompt,
+            timestamp: Date.now()
+          }));
+          console.log('[handleSend:ImageGen] Updated card with', generatedImages.length, 'images');
+          saveSession();
+        }
+        
         // Show Vision button now that images are generated
         if (branchVisionBtn && generatedImages.length > 0) {
           branchVisionBtn.classList.remove('hidden');
@@ -7607,12 +8626,29 @@ async function handleSend() {
             const integratingEl = document.createElement('div');
             integratingEl.className = 'image-prompt-loading';
             integratingEl.innerHTML = `
-              <div class="loading-indicator">
-                <div class="loading-dots"><span></span><span></span><span></span></div>
-                <span class="loading-text">正在將風格融入所有圖像 prompt...</span>
+              <div class="loading-header">
+                <div class="loading-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                  </svg>
+                </div>
+                <div class="loading-info">
+                  <div class="loading-title">正在將風格融入圖像</div>
+                  <div class="loading-subtitle">結合選定風格，優化 prompt 細節</div>
+                </div>
+              </div>
+              <div class="skeleton-preview"></div>
+              <div class="skeleton-lines">
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line"></div>
+              </div>
+              <div class="loading-hint">
+                <span class="spinner-small"></span>
+                <span>約需 5-15 秒</span>
               </div>
             `;
-            finalAnswer.appendChild(integratingEl);
+            getImageContainer()?.appendChild(integratingEl);
             
             // Phase 3: Integrate style into prompts
             const integratedResult = await integrateStyleIntoPrompts(updatedResult, selectedStyle, editedGlobalContext);
@@ -7678,10 +8714,21 @@ function resetButton() {
 function syncCardSettingsToUI(settings) {
   if (!settings) return;
   
+  // When switching cards, clear the uploaded image from previous card
+  // Each card should start fresh unless it has its own image data
+  // Note: In future, we could store uploadedImage per-card if needed
+  if (uploadedImage !== null) {
+    clearUploadedImage();
+    console.log('[syncCardSettingsToUI] Cleared previous card uploaded image');
+  }
+  
   // 更新全域變數
   enableImage = settings.enableImage || false;
   enableSearchMode = settings.enableSearchMode || false;
-  visionMode = settings.visionMode || false;
+  
+  // Vision mode: only enable if explicitly set and user wants to upload new image
+  // Don't auto-enable vision mode when switching cards
+  visionMode = false;
   
   // 更新 UI toggles
   if (imageToggle) {
@@ -7692,13 +8739,39 @@ function syncCardSettingsToUI(settings) {
   }
   if (visionToggle) {
     visionToggle.checked = visionMode;
-    // 更新 vision upload section 顯示狀態
-    if (visionUploadSection) {
-      visionUploadSection.classList.toggle('hidden', !visionMode);
+  }
+  
+  // Vision upload section: always hide when switching cards (user can enable via skill selector)
+  if (visionUploadSection) {
+    visionUploadSection.classList.add('hidden');
+  }
+  
+  // Reset skill selector state when switching cards
+  userSelectedSkill = null;
+  detectedSkill = null;
+  
+  // Update skill selector display based on settings
+  if (skillSelectorUI) {
+    // Determine which skill matches these settings
+    let matchingSkill = null;
+    if (enableImage) {
+      matchingSkill = window.MAVSkills?.SKILLS?.imageDesign;
+    } else if (enableSearchMode) {
+      matchingSkill = window.MAVSkills?.SKILLS?.researcher;
+    }
+    
+    if (matchingSkill) {
+      skillSelectorUI.updateDisplay(matchingSkill, 'auto');
+    } else {
+      skillSelectorUI.updateDisplay(null, null);
     }
   }
   
-  console.log('[syncCardSettingsToUI] Settings synced:', settings);
+  console.log('[syncCardSettingsToUI] Settings synced:', {
+    enableImage,
+    enableSearchMode,
+    visionMode
+  });
 }
 
 // 從 UI toggles 獲取當前設定
@@ -7749,6 +8822,7 @@ function updateSendButtonForCurrentCard() {
 }
 
 function renderTabs() {
+  if (!modelTabs) return; // Timeline 系統不使用 tabs
   // Always use scrollable tabs
   modelTabs.innerHTML = councilModels.map(model => {
     const info = getModelInfo(model);
@@ -7759,6 +8833,7 @@ function renderTabs() {
 }
 
 function renderResponsePanels() {
+  if (!responseContainer) return; // Timeline 系統不使用 response container
   responseContainer.innerHTML = councilModels.map(model => `
     <div class="response-panel" data-model="${model}">
       <div class="response-content" id="content-${cssEscape(model)}">
@@ -7771,6 +8846,7 @@ function renderResponsePanels() {
 
 function setActiveTab(model) {
   activeTab = model;
+  if (!modelTabs || !responseContainer) return; // Timeline 系統不使用 tabs
   modelTabs.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.model === model));
   responseContainer.querySelectorAll('.response-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.model === model));
   
@@ -7782,6 +8858,7 @@ function setActiveTab(model) {
 }
 
 function updateTabStatus(model, status) {
+  if (!modelTabs) return; // Timeline 系統不使用 tabs
   const tab = modelTabs.querySelector(`.tab[data-model="${model}"]`);
   if (tab) {
     const dot = tab.querySelector('.status-dot');
@@ -8154,9 +9231,10 @@ function renderReviewResults(ranking) {
   });
 }
 
-async function runChairman(query, allResponses, aggregatedRanking, withSearchMode = false, executingCardId = null, searchResultsFromStage25 = null) {
+async function runChairman(query, allResponses, aggregatedRanking, withSearchMode = false, executingCardId = null, searchResultsFromStage25 = null, chairmanOverride = null) {
   // 決定實際使用的主席模型
-  const actualChairman = resolveChairmanModel(aggregatedRanking, allResponses);
+  // chairmanOverride 優先於 resolveChairmanModel 的結果（用於互評勝者動態切換）
+  const actualChairman = chairmanOverride || resolveChairmanModel(aggregatedRanking, allResponses);
   
   // Use vision-specific chairman prompt if in vision mode
   let prompt = visionMode && uploadedImage
@@ -8192,13 +9270,13 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
           const isCurrentCard = !executingCardId || executingCardId === sessionState.currentCardId;
           if (!started) { 
             started = true; 
-            if (isCurrentCard) {
+            if (isCurrentCard && finalAnswer) {
               const visionBadge = isVisionChairman ? '<span class="vision-stage-badge" style="margin-left: 0.5rem; font-size: 0.625rem;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>Vision</span>' : '';
               finalAnswer.innerHTML = `<div class="chairman-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>${getModelName(actualChairman)}${visionBadge}</div><div class="response-content"></div>`; 
             }
           }
           content += msg.content;
-          if (isCurrentCard) {
+          if (isCurrentCard && finalAnswer) {
             const responseEl = finalAnswer.querySelector('.response-content');
             if (responseEl) responseEl.innerHTML = parser.append(msg.content) + '<span class="cursor"></span>';
           }
@@ -8227,7 +9305,7 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
           // 只有當前顯示的卡片才更新 UI
           const isCurrentCard = !executingCardId || executingCardId === sessionState.currentCardId;
           
-          if (isCurrentCard) {
+          if (isCurrentCard && finalAnswer) {
             const el = finalAnswer.querySelector('.response-content');
             
             // If search mode is enabled, extract and display search strategies
@@ -8261,7 +9339,7 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
         } else if (msg.type === 'ERROR') {
           // 只有當前顯示的卡片才更新 UI
           const isCurrentCard = !executingCardId || executingCardId === sessionState.currentCardId;
-          if (isCurrentCard) {
+          if (isCurrentCard && finalAnswer) {
             finalAnswer.innerHTML = `<div class="error-state"><p>Chairman failed: ${escapeHtml(msg.error)}</p></div>`;
           }
           port.disconnect();
@@ -8290,7 +9368,7 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
     console.error('Chairman error:', err);
     // 只有當前顯示的卡片才更新 UI
     const isCurrentCard = !executingCardId || executingCardId === sessionState.currentCardId;
-    if (isCurrentCard) {
+    if (isCurrentCard && finalAnswer) {
       finalAnswer.innerHTML = `<div class="error-state"><p>主席彙整失敗: ${escapeHtml(err.message)}</p></div>`;
     }
     throw err;
@@ -9144,7 +10222,7 @@ function showStyleSelectionUI(aiResult, onStyleSelected, onCancel) {
   const container = document.createElement('div');
   container.className = 'style-selection-section';
   container.innerHTML = html;
-  finalAnswer.appendChild(container);
+  getImageContainer()?.appendChild(container);
   
   let selectedStyle = null;
   const globalContextTextarea = container.querySelector('#globalContextTextarea');
@@ -9476,7 +10554,7 @@ function showPromptPreview(integratedResult, onConfirm, onBack, onCancel) {
   const container = document.createElement('div');
   container.className = 'prompt-preview-section';
   container.innerHTML = html;
-  finalAnswer.appendChild(container);
+  getImageContainer()?.appendChild(container);
   
   const textarea = container.querySelector('#promptPreviewTextarea');
   
@@ -9815,7 +10893,7 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
   const container = document.createElement('div');
   container.className = 'multi-image-editor-section';
   container.innerHTML = editorHtml;
-  finalAnswer.appendChild(container);
+  getImageContainer()?.appendChild(container);
 
   // Back to style selection button
   if (onBackToStyleSelection) {

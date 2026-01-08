@@ -608,7 +608,7 @@ function createToolExecutors(appContext) {
         includeSearchStrategy,
         null, // executingCardId
         searchResults,
-        synthesisContext // Additional context for weighted integration
+        synthesisChairman // Chairman override for dynamic winner rotation
       );
       
       return {

@@ -141,6 +141,36 @@
       </div>
     </section>
 
+    <section class="card" id="skillsSection">
+      <div class="section-header">
+        <h2 data-i18n="options.skillsSection">Agent Skills</h2>
+        <button type="button" id="browseSkillsBtn" class="btn-secondary" data-i18n="options.browseSkillsBtn">瀏覽 SkillsMP</button>
+      </div>
+      <p class="hint" data-i18n="options.skillsHint">管理已安裝的 Agent Skills，可從 SkillsMP 或 GitHub 匯入新技能</p>
+      
+      <div class="field" style="margin-top: 1rem;">
+        <div id="skillsStorageInfo" class="storage-info">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <div class="field" style="margin-top: 1rem;">
+        <label data-i18n="options.installedSkillsLabel">已安裝技能</label>
+        <div id="installedSkillsList" class="skills-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <div class="field" style="margin-top: 1rem;">
+        <label for="skillImportUrl" data-i18n="options.importSkillLabel">匯入技能</label>
+        <div class="import-skill-row">
+          <input type="text" id="skillImportUrl" placeholder="GitHub: owner/repo/path/SKILL.md 或 SkillsMP slug" spellcheck="false">
+          <button type="button" id="importSkillBtn" class="btn-secondary" data-i18n="options.importSkillBtn">匯入</button>
+        </div>
+        <p class="hint" data-i18n="options.importSkillHint">支援 GitHub raw 路徑或 SkillsMP skill slug</p>
+      </div>
+    </section>
+
     <section class="card">
       <h2 data-i18n="options.outputStyleSection">回應風格</h2>
       <p class="hint" data-i18n="options.outputStyleHint">控制 AI 回應的長度與格式偏好（標準模式適用）</p>

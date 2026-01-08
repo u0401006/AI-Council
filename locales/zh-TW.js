@@ -171,6 +171,13 @@ window.LOCALE_ZH_TW = {
     modelCount: '{count} 個模型',
     sendBtn: '送出',
     
+    // Skill Selector
+    selectSkill: '選擇技能模式',
+    autoDetect: '自動偵測',
+    searchSkills: '搜尋技能...',
+    recommended: '推薦',
+    clearSkillSelection: '清除選擇（使用自動偵測）',
+    
     // Cost Tracker
     costTitle: '費用追蹤',
     costInput: '輸入',

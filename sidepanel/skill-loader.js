@@ -4,6 +4,163 @@
 // ============================================
 
 /**
+ * LRU Cache for external skills
+ * Manages storage quota with automatic eviction
+ */
+class SkillsLRUCache {
+  constructor(maxSize = 10, storageKey = 'externalSkillsCache') {
+    this.maxSize = maxSize;
+    this.storageKey = storageKey;
+    this.cache = new Map();
+    this.accessOrder = [];
+  }
+
+  async initialize() {
+    try {
+      const stored = await chrome.storage.local.get(this.storageKey);
+      if (stored[this.storageKey]) {
+        const { entries, order } = stored[this.storageKey];
+        for (const [key, value] of entries) {
+          this.cache.set(key, value);
+        }
+        this.accessOrder = order || [];
+      }
+    } catch (err) {
+      console.warn('Failed to load skills cache:', err);
+    }
+  }
+
+  async get(key) {
+    if (this.cache.has(key)) {
+      // Update access order
+      this.accessOrder = this.accessOrder.filter(k => k !== key);
+      this.accessOrder.push(key);
+      await this._persist();
+      return this.cache.get(key);
+    }
+    return null;
+  }
+
+  async set(key, value) {
+    // Evict LRU if at capacity
+    while (this.cache.size >= this.maxSize && this.accessOrder.length > 0) {
+      const lruKey = this.accessOrder.shift();
+      this.cache.delete(lruKey);
+    }
+
+    this.cache.set(key, value);
+    this.accessOrder = this.accessOrder.filter(k => k !== key);
+    this.accessOrder.push(key);
+    await this._persist();
+  }
+
+  async delete(key) {
+    this.cache.delete(key);
+    this.accessOrder = this.accessOrder.filter(k => k !== key);
+    await this._persist();
+  }
+
+  async _persist() {
+    try {
+      await chrome.storage.local.set({
+        [this.storageKey]: {
+          entries: Array.from(this.cache.entries()),
+          order: this.accessOrder
+        }
+      });
+    } catch (err) {
+      console.warn('Failed to persist skills cache:', err);
+    }
+  }
+
+  getAll() {
+    return Array.from(this.cache.entries());
+  }
+
+  size() {
+    return this.cache.size;
+  }
+}
+
+/**
+ * SkillsMP API Client
+ * Fetches skills from skillsmp.com
+ */
+class SkillsmpClient {
+  constructor() {
+    this.baseUrl = 'https://skillsmp.com';
+    this.apiBaseUrl = 'https://skillsmp.com/api';
+  }
+
+  /**
+   * Search skills by query
+   */
+  async search(query, options = {}) {
+    const { limit = 10, category = null } = options;
+    try {
+      const params = new URLSearchParams({ q: query, limit: limit.toString() });
+      if (category) params.append('category', category);
+      
+      const response = await fetch(`${this.apiBaseUrl}/skills/search?${params}`);
+      if (!response.ok) {
+        throw new Error(`SkillsMP search failed: ${response.status}`);
+      }
+      return await response.json();
+    } catch (err) {
+      console.warn('SkillsMP search failed:', err);
+      return { skills: [], error: err.message };
+    }
+  }
+
+  /**
+   * Get skill content by slug
+   */
+  async getSkill(slug) {
+    try {
+      const response = await fetch(`${this.apiBaseUrl}/skills/${slug}`);
+      if (!response.ok) {
+        throw new Error(`SkillsMP fetch failed: ${response.status}`);
+      }
+      return await response.json();
+    } catch (err) {
+      console.warn('SkillsMP fetch failed:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Get raw SKILL.md content from GitHub
+   */
+  async fetchFromGitHub(repoPath) {
+    // Parse repo path like "owner/repo/path/to/SKILL.md"
+    const match = repoPath.match(/^([^\/]+)\/([^\/]+)\/(.+)$/);
+    if (!match) {
+      throw new Error('Invalid GitHub path format');
+    }
+    
+    const [, owner, repo, path] = match;
+    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/${path}`;
+    
+    try {
+      const response = await fetch(rawUrl);
+      if (!response.ok) {
+        // Try master branch
+        const masterUrl = `https://raw.githubusercontent.com/${owner}/${repo}/master/${path}`;
+        const masterResponse = await fetch(masterUrl);
+        if (!masterResponse.ok) {
+          throw new Error(`GitHub fetch failed: ${response.status}`);
+        }
+        return await masterResponse.text();
+      }
+      return await response.text();
+    } catch (err) {
+      console.warn('GitHub fetch failed:', err);
+      throw err;
+    }
+  }
+}
+
+/**
  * YAML Frontmatter Parser
  * Parses SKILL.md files with YAML frontmatter
  */
@@ -157,6 +314,10 @@ class SkillLoader {
     this.cache = new Map(); // Cache loaded skills
     this.metadataIndex = new Map(); // name + description for all skills
     this.initialized = false;
+    
+    // External skills support
+    this.externalCache = new SkillsLRUCache(options.maxExternalSkills || 10);
+    this.skillsmpClient = new SkillsmpClient();
   }
   
   /**
@@ -167,6 +328,9 @@ class SkillLoader {
     if (this.initialized) return;
     
     try {
+      // Initialize external skills cache
+      await this.externalCache.initialize();
+      
       // In Chrome Extension, we bundle skills as JSON
       // This will be populated during build or from chrome.storage
       const skillsData = await this._loadSkillsBundle();
@@ -181,6 +345,7 @@ class SkillLoader {
             name: parsed.metadata.name || skillId,
             description: parsed.metadata.description || '',
             metadata: parsed.metadata,
+            source: parsed.metadata.metadata?.source || 'bundled',
             // Cache the full content for later
             _fullContent: skillContent
           });
@@ -189,8 +354,27 @@ class SkillLoader {
         }
       }
       
+      // Load external skills from cache
+      const externalSkills = this.externalCache.getAll();
+      for (const [skillId, skillData] of externalSkills) {
+        try {
+          const parsed = parseSkillMd(skillData.content);
+          this.metadataIndex.set(skillId, {
+            id: skillId,
+            name: parsed.metadata.name || skillId,
+            description: parsed.metadata.description || '',
+            metadata: parsed.metadata,
+            source: 'external',
+            sourceUrl: skillData.sourceUrl,
+            _fullContent: skillData.content
+          });
+        } catch (err) {
+          console.warn(`Failed to parse external skill ${skillId}:`, err);
+        }
+      }
+      
       this.initialized = true;
-      console.log(`SkillLoader initialized with ${this.metadataIndex.size} skills`);
+      console.log(`SkillLoader initialized with ${this.metadataIndex.size} skills (${externalSkills.length} external)`);
     } catch (err) {
       console.error('Failed to initialize SkillLoader:', err);
       this.initialized = true; // Mark as initialized even on error to prevent loops
@@ -486,17 +670,198 @@ class SkillLoader {
    * Remove a skill
    */
   async removeSkill(skillId) {
+    const meta = this.metadataIndex.get(skillId);
     this.metadataIndex.delete(skillId);
     this.cache.delete(skillId);
     
-    // Remove from chrome.storage
+    // Remove from appropriate storage
+    if (meta?.source === 'external') {
+      await this.externalCache.delete(skillId);
+    } else {
+      try {
+        const stored = await chrome.storage.local.get('skillsBundle');
+        const bundle = stored.skillsBundle || {};
+        delete bundle[skillId];
+        await chrome.storage.local.set({ skillsBundle: bundle });
+      } catch (err) {
+        console.warn('Failed to remove skill from storage:', err);
+      }
+    }
+  }
+
+  // ============================================
+  // External Skills Support
+  // ============================================
+
+  /**
+   * Search skills from SkillsMP
+   */
+  async searchSkillsMP(query, options = {}) {
+    return await this.skillsmpClient.search(query, options);
+  }
+
+  /**
+   * Import skill from SkillsMP by slug
+   */
+  async importFromSkillsMP(slug) {
     try {
-      const stored = await chrome.storage.local.get('skillsBundle');
-      const bundle = stored.skillsBundle || {};
-      delete bundle[skillId];
-      await chrome.storage.local.set({ skillsBundle: bundle });
+      const skillData = await this.skillsmpClient.getSkill(slug);
+      if (!skillData || !skillData.content) {
+        throw new Error('Skill not found or invalid');
+      }
+      
+      const skillId = skillData.name || slug.split('-').pop();
+      const parsed = parseSkillMd(skillData.content);
+      
+      // Store in external cache
+      await this.externalCache.set(skillId, {
+        content: skillData.content,
+        sourceUrl: `https://skillsmp.com/skills/${slug}`,
+        importedAt: Date.now()
+      });
+      
+      // Add to metadata index
+      this.metadataIndex.set(skillId, {
+        id: skillId,
+        name: parsed.metadata.name || skillId,
+        description: parsed.metadata.description || '',
+        metadata: parsed.metadata,
+        source: 'external',
+        sourceUrl: `https://skillsmp.com/skills/${slug}`,
+        _fullContent: skillData.content
+      });
+      
+      // Clear cache to force reload
+      this.cache.delete(skillId);
+      
+      return { success: true, skillId, name: parsed.metadata.name };
     } catch (err) {
-      console.warn('Failed to remove skill from storage:', err);
+      console.error('Failed to import from SkillsMP:', err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Import skill from GitHub repository
+   * @param {string} repoPath - Format: "owner/repo/path/to/SKILL.md"
+   */
+  async importFromGitHub(repoPath) {
+    try {
+      const content = await this.skillsmpClient.fetchFromGitHub(repoPath);
+      const parsed = parseSkillMd(content);
+      
+      // Generate skill ID from path
+      const skillId = repoPath.split('/').slice(-2, -1)[0] || 
+                      parsed.metadata.name || 
+                      `github-${Date.now()}`;
+      
+      // Store in external cache
+      await this.externalCache.set(skillId, {
+        content,
+        sourceUrl: `https://github.com/${repoPath.split('/').slice(0, 2).join('/')}`,
+        repoPath,
+        importedAt: Date.now()
+      });
+      
+      // Add to metadata index
+      this.metadataIndex.set(skillId, {
+        id: skillId,
+        name: parsed.metadata.name || skillId,
+        description: parsed.metadata.description || '',
+        metadata: parsed.metadata,
+        source: 'external',
+        sourceUrl: `https://github.com/${repoPath.split('/').slice(0, 2).join('/')}`,
+        _fullContent: content
+      });
+      
+      // Clear cache to force reload
+      this.cache.delete(skillId);
+      
+      return { success: true, skillId, name: parsed.metadata.name };
+    } catch (err) {
+      console.error('Failed to import from GitHub:', err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Import skill from raw SKILL.md content
+   */
+  async importFromContent(content, options = {}) {
+    try {
+      const parsed = parseSkillMd(content);
+      const skillId = options.skillId || parsed.metadata.name || `custom-${Date.now()}`;
+      
+      // Store in external cache
+      await this.externalCache.set(skillId, {
+        content,
+        sourceUrl: options.sourceUrl || 'custom',
+        importedAt: Date.now()
+      });
+      
+      // Add to metadata index
+      this.metadataIndex.set(skillId, {
+        id: skillId,
+        name: parsed.metadata.name || skillId,
+        description: parsed.metadata.description || '',
+        metadata: parsed.metadata,
+        source: 'external',
+        sourceUrl: options.sourceUrl || 'custom',
+        _fullContent: content
+      });
+      
+      // Clear cache to force reload
+      this.cache.delete(skillId);
+      
+      return { success: true, skillId, name: parsed.metadata.name };
+    } catch (err) {
+      console.error('Failed to import skill:', err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Get all external skills
+   */
+  getExternalSkills() {
+    const external = [];
+    for (const [id, meta] of this.metadataIndex) {
+      if (meta.source === 'external' || meta.metadata?.source === 'skillsmp') {
+        external.push({
+          id,
+          name: meta.name,
+          description: meta.description,
+          sourceUrl: meta.sourceUrl || meta.metadata?.source_url
+        });
+      }
+    }
+    return external;
+  }
+
+  /**
+   * Get storage usage statistics
+   */
+  async getStorageStats() {
+    try {
+      const bytesInUse = await chrome.storage.local.getBytesInUse();
+      const quota = chrome.storage.local.QUOTA_BYTES || 10485760; // 10MB default
+      
+      return {
+        used: bytesInUse,
+        quota,
+        percentage: Math.round((bytesInUse / quota) * 100),
+        externalSkillsCount: this.externalCache.size(),
+        totalSkillsCount: this.metadataIndex.size
+      };
+    } catch (err) {
+      return {
+        used: 0,
+        quota: 10485760,
+        percentage: 0,
+        externalSkillsCount: this.externalCache.size(),
+        totalSkillsCount: this.metadataIndex.size,
+        error: err.message
+      };
     }
   }
 }
@@ -508,9 +873,12 @@ const skillLoader = new SkillLoader();
 if (typeof window !== 'undefined') {
   window.MAVSkillLoader = {
     SkillLoader,
+    SkillsLRUCache,
+    SkillsmpClient,
     skillLoader,
     parseSkillMd,
     parseSimpleYaml
   };
 }
+
 

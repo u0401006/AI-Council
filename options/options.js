@@ -120,6 +120,13 @@ const learnerModeRadios = document.querySelectorAll('input[name="learnerMode"]')
 // Prompt section element
 const promptSection = document.getElementById('promptSection');
 
+// Skills management elements
+const browseSkillsBtn = document.getElementById('browseSkillsBtn');
+const skillsStorageInfo = document.getElementById('skillsStorageInfo');
+const installedSkillsList = document.getElementById('installedSkillsList');
+const skillImportUrl = document.getElementById('skillImportUrl');
+const importSkillBtn = document.getElementById('importSkillBtn');
+
 // Initialize
 async function init() {
   // Initialize i18n first
@@ -134,6 +141,13 @@ async function init() {
   saveBtn.addEventListener('click', saveSettings);
   resetPromptsBtn.addEventListener('click', resetPrompts);
   updateModelsBtn.addEventListener('click', updateModelsFromOpenRouter);
+  
+  // Skills management handlers
+  if (browseSkillsBtn) browseSkillsBtn.addEventListener('click', () => window.open('https://skillsmp.com', '_blank'));
+  if (importSkillBtn) importSkillBtn.addEventListener('click', importSkill);
+  
+  // Initialize skills management
+  await initSkillsManagement();
   
   // Language change handler
   languageSelect.addEventListener('change', handleLanguageChange);
@@ -501,6 +515,309 @@ async function updateModelsFromOpenRouter() {
   } finally {
     updateModelsBtn.disabled = false;
     updateModelsBtn.textContent = t('options.updateModelsBtn');
+  }
+}
+
+// ============================================
+// Skills Management
+// ============================================
+
+// Simple LRU Cache for external skills (mirror of skill-loader.js)
+class SkillsLRUCache {
+  constructor(maxSize = 10, storageKey = 'externalSkillsCache') {
+    this.maxSize = maxSize;
+    this.storageKey = storageKey;
+    this.cache = new Map();
+    this.accessOrder = [];
+  }
+
+  async initialize() {
+    try {
+      const stored = await chrome.storage.local.get(this.storageKey);
+      if (stored[this.storageKey]) {
+        const { entries, order } = stored[this.storageKey];
+        for (const [key, value] of entries) {
+          this.cache.set(key, value);
+        }
+        this.accessOrder = order || [];
+      }
+    } catch (err) {
+      console.warn('Failed to load skills cache:', err);
+    }
+  }
+
+  async set(key, value) {
+    while (this.cache.size >= this.maxSize && this.accessOrder.length > 0) {
+      const lruKey = this.accessOrder.shift();
+      this.cache.delete(lruKey);
+    }
+    this.cache.set(key, value);
+    this.accessOrder = this.accessOrder.filter(k => k !== key);
+    this.accessOrder.push(key);
+    await this._persist();
+  }
+
+  async delete(key) {
+    this.cache.delete(key);
+    this.accessOrder = this.accessOrder.filter(k => k !== key);
+    await this._persist();
+  }
+
+  async _persist() {
+    try {
+      await chrome.storage.local.set({
+        [this.storageKey]: {
+          entries: Array.from(this.cache.entries()),
+          order: this.accessOrder
+        }
+      });
+    } catch (err) {
+      console.warn('Failed to persist skills cache:', err);
+    }
+  }
+
+  getAll() {
+    return Array.from(this.cache.entries());
+  }
+
+  size() {
+    return this.cache.size;
+  }
+}
+
+const skillsCache = new SkillsLRUCache();
+
+// Initialize skills management
+async function initSkillsManagement() {
+  await skillsCache.initialize();
+  await renderSkillsStorageInfo();
+  await renderInstalledSkills();
+}
+
+// Render storage info
+async function renderSkillsStorageInfo() {
+  if (!skillsStorageInfo) return;
+  
+  try {
+    const bytesInUse = await chrome.storage.local.getBytesInUse();
+    const quota = chrome.storage.local.QUOTA_BYTES || 10485760; // 10MB
+    const percentage = Math.round((bytesInUse / quota) * 100);
+    const usedMB = (bytesInUse / 1048576).toFixed(2);
+    const quotaMB = (quota / 1048576).toFixed(0);
+    
+    const externalCount = skillsCache.size();
+    
+    skillsStorageInfo.innerHTML = `
+      <div class="storage-bar">
+        <div class="storage-bar-fill" style="width: ${percentage}%"></div>
+      </div>
+      <div class="storage-text">
+        <span>儲存空間：${usedMB} MB / ${quotaMB} MB (${percentage}%)</span>
+        <span>外部技能：${externalCount} / 10</span>
+      </div>
+    `;
+  } catch (err) {
+    skillsStorageInfo.innerHTML = '<p class="hint">無法取得儲存空間資訊</p>';
+  }
+}
+
+// Render installed skills list
+async function renderInstalledSkills() {
+  if (!installedSkillsList) return;
+  
+  // Get bundled skills
+  const bundledSkills = [
+    { id: 'researcher', name: 'Researcher', icon: '🔬', source: 'bundled' },
+    { id: 'educator', name: 'Educator', icon: '📚', source: 'bundled' },
+    { id: 'quick-answer', name: 'Quick Answer', icon: '⚡', source: 'bundled' },
+    { id: 'fact-checker', name: 'Fact Checker', icon: '✅', source: 'bundled' },
+    { id: 'creative', name: 'Creative', icon: '💡', source: 'bundled' },
+    { id: 'technical', name: 'Technical', icon: '💻', source: 'bundled' },
+    { id: 'current-events', name: 'Current Events', icon: '📰', source: 'bundled' },
+    { id: 'image-design', name: 'Image Design', icon: '🎨', source: 'bundled' },
+    { id: 'vision-analysis', name: 'Vision Analysis', icon: '👁', source: 'bundled' },
+    { id: 'image-prompt-engineering', name: 'Image Prompt Engineering', icon: '🎨', source: 'skillsmp' },
+    { id: 'deep-research', name: 'Deep Research', icon: '📚', source: 'skillsmp' }
+  ];
+  
+  // Get external skills from cache
+  const externalSkills = skillsCache.getAll().map(([id, data]) => ({
+    id,
+    name: data.name || id,
+    icon: data.icon || '📦',
+    source: 'external',
+    sourceUrl: data.sourceUrl
+  }));
+  
+  const allSkills = [...bundledSkills, ...externalSkills];
+  
+  installedSkillsList.innerHTML = allSkills.map(skill => {
+    const sourceLabel = skill.source === 'bundled' ? '內建' : 
+                       skill.source === 'skillsmp' ? 'SkillsMP' : '外部';
+    const sourceClass = skill.source === 'bundled' ? 'source-bundled' : 
+                       skill.source === 'skillsmp' ? 'source-skillsmp' : 'source-external';
+    const canDelete = skill.source === 'external';
+    
+    return `
+      <div class="skill-item">
+        <span class="skill-icon">${skill.icon}</span>
+        <span class="skill-name">${skill.name}</span>
+        <span class="skill-source ${sourceClass}">${sourceLabel}</span>
+        ${canDelete ? `<button class="skill-delete-btn" data-skill-id="${skill.id}" title="刪除">×</button>` : ''}
+      </div>
+    `;
+  }).join('');
+  
+  // Add delete handlers
+  installedSkillsList.querySelectorAll('.skill-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const skillId = btn.dataset.skillId;
+      if (confirm(`確定要刪除技能 "${skillId}"？`)) {
+        await skillsCache.delete(skillId);
+        await renderInstalledSkills();
+        await renderSkillsStorageInfo();
+        showStatus('技能已刪除', 'success');
+      }
+    });
+  });
+}
+
+// Parse simple YAML frontmatter
+function parseSimpleYaml(yaml) {
+  const result = {};
+  const lines = yaml.split('\n');
+  let currentKey = null;
+  let nestedObj = null;
+  
+  for (const line of lines) {
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    
+    const indent = line.search(/\S/);
+    const trimmedLine = line.trim();
+    const kvMatch = trimmedLine.match(/^([a-zA-Z_-]+):\s*(.*)$/);
+    
+    if (kvMatch) {
+      const [, key, value] = kvMatch;
+      if (indent === 0) {
+        if (value === '' || value === null) {
+          currentKey = key;
+          nestedObj = {};
+          result[key] = nestedObj;
+        } else {
+          result[key] = value.replace(/^["']|["']$/g, '');
+          currentKey = null;
+          nestedObj = null;
+        }
+      } else if (nestedObj) {
+        nestedObj[key] = value.replace(/^["']|["']$/g, '');
+      }
+    }
+  }
+  return result;
+}
+
+// Parse SKILL.md content
+function parseSkillMd(content) {
+  const frontmatterRegex = /^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/;
+  const match = content.match(frontmatterRegex);
+  
+  if (!match) {
+    throw new Error('Invalid SKILL.md format');
+  }
+  
+  const metadata = parseSimpleYaml(match[1]);
+  return { metadata, body: match[2].trim() };
+}
+
+// Import skill from URL
+async function importSkill() {
+  const url = skillImportUrl?.value?.trim();
+  if (!url) {
+    showStatus('請輸入技能路徑', 'error');
+    return;
+  }
+  
+  importSkillBtn.disabled = true;
+  importSkillBtn.textContent = '匯入中...';
+  
+  try {
+    let content;
+    let sourceUrl;
+    let skillId;
+    
+    // Determine import type
+    if (url.includes('/') && !url.startsWith('http')) {
+      // GitHub path: owner/repo/path/SKILL.md
+      const match = url.match(/^([^\/]+)\/([^\/]+)\/(.+)$/);
+      if (!match) {
+        throw new Error('無效的 GitHub 路徑格式');
+      }
+      
+      const [, owner, repo, path] = match;
+      const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/${path}`;
+      
+      const response = await fetch(rawUrl);
+      if (!response.ok) {
+        // Try master branch
+        const masterResponse = await fetch(rawUrl.replace('/main/', '/master/'));
+        if (!masterResponse.ok) {
+          throw new Error(`GitHub 取得失敗: ${response.status}`);
+        }
+        content = await masterResponse.text();
+      } else {
+        content = await response.text();
+      }
+      
+      sourceUrl = `https://github.com/${owner}/${repo}`;
+      skillId = path.split('/').slice(-2, -1)[0] || `github-${Date.now()}`;
+    } else {
+      // SkillsMP slug or direct URL
+      if (url.startsWith('http')) {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`URL 取得失敗: ${response.status}`);
+        }
+        content = await response.text();
+        sourceUrl = url;
+        skillId = `url-${Date.now()}`;
+      } else {
+        // Assume SkillsMP slug - try API
+        const response = await fetch(`https://skillsmp.com/api/skills/${url}`);
+        if (!response.ok) {
+          throw new Error(`SkillsMP 取得失敗: ${response.status}`);
+        }
+        const data = await response.json();
+        content = data.content;
+        sourceUrl = `https://skillsmp.com/skills/${url}`;
+        skillId = data.name || url.split('-').pop();
+      }
+    }
+    
+    // Parse and validate
+    const parsed = parseSkillMd(content);
+    skillId = parsed.metadata.name || skillId;
+    
+    // Store in cache
+    await skillsCache.set(skillId, {
+      content,
+      name: parsed.metadata.name || skillId,
+      description: parsed.metadata.description || '',
+      icon: parsed.metadata.metadata?.icon || '📦',
+      sourceUrl,
+      importedAt: Date.now()
+    });
+    
+    // Refresh UI
+    await renderInstalledSkills();
+    await renderSkillsStorageInfo();
+    
+    skillImportUrl.value = '';
+    showStatus(`技能 "${skillId}" 匯入成功`, 'success');
+  } catch (err) {
+    showStatus(`匯入失敗: ${err.message}`, 'error');
+  } finally {
+    importSkillBtn.disabled = false;
+    importSkillBtn.textContent = t('options.importSkillBtn') || '匯入';
   }
 }
 

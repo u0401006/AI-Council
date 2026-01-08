@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Council - 多 AI 模型智囊團</title>
+  <meta name="description" content="同時查詢多個 LLM，匿名互評，主席綜合產出最終答案。Chrome Extension 實作 LLM Council 概念。">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="nav-container">
+      <a href="#" class="nav-logo">
+        <span class="logo-icon">🏛️</span>
+        <span class="logo-text">AI Council</span>
+      </a>
+      <div class="nav-links">
+        <a href="#features">功能</a>
+        <a href="#workflow">運作流程</a>
+        <a href="#quickstart">快速開始</a>
+        <a href="https://github.com/anthropic/ai-council-extension" class="nav-github" target="_blank" rel="noopener">
+          <!-- TODO: Replace 'anthropic' with your GitHub username -->
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-container">
+      <div class="hero-content">
+        <div class="hero-badge">Chrome Extension</div>
+        <h1>AI Council</h1>
+        <p class="hero-subtitle">多 AI 模型智囊團</p>
+        <p class="hero-description">
+          同時查詢多個 LLM，透過匿名互評機制篩選最佳回答，<br>
+          由主席模型綜合產出權威答案。
+        </p>
+        <div class="hero-cta">
+          <!-- TODO: Replace 'anthropic' with your GitHub username -->
+          <a href="https://github.com/anthropic/ai-council-extension" class="btn btn-primary" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+            </svg>
+            GitHub
+          </a>
+          <a href="#quickstart" class="btn btn-secondary">開始使用</a>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <!-- Placeholder for product screenshot -->
+        <div class="hero-mockup">
+          <div class="mockup-header">
+            <span class="mockup-dot"></span>
+            <span class="mockup-dot"></span>
+            <span class="mockup-dot"></span>
+          </div>
+          <div class="mockup-content">
+            <div class="mockup-sidebar">
+              <div class="mockup-logo">🏛️</div>
+              <div class="mockup-nav">
+                <div class="mockup-nav-item active"></div>
+                <div class="mockup-nav-item"></div>
+                <div class="mockup-nav-item"></div>
+              </div>
+            </div>
+            <div class="mockup-main">
+              <div class="mockup-tabs">
+                <span class="mockup-tab active">GPT-5.1</span>
+                <span class="mockup-tab">Claude 4.5</span>
+                <span class="mockup-tab">Gemini 3</span>
+                <span class="mockup-tab">Grok 3</span>
+              </div>
+              <div class="mockup-response">
+                <div class="mockup-line"></div>
+                <div class="mockup-line short"></div>
+                <div class="mockup-line"></div>
+                <div class="mockup-line medium"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section id="features" class="features">
+    <div class="container">
+      <h2 class="section-title">核心功能</h2>
+      <p class="section-subtitle">結合多個 AI 模型的智慧，獲得更全面、可靠的答案</p>
+      
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M8 12h8M12 8v8"/>
+            </svg>
+          </div>
+          <h3>多模型並行查詢</h3>
+          <p>同時向 GPT、Claude、Gemini、Grok 等模型發送查詢，即時串流顯示各模型回應。</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <h3>匿名互評機制</h3>
+          <p>各模型匿名評估其他模型的回答，產出客觀排名與評語，自動識別高品質回答。</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <h3>Agent Planner</h3>
+          <p>智能任務規劃系統，根據問題類型自動選擇最佳處理策略與工具組合。</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </div>
+          <h3>Skills 專業模組</h3>
+          <p>9 種專業技能模組：研究者、教育者、事實查核、創意寫作、技術問答等。</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="M21 21l-4.35-4.35"/>
+            </svg>
+          </div>
+          <h3>Web Search 整合</h3>
+          <p>Brave Search API 整合，支援即時網路搜尋與 AI 延伸搜尋，獲取最新資訊。</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <path d="M21 15l-5-5L5 21"/>
+            </svg>
+          </div>
+          <h3>Vision & Image</h3>
+          <p>支援圖片輸入分析（Vision Mode）與 Gemini 圖片生成，視覺化創作無限可能。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Workflow Section -->
+  <section id="workflow" class="workflow">
+    <div class="container">
+      <h2 class="section-title">Council 運作流程</h2>
+      <p class="section-subtitle">三階段智囊團決策機制</p>
+      
+      <div class="workflow-steps">
+        <div class="workflow-step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Stage 1: 並行查詢</h3>
+            <p>同時向多個 LLM 模型發送問題，各模型獨立思考並串流回應。</p>
+            <div class="step-models">
+              <span class="model-tag">GPT-5.1</span>
+              <span class="model-tag">Claude 4.5</span>
+              <span class="model-tag">Gemini 3</span>
+              <span class="model-tag">Grok 3</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="workflow-arrow">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M19 12l-7 7-7-7"/>
+          </svg>
+        </div>
+        
+        <div class="workflow-step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Stage 2: 匿名互評</h3>
+            <p>各模型評估其他模型的回答（不含自己），產出排名與評語。</p>
+            <div class="step-ranking">
+              <div class="rank-item"><span class="rank">1st</span> Response A</div>
+              <div class="rank-item"><span class="rank">2nd</span> Response B</div>
+              <div class="rank-item"><span class="rank">3rd</span> Response C</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="workflow-arrow">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M19 12l-7 7-7-7"/>
+          </svg>
+        </div>
+        
+        <div class="workflow-step final">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Stage 3: 主席綜合</h3>
+            <p>指定的主席模型綜合所有回答與互評結果，產出最終權威答案。</p>
+            <div class="step-chairman">
+              <span class="chairman-badge">Chairman</span>
+              <span class="chairman-model">Claude Sonnet 4.5</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Start Section -->
+  <section id="quickstart" class="quickstart">
+    <div class="container">
+      <h2 class="section-title">快速開始</h2>
+      <p class="section-subtitle">三步驟完成設定</p>
+      
+      <div class="quickstart-steps">
+        <div class="qs-step">
+          <div class="qs-number">1</div>
+          <h3>安裝擴充功能</h3>
+          <div class="qs-content">
+            <ol>
+              <li>Clone 或下載 <a href="https://github.com/anthropic/ai-council-extension" target="_blank" rel="noopener">GitHub repo</a></li>
+              <li>開啟 Chrome，前往 <code>chrome://extensions/</code></li>
+              <li>開啟右上角「開發人員模式」</li>
+              <li>點擊「載入未封裝項目」</li>
+              <li>選擇 repo 資料夾</li>
+            </ol>
+          </div>
+        </div>
+        
+        <div class="qs-step">
+          <div class="qs-number">2</div>
+          <h3>設定 API Keys</h3>
+          <div class="qs-content">
+            <p>點擊擴充功能圖示 → 右鍵 → 選項</p>
+            <div class="api-keys">
+              <div class="api-key required">
+                <span class="key-name">OpenRouter API Key</span>
+                <span class="key-status">必要</span>
+                <a href="https://openrouter.ai/" target="_blank" rel="noopener">取得 →</a>
+              </div>
+              <div class="api-key optional">
+                <span class="key-name">Brave Search API Key</span>
+                <span class="key-status">可選</span>
+                <a href="https://brave.com/search/api/" target="_blank" rel="noopener">取得 →</a>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="qs-step">
+          <div class="qs-number">3</div>
+          <h3>開始使用</h3>
+          <div class="qs-content">
+            <ul>
+              <li>選擇參與 Council 的模型（至少 2 個）</li>
+              <li>選擇主席模型</li>
+              <li>點擊擴充功能圖示開啟 Side Panel</li>
+              <li>輸入問題，享受多 AI 智囊團服務</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tech Stack Section -->
+  <section class="techstack">
+    <div class="container">
+      <h2 class="section-title">技術棧</h2>
+      <div class="tech-badges">
+        <span class="tech-badge">Chrome Extension MV3</span>
+        <span class="tech-badge">OpenRouter API</span>
+        <span class="tech-badge">Brave Search API</span>
+        <span class="tech-badge">JavaScript ES6+</span>
+        <span class="tech-badge">Agent Framework</span>
+        <span class="tech-badge">Skills System</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <span class="logo-icon">🏛️</span>
+          <span class="logo-text">AI Council</span>
+        </div>
+        <!-- TODO: Replace 'anthropic' with your GitHub username -->
+        <div class="footer-links">
+          <a href="https://github.com/anthropic/ai-council-extension" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/anthropic/ai-council-extension/blob/main/README.md" target="_blank" rel="noopener">文件</a>
+          <a href="https://github.com/anthropic/ai-council-extension/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>Inspired by <a href="https://github.com/karpathy/llm-council" target="_blank" rel="noopener">Karpathy's LLM Council</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
+

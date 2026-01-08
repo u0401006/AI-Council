@@ -171,6 +171,13 @@ window.LOCALE_EN_US = {
     modelCount: '{count} models',
     sendBtn: 'Send',
     
+    // Skill Selector
+    selectSkill: 'Select skill mode',
+    autoDetect: 'Auto Detect',
+    searchSkills: 'Search skills...',
+    recommended: 'Recommended',
+    clearSkillSelection: 'Clear selection (use auto-detect)',
+    
     // Cost Tracker
     costTitle: 'Cost Tracker',
     costInput: 'Input',

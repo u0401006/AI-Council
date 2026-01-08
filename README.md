@@ -68,7 +68,35 @@
 - Chrome Extension Manifest V3
 - OpenRouter API（統一介面存取多個 LLM）
 - Brave Search API
+- Agent Planner 框架（智能任務規劃）
+- Skills 系統（9 種專業技能模組）
 - 純 JavaScript，無框架依賴
+
+## 專案介紹頁面
+
+本專案提供 GitHub Pages 靜態網站，展示專案功能與安裝指南。
+
+### 線上預覽
+
+訪問：`https://<username>.github.io/ai-council-extension/`
+
+### 本地預覽
+
+```bash
+# 使用任意 HTTP 伺服器
+cd docs
+python3 -m http.server 8000
+# 或
+npx serve .
+```
+
+### GitHub Pages 部署設定
+
+1. 前往 GitHub repo → **Settings** → **Pages**
+2. Source 選擇 **Deploy from a branch**
+3. Branch 選擇 `main`，資料夾選擇 `/docs`
+4. 點擊 **Save**
+5. 等待幾分鐘後，訪問 `https://<username>.github.io/ai-council-extension/`
 
 ## 授權
 
