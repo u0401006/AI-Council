@@ -1,7 +1,31 @@
 // ============================================
 // MAV Agent Framework - Planner Module
 // Multi-Agent Orchestration Support
+// Enhanced with Lifecycle Hook Integration
 // ============================================
+
+/**
+ * 取得 HookManager 實例（從 window.MAVHooks）
+ * @returns {Object|null} HookManager 實例
+ */
+function getHookManager() {
+  return window.MAVHooks?.hookManager || null;
+}
+
+/**
+ * 取得 Hook 事件常數
+ * @returns {Object} HOOK_EVENTS
+ */
+function getHookEvents() {
+  return window.MAVHooks?.HOOK_EVENTS || {
+    TOOL_BEFORE: 'tool:before',
+    TOOL_AFTER: 'tool:after',
+    SKILL_ACTIVATE: 'skill:activate',
+    SYNTHESIZE_BEFORE: 'synthesize:before',
+    SYNTHESIZE_AFTER: 'synthesize:after',
+    COMPLETE: 'complete'
+  };
+}
 
 /**
  * System prompt for the Planner LLM
@@ -252,6 +276,7 @@ function parsePlannerResponse(response) {
 
 /**
  * Planner class - makes decisions about next actions
+ * Now with Lifecycle Hook support
  */
 class Planner {
   constructor(config = {}) {
@@ -262,6 +287,7 @@ class Planner {
     this.skillHint = null;
     this.preferredTools = null;
     this.queryModelFn = config.queryModelFn || null;
+    this.hooksEnabled = config.hooksEnabled !== false; // 預設啟用
   }
   
   /**
@@ -294,6 +320,7 @@ class Planner {
   
   /**
    * Plan the next action based on current context
+   * Now with hook integration for tool:before event
    * @param {AgentContext} context - Current agent context
    * @returns {Promise<Object>} - Next action to execute
    */
@@ -301,7 +328,7 @@ class Planner {
     // Check if model is set
     if (!this.model) {
       console.warn('Planner model not set, using default strategy');
-      return this._defaultAction(context);
+      return this._applyHooksAndReturn(this._defaultAction(context), context);
     }
     
     // Build the prompt
@@ -323,22 +350,73 @@ class Planner {
       
       if (!action || !action.tool) {
         console.warn('Planner returned invalid action, using default strategy. Response:', response?.substring?.(0, 200));
-        return this._defaultAction(context);
+        return this._applyHooksAndReturn(this._defaultAction(context), context);
       }
       
       // Validate tool exists
       const validTools = ['query_council', 'web_search', 'peer_review', 'synthesize', 'final_answer', 'request_user_input'];
       if (!validTools.includes(action.tool)) {
         console.warn(`Unknown tool: ${action.tool}, using default strategy`);
-        return this._defaultAction(context);
+        return this._applyHooksAndReturn(this._defaultAction(context), context);
       }
       
       console.log('Planner decided:', action.tool, action.reasoning);
-      return action;
+      return this._applyHooksAndReturn(action, context);
     } catch (error) {
       console.warn('Planner error, using default strategy:', error.message);
-      return this._defaultAction(context);
+      return this._applyHooksAndReturn(this._defaultAction(context), context);
     }
+  }
+  
+  /**
+   * Apply tool:before hooks and potentially modify action
+   * @param {Object} action - The planned action
+   * @param {Object} context - Current context
+   * @returns {Promise<Object>} Modified action
+   */
+  async _applyHooksAndReturn(action, context) {
+    if (!this.hooksEnabled) return action;
+    
+    const hookManager = getHookManager();
+    if (!hookManager) return action;
+    
+    const EVENTS = getHookEvents();
+    
+    try {
+      // Trigger tool:before hook
+      const hookResult = await hookManager.trigger(EVENTS.TOOL_BEFORE, {
+        toolName: action.tool,
+        params: action.parameters || {},
+        context,
+        action
+      });
+      
+      // Check if hook blocked the action
+      if (hookResult?.block) {
+        console.log(`[Planner] Action ${action.tool} blocked by hook: ${hookResult.message}`);
+        // Return a modified action or alternative
+        if (hookResult.alternative) {
+          return hookResult.alternative;
+        }
+        // Skip this tool and try to proceed
+        return {
+          tool: 'final_answer',
+          parameters: { content: hookResult.message || 'Action blocked by hook' },
+          reasoning: 'Hook blocked action'
+        };
+      }
+      
+      // Apply any parameter modifications from hooks
+      if (hookResult?.params) {
+        action.parameters = { ...action.parameters, ...hookResult.params };
+        console.log(`[Planner] Hook modified parameters for ${action.tool}`);
+      }
+      
+    } catch (err) {
+      console.warn('[Planner] Hook error:', err);
+    }
+    
+    return action;
   }
   
   /**
@@ -503,6 +581,7 @@ class Planner {
  * Rule-based Planner - uses predefined rules instead of LLM
  * More predictable and doesn't consume tokens
  * Now respects skill.preferredTools and orchestration to customize behavior
+ * Enhanced with Lifecycle Hook integration
  */
 class RuleBasedPlanner {
   constructor(config = {}) {
@@ -512,6 +591,7 @@ class RuleBasedPlanner {
     this.customRules = config.rules || null;
     this.orchestrator = config.orchestrator || null;
     this.useWeightedEvaluation = config.useWeightedEvaluation !== false;
+    this.hooksEnabled = config.hooksEnabled !== false; // 預設啟用
   }
   
   setSkillHint(hint) {
@@ -544,24 +624,81 @@ class RuleBasedPlanner {
   }
   
   /**
-   * Plan using rules
+   * Plan using rules with hook integration
    */
   async plan(context) {
     const summary = context.getSummary();
     const rules = this.customRules || this._buildRulesFromSkill(context);
     
+    let action = null;
     for (const rule of rules) {
       if (rule.condition(summary, context, this)) {
-        return rule.action(summary, context, this);
+        action = rule.action(summary, context, this);
+        break;
       }
     }
     
     // Fallback
-    return {
-      tool: 'final_answer',
-      parameters: { content: '無法繼續處理' },
-      reasoning: 'No matching rule'
-    };
+    if (!action) {
+      action = {
+        tool: 'final_answer',
+        parameters: { content: '無法繼續處理' },
+        reasoning: 'No matching rule'
+      };
+    }
+    
+    // Apply hooks
+    return this._applyHooksAndReturn(action, context);
+  }
+  
+  /**
+   * Apply tool:before hooks and potentially modify action
+   * @param {Object} action - The planned action
+   * @param {Object} context - Current context
+   * @returns {Promise<Object>} Modified action
+   */
+  async _applyHooksAndReturn(action, context) {
+    if (!this.hooksEnabled) return action;
+    
+    const hookManager = getHookManager();
+    if (!hookManager) return action;
+    
+    const EVENTS = getHookEvents();
+    
+    try {
+      // Trigger tool:before hook
+      const hookResult = await hookManager.trigger(EVENTS.TOOL_BEFORE, {
+        toolName: action.tool,
+        params: action.parameters || {},
+        context,
+        action,
+        skill: this.skill
+      });
+      
+      // Check if hook blocked the action
+      if (hookResult?.block) {
+        console.log(`[RuleBasedPlanner] Action ${action.tool} blocked by hook: ${hookResult.message}`);
+        if (hookResult.alternative) {
+          return hookResult.alternative;
+        }
+        return {
+          tool: 'final_answer',
+          parameters: { content: hookResult.message || 'Action blocked by hook' },
+          reasoning: 'Hook blocked action'
+        };
+      }
+      
+      // Apply any parameter modifications from hooks
+      if (hookResult?.params) {
+        action.parameters = { ...action.parameters, ...hookResult.params };
+        console.log(`[RuleBasedPlanner] Hook modified parameters for ${action.tool}`);
+      }
+      
+    } catch (err) {
+      console.warn('[RuleBasedPlanner] Hook error:', err);
+    }
+    
+    return action;
   }
   
   /**
@@ -845,6 +982,7 @@ class OrchestratedPlanner extends RuleBasedPlanner {
 /**
  * HybridPlanner - switches between LLM and Rule-based planning based on complexity
  * Automatically assesses query complexity to decide which planner to use
+ * Supports hook configuration propagation
  */
 class HybridPlanner {
   constructor(config = {}) {
@@ -852,6 +990,16 @@ class HybridPlanner {
     this.rulePlanner = new RuleBasedPlanner(config);
     this.complexityThreshold = config.complexityThreshold || 0.5;
     this.model = config.model || null;
+    this.hooksEnabled = config.hooksEnabled !== false;
+  }
+  
+  /**
+   * Enable or disable hooks for both planners
+   */
+  setHooksEnabled(enabled) {
+    this.hooksEnabled = enabled;
+    this.llmPlanner.hooksEnabled = enabled;
+    this.rulePlanner.hooksEnabled = enabled;
   }
   
   setSkillHint(hint) {
@@ -933,6 +1081,78 @@ class HybridPlanner {
   }
 }
 
+/**
+ * 在工具執行完成後觸發 tool:after hook
+ * 應在 Agent 層調用此函數
+ * @param {string} toolName - 工具名稱
+ * @param {Object} result - 執行結果
+ * @param {Object} context - 執行上下文
+ */
+async function triggerToolAfterHook(toolName, result, context = {}) {
+  const hookManager = getHookManager();
+  if (!hookManager) return null;
+  
+  const EVENTS = getHookEvents();
+  
+  try {
+    return await hookManager.trigger(EVENTS.TOOL_AFTER, {
+      toolName,
+      result,
+      context
+    });
+  } catch (err) {
+    console.warn('[Planner] tool:after hook error:', err);
+    return null;
+  }
+}
+
+/**
+ * 觸發 synthesize:before hook
+ * @param {Object} params - synthesize 參數
+ * @param {Object} context - 上下文
+ */
+async function triggerSynthesizeBeforeHook(params, context = {}) {
+  const hookManager = getHookManager();
+  if (!hookManager) return { params };
+  
+  const EVENTS = getHookEvents();
+  
+  try {
+    const result = await hookManager.trigger(EVENTS.SYNTHESIZE_BEFORE, {
+      params,
+      context
+    });
+    return result || { params };
+  } catch (err) {
+    console.warn('[Planner] synthesize:before hook error:', err);
+    return { params };
+  }
+}
+
+/**
+ * 觸發 complete hook
+ * @param {string} query - 原始問題
+ * @param {string} finalAnswer - 最終回答
+ * @param {Object} context - 完整上下文
+ */
+async function triggerCompleteHook(query, finalAnswer, context = {}) {
+  const hookManager = getHookManager();
+  if (!hookManager) return null;
+  
+  const EVENTS = getHookEvents();
+  
+  try {
+    return await hookManager.trigger(EVENTS.COMPLETE, {
+      query,
+      finalAnswer,
+      context
+    });
+  } catch (err) {
+    console.warn('[Planner] complete hook error:', err);
+    return null;
+  }
+}
+
 // Export for use in other modules
 if (typeof window !== 'undefined') {
   window.MAVPlanner = {
@@ -944,7 +1164,13 @@ if (typeof window !== 'undefined') {
     RuleBasedPlanner,
     OrchestratedPlanner,
     HybridPlanner,
-    createPlanner
+    createPlanner,
+    // Hook utilities
+    getHookManager,
+    getHookEvents,
+    triggerToolAfterHook,
+    triggerSynthesizeBeforeHook,
+    triggerCompleteHook
   };
 }
 

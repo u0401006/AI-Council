@@ -800,7 +800,9 @@ function createCard(parentId, query) {
     cardContextItems: inheritedContextItems,  // 繼承父卡片的 context items
     settings: settings,              // 卡片獨立的功能設定
     inheritedContext: parentCard?.contextSummary || '',  // 繼承的上層脈絡摘要
-    contextSummary: ''               // 此卡片完成後的脈絡摘要
+    contextSummary: '',               // 此卡片完成後的脈絡摘要
+    skillId: null,                   // 完成時使用的技能 ID（供恢復 suggested actions）
+    searchQueries: []                // 完成時的搜尋建議（供恢復 suggested actions）
   };
   
   if (inheritedContextItems.length > 0) {
@@ -922,15 +924,15 @@ function renderTodoSection(tasks) {
   todoList.innerHTML = displayedTasks.map(task => {
     // 狀態標籤：已展開 or 待處理
     const statusLabel = task.cardId 
-      ? '<span class="todo-status expanded">已展開</span>' 
-      : '<span class="todo-status pending">待處理</span>';
+      ? `<span class="todo-status expanded">${t('sidepanel.expanded')}</span>` 
+      : `<span class="todo-status pending">${t('sidepanel.pending')}</span>`;
     
     // 功能推薦 badges
     const featureBadges = (task.suggestedFeatures || []).map(f => {
       const featureMap = {
-        search: { icon: '🔍', label: '搜尋' },
-        image: { icon: '🎨', label: '製圖' },
-        vision: { icon: '👁', label: '視覺' }
+        search: { icon: '🔍', label: t('sidepanel.taskSearch') },
+        image: { icon: '🎨', label: t('sidepanel.taskImage') },
+        vision: { icon: '👁', label: t('sidepanel.taskVision') }
       };
       const feature = featureMap[f];
       return feature ? `<span class="todo-feature-badge" data-feature="${f}" title="${feature.label}">${feature.icon}</span>` : '';
@@ -938,10 +940,10 @@ function renderTodoSection(tasks) {
     
     // Learner mode type icon (if in learner mode)
     const typeIconMap = {
-      explore: { icon: '🔍', label: '探索' },
-      verify: { icon: '✓', label: '驗證' },
-      apply: { icon: '🛠', label: '試試看' },
-      connect: { icon: '🔗', label: '連結' }
+      explore: { icon: '🔍', label: t('sidepanel.taskExplore') },
+      verify: { icon: '✓', label: t('sidepanel.taskVerify') },
+      apply: { icon: '🛠', label: t('sidepanel.taskApply') },
+      connect: { icon: '🔗', label: t('sidepanel.taskConnect') }
     };
     const typeInfo = task.type ? typeIconMap[task.type] : null;
     const typeIcon = typeInfo 
@@ -956,7 +958,7 @@ function renderTodoSection(tasks) {
     // Use type icon instead of priority for learner mode tasks
     const priorityOrType = task.type 
       ? typeIcon 
-      : `<span class="todo-priority ${task.priority}">${task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}</span>`;
+      : `<span class="todo-priority ${task.priority}">${task.priority === 'high' ? t('sidepanel.priorityHigh') : task.priority === 'medium' ? t('sidepanel.priorityMedium') : t('sidepanel.priorityLow')}</span>`;
     
     return `
     <div class="todo-item ${task.cardId ? 'has-card' : ''} ${task.type ? 'learner-task' : ''}" data-task-id="${task.id}">
@@ -1610,6 +1612,13 @@ function loadCardIntoUI(card) {
     showNextStepsSection();
     showBranchActions();
     
+    // 恢復 suggested actions（使用卡片保存的 skillId 和 searchQueries）
+    if (card.searchQueries && card.searchQueries.length > 0) {
+      currentSearchQueries = card.searchQueries.slice();
+    }
+    const savedSkill = card.skillId ? (window.MAVSkills?.SKILLS?.[card.skillId] || null) : null;
+    showSuggestedActions({ content: card.finalAnswer, success: true }, savedSkill);
+    
   } else {
     // === 未完成的卡片（空白或新建） ===
     emptyState.classList.remove('hidden');
@@ -1656,10 +1665,11 @@ function formatRelativeTime(timestamp) {
   const now = Date.now();
   const diff = now - timestamp;
   
-  if (diff < 60000) return '剛剛';
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}分鐘前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小時前`;
-  return new Date(timestamp).toLocaleDateString('zh-TW');
+  if (diff < 60000) return t('sidepanel.justNow');
+  if (diff < 3600000) return t('sidepanel.minutesAgo', { n: Math.floor(diff / 60000) });
+  if (diff < 86400000) return t('sidepanel.hoursAgo', { n: Math.floor(diff / 3600000) });
+  const locale = i18n?.currentLocale || 'zh-TW';
+  return new Date(timestamp).toLocaleDateString(locale);
 }
 
 // Create child card from task
@@ -1805,6 +1815,15 @@ const confirmWebSearch = document.getElementById('confirmWebSearch');
 const webSearchStatus = document.getElementById('webSearchStatus');
 const webSearchStatusLabel = document.getElementById('webSearchStatusLabel');
 const webSearchStatusDetail = document.getElementById('webSearchStatusDetail');
+
+// Image description modal elements
+const imageDescModal = document.getElementById('imageDescModal');
+const imageDescTextarea = document.getElementById('imageDescTextarea');
+const imageDescCharCount = document.getElementById('imageDescCharCount');
+const closeImageDescModal = document.getElementById('closeImageDescModal');
+const cancelImageDesc = document.getElementById('cancelImageDesc');
+const confirmImageDesc = document.getElementById('confirmImageDesc');
+const summarizeContentBtn = document.getElementById('summarizeContentBtn');
 
 // Search mode elements
 const searchModeToggle = document.getElementById('searchModeToggle');
@@ -2390,7 +2409,7 @@ function updateStage1Summary(responsesData) {
     fastestInfo = ` · <span class="highlight">${getModelName(fastest.model)}</span> ${(fastest.latency / 1000).toFixed(1)}s`;
   }
   
-  stage1Summary.innerHTML = `${completed}/${total} 完成${fastestInfo}`;
+  stage1Summary.innerHTML = `${completed}/${total} ${t('sidepanel.completed')}${fastestInfo}`;
 }
 
 function updateStage2Summary(ranking) {
@@ -2413,7 +2432,7 @@ function updateStage3Summary(chairModel) {
     return;
   }
   
-  stage3Summary.innerHTML = `主席：<span class="highlight">${getModelName(chairModel)}</span>`;
+  stage3Summary.innerHTML = `${t('sidepanel.chairmanLabel')}：<span class="highlight">${getModelName(chairModel)}</span>`;
 }
 
 /**
@@ -2721,7 +2740,7 @@ class SkillSelectorUI {
       if (!noResults) {
         noResults = document.createElement('div');
         noResults.className = 'skill-no-results';
-        noResults.textContent = '找不到符合的技能';
+        noResults.textContent = t('sidepanel.noSkillsFound');
         skillDropdownContent?.appendChild(noResults);
       }
       noResults.style.display = '';
@@ -2802,11 +2821,11 @@ class SkillSelectorUI {
       // Update source badge
       if (skillSelectorSource) {
         if (source === 'auto') {
-          skillSelectorSource.textContent = '自動';
+          skillSelectorSource.textContent = t('sidepanel.skillSourceAuto');
           skillSelectorSource.setAttribute('data-source', 'auto');
           skillSelectorSource.classList.remove('hidden');
         } else if (source === 'user') {
-          skillSelectorSource.textContent = '已選';
+          skillSelectorSource.textContent = t('sidepanel.skillSourceSelected');
           skillSelectorSource.setAttribute('data-source', 'user');
           skillSelectorSource.classList.remove('hidden');
         } else {
@@ -3246,8 +3265,8 @@ function showBreakpointAndWait(message, suggestedSearches = [], config = {}) {
     } else if (inputType === 'confirm') {
       // Simple confirm mode
       renderBreakpointOptions([
-        { label: '繼續', action: 'proceed', icon: '✅' },
-        { label: '取消', action: 'cancel', icon: '❌' }
+        { label: t('sidepanel.proceed'), action: 'proceed', icon: '✅' },
+        { label: t('sidepanel.cancelAction'), action: 'cancel', icon: '❌' }
       ]);
       breakpointSearches?.classList.add('hidden');
       breakpointDefaultActions?.classList.add('hidden');
@@ -3480,7 +3499,7 @@ function showSuggestedActions(result, skill) {
   if (hasImages || (multiImageState && multiImageState.generatedImages?.length > 0)) {
     suggestions.push({
       icon: '👁️',
-      label: '分析圖片',
+      label: t('sidepanel.analyzeImageLabel'),
       action: 'vision',
       handler: () => handleBranchVision()
     });
@@ -3490,7 +3509,7 @@ function showSuggestedActions(result, skill) {
   if (hasBraveApiKey && searchIteration < maxSearchIterations) {
     suggestions.push({
       icon: '🔍',
-      label: '延伸搜尋',
+      label: t('sidepanel.extendSearch'),
       action: 'search',
       handler: () => handleBranchSearch()
     });
@@ -3499,7 +3518,7 @@ function showSuggestedActions(result, skill) {
   // Canvas/Notes - always show
   suggestions.push({
     icon: '📝',
-    label: '做筆記',
+    label: t('sidepanel.takeNotesLabel'),
     action: 'canvas',
     handler: () => openCanvas(false)
   });
@@ -3508,7 +3527,7 @@ function showSuggestedActions(result, skill) {
   if (!isImageSkill) {
     suggestions.push({
       icon: '🎨',
-      label: '生成圖像',
+      label: t('sidepanel.generateImageLabel'),
       action: 'genImage',
       handler: () => handleBranchImage()
     });
@@ -3672,7 +3691,7 @@ function updateSearchUIState(hasBrave) {
   // Disable branchSearchBtn
   if (branchSearchBtn) {
     branchSearchBtn.disabled = !hasBrave;
-    branchSearchBtn.title = hasBrave ? '延伸搜尋' : '需要設定 Brave Search API 金鑰';
+    branchSearchBtn.title = hasBrave ? t('sidepanel.extendSearch') : t('sidepanel.braveKeyNeeded');
   }
   
   // Disable customSearchBtn
@@ -3689,7 +3708,7 @@ function updateSearchUIState(hasBrave) {
   // Disable webSearchBtn in context section
   if (webSearchBtn) {
     webSearchBtn.disabled = !hasBrave;
-    webSearchBtn.title = hasBrave ? '網路搜尋' : '需要設定 Brave Search API 金鑰';
+    webSearchBtn.title = hasBrave ? t('sidepanel.webSearchContext') : t('sidepanel.braveKeyNeeded');
     webSearchBtn.style.opacity = hasBrave ? '1' : '0.5';
   }
 }
@@ -4134,6 +4153,9 @@ function setupEventListeners() {
   // Web search modal listeners
   setupWebSearchModalListeners();
   
+  // Image description modal listeners
+  setupImageDescModalListeners();
+  
   // Stage 2.5 search suggestion listeners
   setupStage25Listeners();
 
@@ -4243,10 +4265,10 @@ async function capturePageContent() {
     
     showToast(t('messages.pageCaptured'));
   } catch (err) {
-    showToast('Failed to capture page: ' + err.message, true);
+    showToast(t('messages.captureFailed', { error: err.message }), true);
   } finally {
     capturePageBtn.disabled = false;
-    capturePageBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span>擷取頁面</span>`;
+    capturePageBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span>${t('sidepanel.capturePage')}</span>`;
   }
 }
 
@@ -4281,7 +4303,7 @@ async function captureSelection() {
     
     showToast(t('messages.selectionCaptured'));
   } catch (err) {
-    showToast('擷取選取內容失敗：' + err.message, true);
+    showToast(t('messages.selectionCaptureFailed', { error: err.message }), true);
   } finally {
     captureSelectionBtn.disabled = false;
   }
@@ -4312,7 +4334,7 @@ async function pasteContext() {
     // Show paste modal for manual input
     showPasteModal();
   } catch (err) {
-    showToast('貼上失敗：' + err.message, true);
+    showToast(t('messages.pasteFailed', { error: err.message }), true);
   }
 }
 
@@ -4347,7 +4369,7 @@ function hidePasteModal() {
 function updatePasteCharCount() {
   if (!pasteCharCount || !pasteModalTextarea) return;
   const count = pasteModalTextarea.value.length;
-  pasteCharCount.textContent = `${count.toLocaleString()} 字元`;
+  pasteCharCount.textContent = `${count.toLocaleString()} ${t('sidepanel.characters')}`;
 }
 
 // Handle paste modal confirm
@@ -4399,6 +4421,305 @@ function setupPasteModalListeners() {
         hidePasteModal();
       }
     });
+  }
+}
+
+// ============================================
+// Image Description Modal Functions
+// ============================================
+
+// Show image description modal
+function showImageDescModal() {
+  if (!imageDescModal) return;
+  
+  // Reset textarea
+  if (imageDescTextarea) {
+    imageDescTextarea.value = '';
+    updateImageDescCharCount();
+  }
+  
+  // Show/hide summarize button based on whether we have content
+  // Check both currentCard and currentConversation
+  if (summarizeContentBtn) {
+    const currentCard = getCurrentCard();
+    const hasContent = currentCard?.finalAnswer || currentConversation?.finalAnswer;
+    if (hasContent) {
+      summarizeContentBtn.classList.remove('hidden');
+    } else {
+      summarizeContentBtn.classList.add('hidden');
+    }
+  }
+  
+  imageDescModal.classList.remove('hidden');
+  
+  // Focus textarea
+  setTimeout(() => {
+    imageDescTextarea?.focus();
+  }, 100);
+}
+
+// Hide image description modal
+function hideImageDescModal() {
+  if (!imageDescModal) return;
+  imageDescModal.classList.add('hidden');
+  if (imageDescTextarea) {
+    imageDescTextarea.value = '';
+  }
+}
+
+// Update character count in image description modal
+function updateImageDescCharCount() {
+  if (!imageDescCharCount || !imageDescTextarea) return;
+  const count = imageDescTextarea.value.length;
+  imageDescCharCount.textContent = `${count.toLocaleString()} ${t('sidepanel.characters')}`;
+}
+
+// Summarize content for image generation using LLM
+async function summarizeForImageGen() {
+  // Try to get content from current card first, then fallback to currentConversation
+  const currentCard = getCurrentCard();
+  const finalAnswer = currentCard?.finalAnswer || currentConversation?.finalAnswer;
+  const query = currentCard?.query || currentConversation?.query || '';
+  
+  if (!finalAnswer) {
+    showToast(t('messages.noConversationToSummarize'), true);
+    return;
+  }
+  
+  if (summarizeContentBtn) {
+    summarizeContentBtn.disabled = true;
+    summarizeContentBtn.innerHTML = `<span class="spinner-small"></span> ${t('sidepanel.stageSummarizing')}`;
+  }
+  
+  try {
+    
+    // Use a quick LLM call to summarize
+    const summarizePrompt = `請從以下內容中提取最適合視覺化呈現的核心概念，產生一段 100-150 字的圖片描述。描述應該具體、有畫面感，適合用於生成圖片。
+
+原始問題：${query}
+
+內容摘要：
+${finalAnswer.slice(0, 2000)}
+
+請直接輸出圖片描述，不要有任何前綴或解釋。`;
+
+    const response = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        type: 'QUERY_MODEL',
+        payload: {
+          model: chairmanModel || 'gpt-4o-mini',
+          prompt: summarizePrompt
+        }
+      }, (res) => {
+        if (res?.error) reject(new Error(res.error));
+        else resolve(res);
+      });
+    });
+    
+    if (response?.content && imageDescTextarea) {
+      imageDescTextarea.value = response.content.trim();
+      updateImageDescCharCount();
+      showToast(t('messages.summaryGenerated'));
+    }
+  } catch (err) {
+    console.error('Summarize error:', err);
+    showToast(t('messages.summaryFailed'), true);
+  } finally {
+    if (summarizeContentBtn) {
+      summarizeContentBtn.disabled = false;
+      summarizeContentBtn.innerHTML = `
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+        </svg>
+        從對話摘要
+      `;
+    }
+  }
+}
+
+// Handle image description modal confirm - start image generation
+async function handleImageDescConfirm() {
+  if (!imageDescTextarea) return;
+  
+  const description = imageDescTextarea.value.trim();
+  
+  if (!description || description.length < 5) {
+    showToast(t('messages.minDescriptionLength'), true);
+    return;
+  }
+  
+  hideImageDescModal();
+  
+  // Proceed with image generation using the user's description
+  await startImageGenerationWithDescription(description);
+}
+
+// Setup image description modal listeners
+function setupImageDescModalListeners() {
+  if (closeImageDescModal) {
+    closeImageDescModal.addEventListener('click', hideImageDescModal);
+  }
+  if (cancelImageDesc) {
+    cancelImageDesc.addEventListener('click', hideImageDescModal);
+  }
+  if (confirmImageDesc) {
+    confirmImageDesc.addEventListener('click', handleImageDescConfirm);
+  }
+  if (summarizeContentBtn) {
+    summarizeContentBtn.addEventListener('click', summarizeForImageGen);
+  }
+  if (imageDescTextarea) {
+    imageDescTextarea.addEventListener('input', updateImageDescCharCount);
+    // Allow Ctrl+Enter to confirm
+    imageDescTextarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleImageDescConfirm();
+      }
+    });
+  }
+  // Close modal when clicking outside
+  if (imageDescModal) {
+    imageDescModal.addEventListener('click', (e) => {
+      if (e.target === imageDescModal) {
+        hideImageDescModal();
+      }
+    });
+  }
+}
+
+// Start image generation with user-provided description
+async function startImageGenerationWithDescription(description) {
+  branchImageBtn.disabled = true;
+  branchImageBtn.innerHTML = `<span class="spinner" style="width:14px;height:14px"></span><span>${t('sidepanel.stagePreparing')}</span>`;
+  
+  // Hide branch actions section during loading
+  branchActionsSection?.classList.add('hidden');
+  
+  const resetButton = () => {
+    branchImageBtn.disabled = false;
+    branchImageBtn.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+        <polyline points="21 15 16 10 5 21"></polyline>
+      </svg>
+      <span>${t('sidepanel.generateImage')}</span>
+    `;
+  };
+  
+  const restoreBranchActions = () => {
+    branchActionsSection?.classList.remove('hidden');
+  };
+  
+  try {
+    const query = currentConversation?.query || description.slice(0, 50);
+    
+    // Create a synthetic result for the style selection UI
+    const syntheticResult = {
+      success: true,
+      globalContext: description,
+      imageCount: 1,
+      images: [{
+        title: query,
+        description: description,
+        prompt: description
+      }]
+    };
+    
+    resetButton();
+    restoreBranchActions();
+    
+    // Proceed directly to style selection
+    showStyleSelectionUI(
+      syntheticResult,
+      async (selectedStyle, editedGlobalContext, paradigmSelections) => {
+        const updatedResult = {
+          ...syntheticResult,
+          globalContext: editedGlobalContext,
+          paradigmSelections: paradigmSelections || {}
+        };
+        
+        // Show loading for style integration
+        const integratingEl = document.createElement('div');
+        integratingEl.className = 'image-prompt-loading';
+        integratingEl.innerHTML = `
+          <div class="loading-header">
+            <div class="loading-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+              </svg>
+            </div>
+            <div class="loading-info">
+              <div class="loading-title">正在將風格融入圖像</div>
+              <div class="loading-subtitle">結合選定風格，優化 prompt 細節</div>
+            </div>
+          </div>
+          <div class="skeleton-preview"></div>
+          <div class="loading-hint">
+            <span class="spinner-small"></span>
+            <span>約需 5-15 秒</span>
+          </div>
+        `;
+        getImageContainer()?.appendChild(integratingEl);
+        
+        const integratedResult = await integrateStyleIntoPrompts(updatedResult, selectedStyle, editedGlobalContext);
+        integratingEl.remove();
+        
+        showPromptPreview(
+          integratedResult,
+          (finalResult) => {
+            showMultiImageEditor(
+              finalResult,
+              async (generatedImages) => {
+                if (currentConversation && generatedImages.length > 0) {
+                  currentConversation.imagePrompts = generatedImages.map(g => ({
+                    title: g.title,
+                    prompt: g.prompt
+                  }));
+                  
+                  const storageResult = await chrome.storage.local.get('conversations');
+                  const conversations = storageResult.conversations || [];
+                  const idx = conversations.findIndex(c => c.id === currentConversation.id);
+                  if (idx >= 0) {
+                    conversations[idx] = currentConversation;
+                    await safeStorageSet({ conversations });
+                  }
+                }
+                
+                const currentCard = getCurrentCard();
+                if (currentCard && generatedImages.length > 0) {
+                  currentCard.generatedImages = generatedImages.map(g => ({
+                    title: g.title,
+                    prompt: g.prompt,
+                    timestamp: Date.now()
+                  }));
+                  saveSession();
+                }
+                
+                if (branchVisionBtn && generatedImages.length > 0) {
+                  branchVisionBtn.classList.remove('hidden');
+                }
+              },
+              () => showToast(t('messages.imageEditorClosed')),
+              () => showStyleSelectionUI(syntheticResult, arguments[1], arguments[2])
+            );
+          },
+          () => showStyleSelectionUI(syntheticResult, arguments[1], arguments[2]),
+          () => showToast(t('messages.imageCancelled'))
+        );
+      },
+      () => showToast(t('messages.imageCancelled'))
+    );
+    
+  } catch (err) {
+    console.error('Image generation error:', err);
+    showToast(t('messages.imageGenFailed', { error: err.message }), true);
+    resetButton();
+    restoreBranchActions();
   }
 }
 
@@ -4605,7 +4926,7 @@ async function executeMultipleSearches(queries) {
     
     // 更新搜尋進度
     if (stage25Status) {
-      stage25Status.textContent = `搜尋中 (${i + 1}/${queries.length})...`;
+      stage25Status.textContent = `${t('sidepanel.stageSearching')} (${i + 1}/${queries.length})`;
     }
     
     // 非首次請求，等待 1.1 秒避免 Brave API rate limit (1 req/sec)
@@ -4749,7 +5070,7 @@ function handleStage25ExecuteSearch() {
     return;
   }
   
-  stage25Status.textContent = '搜尋中...';
+  stage25Status.textContent = t('sidepanel.stageSearching');
   stage25Status.className = 'stage-status loading';
   
   stage25Resolver({ action: 'search', queries: selectedQueries });
@@ -4935,7 +5256,7 @@ async function prepareSearchIteration(keyword) {
   queryInput.classList.add('generating');
   
   sendBtn.disabled = true;
-  sendBtn.innerHTML = '<span class="spinner"></span><span>生成中...</span>';
+  sendBtn.innerHTML = `<span class="spinner"></span><span>${t('sidepanel.stageGenerating')}</span>`;
   sendBtn.classList.add('next-iteration');
   
   try {
@@ -4963,7 +5284,7 @@ async function prepareSearchIteration(keyword) {
     
     // Update send button to "next iteration" style (enabled)
     sendBtn.disabled = false;
-    sendBtn.innerHTML = '<span>開始下一輪</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"></path></svg>';
+    sendBtn.innerHTML = `<span>${t('sidepanel.startNextRound')}</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"></path></svg>`;
   }
 }
 
@@ -4977,7 +5298,7 @@ function cancelSearchIterationMode() {
   
   // Restore send button
   sendBtn.disabled = false;
-  sendBtn.innerHTML = '<span>送出</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
+  sendBtn.innerHTML = `<span>${t('sidepanel.send')}</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>`;
   sendBtn.classList.remove('next-iteration');
   
   // Restore original query
@@ -5021,7 +5342,7 @@ async function executeSearchIteration() {
   
   // Reset send button
   sendBtn.disabled = true;
-  sendBtn.innerHTML = '<span class="spinner"></span><span>搜尋中...</span>';
+  sendBtn.innerHTML = `<span class="spinner"></span><span>${t('sidepanel.stageSearching')}</span>`;
   sendBtn.classList.remove('next-iteration');
   
   try {
@@ -5111,7 +5432,7 @@ async function executeSearchIteration() {
     await runCouncilIteration();
     
   } catch (err) {
-    showToast('搜尋失敗：' + err.message, true);
+    showToast(t('messages.searchFailed', { error: err.message }), true);
     console.error('Search iteration error:', err);
   } finally {
     resetButton();
@@ -5183,7 +5504,7 @@ async function runCouncilIteration() {
   try {
     // === STAGE 1 ===
     currentStage = 'stage1';
-    stage1Status.textContent = `迭代 ${searchIteration}: 查詢中...`;
+    stage1Status.textContent = t('sidepanel.iterationQuerying', { n: searchIteration });
     stage1Status.classList.add('loading');
     
     renderTabs();
@@ -5199,7 +5520,7 @@ async function runCouncilIteration() {
       .map(([model, r]) => ({ model, content: r.content, latency: r.latency }));
     
     savedResponses = successfulResponses;
-    stage1Status.textContent = `${successfulResponses.length}/${councilModels.length} 完成`;
+    stage1Status.textContent = t('sidepanel.modelsCompleted', { done: successfulResponses.length, total: councilModels.length });
     stage1Status.classList.remove('loading');
     stage1Status.classList.add('done');
     
@@ -5210,7 +5531,7 @@ async function runCouncilIteration() {
     stage1Section.classList.add('collapsed');
     
     if (successfulResponses.length < 2) {
-      showToast('Council 需要至少 2 個模型成功回應', true);
+      showToast(t('messages.councilMinModels'), true);
       return;
     }
     
@@ -5218,11 +5539,11 @@ async function runCouncilIteration() {
     if (enableReview && successfulResponses.length >= 2) {
       currentStage = 'stage2';
       setStepActive(2);
-      stage2Status.textContent = '審查中...';
+      stage2Status.textContent = t('sidepanel.stageReviewing');
       stage2Status.classList.add('loading');
       document.getElementById('stage2Content').classList.add('expanded');
       
-      reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">模型正在互相審查...</span></div>`;
+      reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">${t('sidepanel.reviewInProgress')}</span></div>`;
       
       await Promise.allSettled(councilModels.map(model => runReview(model, currentQuery, successfulResponses)));
       
@@ -5241,7 +5562,7 @@ async function runCouncilIteration() {
     } else {
       stage2Section.classList.add('stage-skipped');
       stage2Status.textContent = t('sidepanel.stageSkipped');
-      reviewResults.innerHTML = '<div class="skipped-message">互評審查已停用</div>';
+      reviewResults.innerHTML = `<div class="skipped-message">${t('sidepanel.reviewDisabled')}</div>`;
       setStepSkipped(2);
     }
     
@@ -5253,7 +5574,7 @@ async function runCouncilIteration() {
     const actualChairman = resolveChairmanModel(aggregatedRanking, successfulResponses);
     updateStage3Summary(actualChairman);
     
-    stage3Status.textContent = '彙整中...';
+    stage3Status.textContent = t('sidepanel.stageSynthesizing');
     stage3Status.classList.add('loading');
     document.getElementById('stage3Content').classList.add('expanded');
     
@@ -5283,7 +5604,7 @@ async function runCouncilIteration() {
       // Show conversation cost summary
       renderConversationCost();
     } catch (err) {
-      stage3Status.textContent = '失敗';
+      stage3Status.textContent = t('sidepanel.stageFailed');
       stage3Status.classList.remove('loading');
       stage3Status.classList.add('error');
       showToast(`主席彙整失敗: ${err.message}`, true);
@@ -5312,7 +5633,7 @@ async function runCouncilIteration() {
     
   } catch (err) {
     console.error('Council iteration error:', err);
-    showToast('執行失敗：' + err.message, true);
+    showToast(t('messages.executionFailed', { error: err.message }), true);
   }
 }
 
@@ -5400,7 +5721,7 @@ async function promoteToSession(id) {
   await saveContextItems();
   renderContextItems();
   updateContextBadge();
-  showToast('已升級為 Session 級參考資料');
+  showToast(t('messages.contextUpgraded'));
 }
 
 async function removeContextItem(id) {
@@ -5436,7 +5757,7 @@ async function clearContext() {
     const totalCount = sessionCount + cardCount;
     
     if (totalCount === 0) {
-      showToast('沒有參考資料可清除');
+      showToast(t('messages.noContextToClear'));
       return;
     }
     
@@ -5449,13 +5770,13 @@ async function clearContext() {
     if (currentCard) {
       currentCard.cardContextItems = [];
     }
-    showToast('已清除所有參考資料');
+    showToast(t('messages.contextCleared'));
   } else {
     // At subtask level: only clear card-level items
     const cardCount = currentCard.cardContextItems?.length || 0;
     
     if (cardCount === 0) {
-      showToast('此卡片沒有 Card 級資料可清除（Session 級資料需在根卡片清除）');
+      showToast(t('messages.noCardContextToClear'));
       return;
     }
     
@@ -5770,7 +6091,7 @@ function handleQuickSubmit() {
   
   const query = suggestedQuickInput.value.trim();
   if (!query) {
-    showToast('請輸入問題', true);
+    showToast(t('messages.noQuestion'), true);
     return;
   }
   
@@ -5815,16 +6136,16 @@ function handleBranchSearch() {
         btn.addEventListener('click', () => prepareSearchIteration(btn.dataset.query));
       });
     } else {
-      searchStrategies.innerHTML = '<span class="no-suggestions">請輸入自訂關鍵字進行延伸搜尋</span>';
+      searchStrategies.innerHTML = `<span class="no-suggestions">${t('messages.enterCustomKeyword')}</span>`;
     }
     
     updateSearchIterationCounter();
-    showToast('請選擇或輸入延伸搜尋關鍵字');
+    showToast(t('messages.enterSearchKeyword'));
     
     // Scroll to search section
     searchStrategySection.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } else {
-    showToast('已達搜尋迭代上限', true);
+    showToast(t('messages.maxIterationsReached'), true);
   }
 }
 
@@ -5848,17 +6169,53 @@ function handleBranchVision() {
     return;
   }
   
-  showToast('尚無生成的圖片可供分析', true);
+  // No generated images - open Vision upload section for user to upload their own image
+  openVisionUploadSection();
+}
+
+// Open Vision upload section for user to upload an image
+function openVisionUploadSection() {
+  // Enable vision mode
+  visionMode = true;
+  if (visionToggle) {
+    visionToggle.checked = true;
+  }
+  
+  // Disable image generation mode if enabled
+  if (imageToggle && imageToggle.checked) {
+    imageToggle.checked = false;
+    enableImage = false;
+  }
+  
+  // Show vision upload section
+  if (visionUploadSection) {
+    visionUploadSection.classList.remove('hidden');
+  }
+  if (costTracker) {
+    costTracker.classList.remove('hidden');
+  }
+  
+  // Clear any previous uploaded image
+  clearUploadedImage();
+  
+  // Focus on the upload area and scroll to input section
+  const inputSection = document.querySelector('.input-section');
+  if (inputSection) {
+    inputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  
+  showToast(t('messages.uploadImageForAnalysis'));
 }
 
 async function handleBranchImage() {
+  // If no conversation content, show the image description modal for user input
   if (!currentConversation || !currentConversation.finalAnswer) {
-    showToast('尚無內容可供製圖', true);
+    showImageDescModal();
     return;
   }
   
   branchImageBtn.disabled = true;
-  branchImageBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px"></span><span>準備中...</span>';
+  branchImageBtn.innerHTML = `<span class="spinner" style="width:14px;height:14px"></span><span>${t('sidepanel.stagePreparing')}</span>`;
   
   // Hide branch actions section during loading to avoid confusion
   branchActionsSection?.classList.add('hidden');
@@ -5871,7 +6228,7 @@ async function handleBranchImage() {
         <circle cx="8.5" cy="8.5" r="1.5"></circle>
         <polyline points="21 15 16 10 5 21"></polyline>
       </svg>
-      <span>生成圖片</span>
+      <span>${t('sidepanel.generateImage')}</span>
     `;
   };
   
@@ -5919,7 +6276,7 @@ async function handleBranchImage() {
     promptLoadingEl.remove();
     
     if (!aiResult.success) {
-      showToast('AI Prompt 生成失敗，使用預設模式', true);
+      showToast(t('messages.aiPromptFailed'), true);
     } else if (aiResult.imageCount > 1) {
       showToast(`AI 識別到 ${aiResult.imageCount} 張圖片規劃`);
     }
@@ -6013,7 +6370,7 @@ async function handleBranchImage() {
                   }
                 },
                 () => {
-                  showToast('已關閉圖像編輯器');
+                  showToast(t('messages.imageEditorClosed'));
                 },
                 () => {
                   // Back to style selection from multi-image editor
@@ -6026,12 +6383,12 @@ async function handleBranchImage() {
               startStyleSelection(result);
             },
             () => {
-              showToast('已取消圖像生成');
+              showToast(t('messages.imageCancelled'));
             }
           );
         },
         () => {
-          showToast('已取消圖像生成');
+          showToast(t('messages.imageCancelled'));
         }
       );
     };
@@ -6040,7 +6397,7 @@ async function handleBranchImage() {
     
   } catch (err) {
     console.error('Branch image error:', err);
-    showToast('製圖失敗：' + err.message, true);
+    showToast(t('messages.imageGenFailed', { error: err.message }), true);
     resetButton();
     restoreBranchActions();
   }
@@ -6070,15 +6427,55 @@ function hideBranchActions() {
   }
 }
 
-function openCanvas(asWindow = false) {
+async function openCanvas(asWindow = false) {
+  // Always clear old canvasImport data first to prevent loading stale content
+  await chrome.storage.local.remove('canvasImport');
+  
+  // Try to get data from current card first (preferred), then fallback to currentConversation
+  const currentCard = getCurrentCard();
+  
+  // Prepare payload with content from card or conversation
+  const payload = {
+    openAsWindow: asWindow,
+    content: '',
+    title: '做筆記',
+    query: ''
+  };
+  
+  if (currentCard) {
+    // Build content from card data: include query and final answer
+    let content = '';
+    if (currentCard.query) {
+      content += `# ${currentCard.query}\n\n`;
+      payload.query = currentCard.query;
+      payload.title = currentCard.query.slice(0, 30);
+    }
+    if (currentCard.finalAnswer) {
+      content += currentCard.finalAnswer;
+    }
+    payload.content = content;
+  } else if (currentConversation) {
+    // Fallback to currentConversation
+    let content = '';
+    if (currentConversation.query) {
+      content += `# ${currentConversation.query}\n\n`;
+      payload.query = currentConversation.query;
+      payload.title = currentConversation.query.slice(0, 30);
+    }
+    if (currentConversation.finalAnswer) {
+      content += currentConversation.finalAnswer;
+    }
+    payload.content = content;
+  }
+  
+  // Save session before opening to ensure canvas can access latest data
+  if (sessionState.id) {
+    saveSession();
+  }
+  
   chrome.runtime.sendMessage({
     type: 'OPEN_CANVAS',
-    payload: currentConversation ? {
-      content: currentConversation.finalAnswer,
-      title: 'Council 回應',
-      query: currentConversation.query,
-      openAsWindow: asWindow
-    } : { openAsWindow: asWindow }
+    payload
   });
 }
 
@@ -6089,13 +6486,13 @@ function openCanvas(asWindow = false) {
 
 function handleVisionImageUpload(file) {
   if (!file || !file.type.startsWith('image/')) {
-    showToast('請上傳有效的圖片檔案', true);
+    showToast(t('messages.invalidImageFile'), true);
     return;
   }
 
   const maxSize = 20 * 1024 * 1024; // 20MB
   if (file.size > maxSize) {
-    showToast('圖片大小超過 20MB 限制', true);
+    showToast(t('messages.imageSizeLimit'), true);
     return;
   }
 
@@ -6149,7 +6546,7 @@ function clearUploadedImage() {
 // Start Vision Council analysis from a generated/existing image
 function startVisionFromGeneratedImage(imageDataUrl, imageName = '生成的圖片') {
   if (!imageDataUrl) {
-    showToast('無法取得圖片資料', true);
+    showToast(t('messages.imageDataFailed'), true);
     return;
   }
   
@@ -6215,11 +6612,11 @@ function startVisionFromGeneratedImage(imageDataUrl, imageName = '生成的圖�
     queryInput.focus();
     queryInput.select();
     
-    showToast('已載入圖片，請輸入分析問題後送出');
+    showToast(t('messages.imageLoaded'));
   };
   
   img.onerror = () => {
-    showToast('圖片載入失敗', true);
+    showToast(t('messages.imageLoadFailed'), true);
   };
   
   img.src = imageDataUrl;
@@ -6489,18 +6886,18 @@ function renderImages(images, container) {
     // Analyze button (Vision Council)
     const analyzeBtn = document.createElement('button');
     analyzeBtn.className = 'analyze-image-btn';
-    analyzeBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>分析`;
+    analyzeBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>${t('sidepanel.analyze')}`;
     analyzeBtn.addEventListener('click', (e) => { 
       e.stopPropagation(); 
       startVisionFromGeneratedImage(imgSrc, `生成圖片 ${idx + 1}`); 
     });
     
     const downloadBtn = document.createElement('button');
-    downloadBtn.textContent = 'Download';
+    downloadBtn.textContent = t('sidepanel.download');
     downloadBtn.addEventListener('click', (e) => { e.stopPropagation(); downloadImage(imgSrc, idx); });
     
     const copyBtn = document.createElement('button');
-    copyBtn.textContent = 'Copy';
+    copyBtn.textContent = t('sidepanel.copy');
     copyBtn.addEventListener('click', (e) => { e.stopPropagation(); copyImageToClipboard(imgSrc); });
     
     actions.appendChild(analyzeBtn);
@@ -6529,14 +6926,14 @@ async function downloadImage(src, idx) {
     a.download = `mav-image-${Date.now()}-${idx}.png`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('已下載圖片');
+    showToast(t('messages.imageDownloaded'));
   } catch (e) {
     // For data URLs, direct download
     const a = document.createElement('a');
     a.href = src;
     a.download = `mav-image-${Date.now()}-${idx}.png`;
     a.click();
-    showToast('已下載圖片');
+    showToast(t('messages.imageDownloaded'));
   }
 }
 
@@ -6545,9 +6942,9 @@ async function copyImageToClipboard(src) {
     const response = await fetch(src);
     const blob = await response.blob();
     await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-    showToast('已複製圖片');
+    showToast(t('messages.imageCopied'));
   } catch (e) {
-    showToast('複製圖片失敗', true);
+    showToast(t('messages.imageCopyFailed'), true);
   }
 }
 
@@ -6673,7 +7070,7 @@ async function executeNewSession() {
   
   // Focus input
   queryInput.focus();
-  showToast('已開始新對話');
+  showToast(t('messages.newConversationStarted'));
 }
 
 // Create new root card in current session
@@ -6749,7 +7146,7 @@ function executeNewRootCard() {
   
   // Focus input
   queryInput.focus();
-  showToast('已準備新增 Root 卡片');
+  showToast(t('messages.newRootCardReady'));
 }
 
 // Setup new conversation modal event listeners
@@ -6800,7 +7197,7 @@ async function renderHistory() {
   const sessions = sessResult.taskSessions || [];
   
   if (conversations.length === 0 && sessions.length === 0) {
-    historyList.innerHTML = '<div class="history-empty">尚無歷史紀錄</div>';
+    historyList.innerHTML = `<div class="history-empty">${t('messages.noHistoryYet')}</div>`;
     return;
   }
 
@@ -6890,12 +7287,12 @@ async function deleteConversation(id) {
   try {
     await chrome.storage.local.set({ conversations });
     await renderHistory();
-    showToast('已刪除紀錄');
+    showToast(t('messages.recordDeleted'));
   } catch (err) {
     if (err.message?.includes('QUOTA_BYTES')) {
-      showToast('儲存失敗：空間不足', true);
+      showToast(t('messages.storageFull'), true);
     } else {
-      showToast('刪除失敗：' + err.message, true);
+      showToast(t('messages.deleteFailed', { error: err.message }), true);
     }
   }
 }
@@ -6946,7 +7343,7 @@ async function loadConversation(id) {
   if (contextItems.length > 0) {
     showToast(`已載入此對話的 ${contextItems.length} 個參考資料`);
   } else {
-    showToast('此對話無參考資料');
+    showToast(t('messages.noContextInConversation'));
   }
 
   // Display saved conversation
@@ -7067,7 +7464,7 @@ async function saveCurrentConversation(data) {
       conversations.pop();
       const retryResult = await safeStorageSet({ conversations });
       if (retryResult.success) {
-        showToast('儲存空間不足，已自動清理舊紀錄', true);
+        showToast(t('messages.autoCleanedOldRecords'), true);
         break;
       }
     }
@@ -7149,6 +7546,13 @@ async function loadSession(sessionId) {
     if (!card.cardContextItems) {
       card.cardContextItems = [];
     }
+    // Migration: ensure skillId and searchQueries exist
+    if (card.skillId === undefined) {
+      card.skillId = null;
+    }
+    if (!card.searchQueries) {
+      card.searchQueries = [];
+    }
     sessionState.cards.set(card.id, card);
   });
   
@@ -7210,9 +7614,9 @@ async function loadSessionFromHistory(sessionId) {
   // Load session
   const loaded = await loadSession(sessionId);
   if (loaded) {
-    showToast('已載入專案');
+    showToast(t('messages.projectLoaded'));
   } else {
-    showToast('載入專案失敗', true);
+    showToast(t('messages.loadFailed', { error: '' }), true);
   }
 }
 
@@ -7221,9 +7625,9 @@ async function clearHistory() {
   try {
     await chrome.storage.local.set({ conversations: [] });
     await renderHistory();
-    showToast('已清除歷史紀錄');
+    showToast(t('messages.historyCleared'));
   } catch (err) {
-    showToast('清除失敗：' + err.message, true);
+    showToast(t('messages.clearFailed', { error: err.message }), true);
   }
 }
 
@@ -7243,30 +7647,39 @@ function formatDate(timestamp) {
 // Export Functions
 // ============================================
 function exportAsMarkdown() {
-  if (!currentConversation) return;
+  if (!currentConversation) {
+    showToast(t('messages.noConversationToExport'), true);
+    return;
+  }
   const md = generateMarkdown(currentConversation);
   downloadFile(`mav-${Date.now()}.md`, md, 'text/markdown');
   exportModal.classList.add('hidden');
-  showToast('已匯出 Markdown');
+  showToast(t('messages.exportedMarkdown'));
 }
 
 function exportAsJson() {
-  if (!currentConversation) return;
+  if (!currentConversation) {
+    showToast(t('messages.noConversationToExport'), true);
+    return;
+  }
   const json = JSON.stringify(currentConversation, null, 2);
   downloadFile(`mav-${Date.now()}.json`, json, 'application/json');
   exportModal.classList.add('hidden');
-  showToast('已匯出 JSON');
+  showToast(t('messages.exportedJson'));
 }
 
 async function copyToClipboard() {
-  if (!currentConversation) return;
+  if (!currentConversation) {
+    showToast(t('messages.noConversationToExport'), true);
+    return;
+  }
   const md = generateMarkdown(currentConversation);
   try {
     await navigator.clipboard.writeText(md);
     exportModal.classList.add('hidden');
-    showToast('已複製到剪貼簿');
+    showToast(t('messages.copiedToClipboard'));
   } catch (e) {
-    showToast('複製失敗', true);
+    showToast(t('messages.copyFailed'), true);
   }
 }
 
@@ -7328,12 +7741,39 @@ let currentSkill = null;
 
 // Orchestrator instance
 let orchestratorInstance = null;
+let hookManagerInstance = null;
+let skillEvaluatorInstance = null;
 
 /**
  * Initialize Agent Framework components
+ * Now includes Hook Manager and Skill Evaluator initialization
  */
 function initAgentFramework() {
   console.log('[AgentFramework] Initializing...');
+  
+  // Initialize Hook Manager
+  if (window.MAVHooks) {
+    hookManagerInstance = window.MAVHooks.hookManager;
+    console.log('[AgentFramework] Hook Manager initialized');
+    
+    // Register default hooks
+    registerDefaultHooks();
+  }
+  
+  // Initialize Skill Evaluator
+  if (window.MAVSkillEvaluator) {
+    skillEvaluatorInstance = window.MAVSkillEvaluator.skillEvaluator;
+    
+    // Set SKILLS reference
+    if (window.MAVSkills?.SKILLS) {
+      skillEvaluatorInstance.setSkills(window.MAVSkills.SKILLS);
+      console.log('[AgentFramework] Skill Evaluator initialized with', 
+                  Object.keys(window.MAVSkills.SKILLS).length, 'skills');
+    }
+    
+    // Try to load skill-rules.json
+    loadSkillRules();
+  }
   
   // Initialize Orchestrator
   if (window.MAVOrchestrator) {
@@ -7348,6 +7788,108 @@ function initAgentFramework() {
   if (window.MAVTools && !window.MAVTools.toolRegistry.has('query_council')) {
     registerAgentTools();
   }
+}
+
+/**
+ * Load skill-rules.json configuration
+ */
+async function loadSkillRules() {
+  try {
+    const response = await fetch('./skill-rules.json');
+    if (response.ok) {
+      const rules = await response.json();
+      if (skillEvaluatorInstance) {
+        skillEvaluatorInstance.loadRules(rules);
+        console.log('[AgentFramework] Skill rules loaded');
+      }
+    }
+  } catch (err) {
+    console.warn('[AgentFramework] Could not load skill-rules.json:', err.message);
+  }
+}
+
+/**
+ * Register default hooks for AI Council
+ */
+function registerDefaultHooks() {
+  const hookManager = hookManagerInstance;
+  if (!hookManager) return;
+  
+  const EVENTS = window.MAVHooks.HOOK_EVENTS;
+  const DefaultHooks = window.MAVHooks.DefaultHooks;
+  
+  console.log('[AgentFramework] Registering default hooks...');
+  
+  // 1. peer_review 後自動 promote winner 為 Chairman
+  hookManager.register(EVENTS.TOOL_AFTER, DefaultHooks.autoPromoteChairman(orchestratorInstance), {
+    id: 'default:auto-promote-chairman',
+    priority: 10
+  });
+  
+  // 2. web_search 前優化搜尋關鍵字
+  hookManager.register(EVENTS.TOOL_BEFORE, DefaultHooks.optimizeSearchQuery(), {
+    id: 'default:optimize-search-query',
+    priority: 5
+  });
+  
+  // 3. 流程結束後記錄統計
+  hookManager.register(EVENTS.COMPLETE, DefaultHooks.logCompletionStats(), {
+    id: 'default:log-completion-stats',
+    priority: 100
+  });
+  
+  // 4. Skill 啟用時記錄
+  hookManager.register(EVENTS.SKILL_ACTIVATE, DefaultHooks.logSkillActivation(), {
+    id: 'default:log-skill-activation',
+    priority: 10
+  });
+  
+  console.log('[AgentFramework] Default hooks registered:', hookManager.getStats());
+}
+
+/**
+ * Select skill using SkillEvaluator (score-based) or fallback to original method
+ * @param {string} query - User query
+ * @param {Object} context - Context with items, visionMode, etc.
+ * @param {Object} settings - App settings
+ * @returns {Object} Selected skill
+ */
+function selectSkillWithScoring(query, context = {}, settings = {}) {
+  // Try score-based evaluation first
+  if (skillEvaluatorInstance) {
+    const skill = skillEvaluatorInstance.selectBest(
+      query,
+      context,
+      settings,
+      window.MAVSkills?.SKILLS?.quickAnswer // default fallback
+    );
+    
+    if (skill) {
+      // Trigger skill:activate hook
+      if (hookManagerInstance) {
+        const EVENTS = window.MAVHooks?.HOOK_EVENTS;
+        const matchedResults = skillEvaluatorInstance.evaluate(query, context, settings);
+        const score = matchedResults.find(r => r.skill.id === skill.id)?.score;
+        
+        hookManagerInstance.trigger(EVENTS.SKILL_ACTIVATE, {
+          skill,
+          query,
+          score,
+          context,
+          settings
+        });
+      }
+      
+      return skill;
+    }
+  }
+  
+  // Fallback to original skill selector
+  if (window.MAVSkills?.skillSelector) {
+    return window.MAVSkills.skillSelector.select(query, settings);
+  }
+  
+  return window.MAVSkills?.SKILLS?.quickAnswer || null;
 }
 
 /**
@@ -7493,6 +8035,125 @@ function registerAgentTools() {
     };
   });
   
+  // google_search_tab - Google search in visible tab with user's login state
+  toolRegistry.register('google_search_tab', async (params, context) => {
+    const { query, count = 10 } = params;
+    
+    console.log('[Tool:google_search_tab] Opening Google search for:', query);
+    
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        { type: 'GOOGLE_SEARCH_TAB', query, options: { count } },
+        response => {
+          if (response?.error && (!response.results || response.results.length === 0)) {
+            console.error('[Tool:google_search_tab] Error:', response.error);
+            reject(new Error(response.error));
+            return;
+          }
+          
+          const results = response?.results || [];
+          console.log('[Tool:google_search_tab] Got', results.length, 'results');
+          
+          // Add search results to UI contextItems
+          if (results.length > 0) {
+            const searchContent = results.slice(0, 5).map((r, i) => 
+              `[${i+1}] ${r.title}\n來源: ${r.url}\n${r.description || ''}`
+            ).join('\n\n');
+            
+            addContextItem({
+              title: `Google 搜尋: ${query.slice(0, 30)}${query.length > 30 ? '...' : ''}`,
+              content: searchContent,
+              url: response?.searchUrl || '',
+              type: 'search',
+              urlsWithStatus: results.slice(0, 5).map((r, i) => ({ 
+                index: i + 1, 
+                url: r.url, 
+                title: r.title, 
+                fetched: false, 
+                status: 'pending' 
+              }))
+            });
+            console.log('[Tool:google_search_tab] Added to contextItems');
+          }
+          
+          resolve({
+            query,
+            results,
+            resultCount: results.length,
+            tabId: response?.tabId,
+            searchUrl: response?.searchUrl,
+            source: 'google_personalized'
+          });
+        }
+      );
+    });
+  });
+  
+  // price_compare - 電商比價工具
+  toolRegistry.register('price_compare', async (params, context) => {
+    const { query, platforms = ['momo', 'pchome'], count = 5 } = params;
+    
+    console.log('[Tool:price_compare] Comparing prices for:', query, 'on platforms:', platforms);
+    
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        { type: 'ECOMMERCE_SEARCH_TAB', query, platforms, options: { count } },
+        response => {
+          if (response?.error) {
+            console.error('[Tool:price_compare] Error:', response.error);
+            reject(new Error(response.error));
+            return;
+          }
+          
+          console.log('[Tool:price_compare] Results:', response);
+          
+          // 整理比價結果加入 contextItems
+          const platformResults = response?.results || {};
+          let contextContent = `## 比價結果：${query}\n\n`;
+          
+          for (const [platformId, data] of Object.entries(platformResults)) {
+            contextContent += `### ${data.platform}\n`;
+            if (data.items && data.items.length > 0) {
+              data.items.slice(0, 5).forEach((item, i) => {
+                const priceStr = item.price ? `$${item.price.toLocaleString()}` : '價格未知';
+                const discountStr = item.discount ? ` (-${item.discount}%)` : '';
+                contextContent += `${i+1}. ${item.title.slice(0, 50)}${item.title.length > 50 ? '...' : ''}\n`;
+                contextContent += `   ${priceStr}${discountStr}\n`;
+              });
+            } else {
+              contextContent += `   (無結果)\n`;
+            }
+            contextContent += '\n';
+          }
+          
+          // 加入最低價資訊
+          if (response?.cheapest) {
+            const c = response.cheapest;
+            contextContent += `### 💰 最低價\n`;
+            contextContent += `**${c.platformName}** - ${c.title.slice(0, 40)}...\n`;
+            contextContent += `**$${c.price.toLocaleString()}**\n`;
+          }
+          
+          addContextItem({
+            title: `比價: ${query.slice(0, 20)}${query.length > 20 ? '...' : ''} (${platforms.join(', ')})`,
+            content: contextContent,
+            url: '',
+            type: 'price_compare'
+          });
+          
+          resolve({
+            query,
+            platforms: response?.platforms || platforms,
+            results: platformResults,
+            cheapest: response?.cheapest,
+            tabIds: response?.tabIds,
+            errors: response?.errors
+          });
+        }
+      );
+    });
+  });
+  
   // peer_review - anonymous cross-evaluation
   toolRegistry.register('peer_review', async (params, context) => {
     // Get responses from context if not provided in params (planner may not pass them)
@@ -7551,7 +8212,7 @@ function registerAgentTools() {
       });
     });
     
-    return {
+    const result = {
       reviews: allReviews,
       aggregatedRanking,
       weightedRanking,
@@ -7559,6 +8220,13 @@ function registerAgentTools() {
       winner,
       evaluationMode
     };
+    
+    // Trigger tool:after hook for peer_review
+    if (window.MAVPlanner?.triggerToolAfterHook) {
+      await window.MAVPlanner.triggerToolAfterHook('peer_review', result, context);
+    }
+    
+    return result;
   });
   
   // synthesize - chairman synthesis
@@ -7581,6 +8249,11 @@ function registerAgentTools() {
     
     console.log('[Tool:synthesize] Chairman:', actualChairman);
     
+    // Trigger synthesize:before hook
+    if (window.MAVPlanner?.triggerSynthesizeBeforeHook) {
+      await window.MAVPlanner.triggerSynthesizeBeforeHook(params, context);
+    }
+    
     const content = await runChairman(
       query, 
       inputResponses, 
@@ -7590,22 +8263,41 @@ function registerAgentTools() {
       searchResults
     );
     
-    return {
+    const result = {
       content,
       chairmanModel: actualChairman,
       winner: inputReviews?.winner || null
     };
+    
+    // Trigger tool:after hook for synthesize
+    if (window.MAVPlanner?.triggerToolAfterHook) {
+      await window.MAVPlanner.triggerToolAfterHook('synthesize', result, context);
+    }
+    
+    return result;
   });
   
   // final_answer - output result
   toolRegistry.register('final_answer', async (params, context) => {
     const { content, summary } = params;
     console.log('[Tool:final_answer] Returning final answer');
-    return {
+    
+    const result = {
       content,
       summary: summary || content?.slice(0, 100) + '...',
       completed: true
     };
+    
+    // Trigger complete hook
+    if (window.MAVPlanner?.triggerCompleteHook) {
+      await window.MAVPlanner.triggerCompleteHook(
+        context?.query || '',
+        content,
+        context
+      );
+    }
+    
+    return result;
   });
   
   // request_user_input - breakpoint for user interaction
@@ -7805,28 +8497,42 @@ function registerAgentTools() {
 
 /**
  * Get current skill based on query
- * Now uses the unified skill selector with priority: user selection > detected
+ * Now uses score-based skill evaluation with SkillEvaluator
+ * Priority: user selection > score-based detection > legacy detection
  */
 function getCurrentSkillForQuery(query) {
-  // Use the unified resolveActiveSkill function
+  // Use the unified resolveActiveSkill function for user selection
   const { skill, source } = resolveActiveSkill();
   
-  if (skill) {
-    console.log('[AgentFramework] Selected skill:', skill.id, skill.name, '(source:', source + ')');
+  if (skill && source === 'user') {
+    console.log('[AgentFramework] User selected skill:', skill.id, skill.name);
     return skill;
   }
   
-  // Fallback to direct detection if resolveActiveSkill didn't find anything
-  const selector = window.MAVSkills?.skillSelector;
-  if (!selector) {
-    console.warn('[AgentFramework] SkillSelector not available');
-    return null;
-  }
+  // Build context for evaluation
+  const context = {
+    items: contextItems || [],
+    visionMode: visionMode
+  };
   
   const settings = {
     visionMode: visionMode,
     learnerMode: learnerMode
   };
+  
+  // Try score-based evaluation first
+  const scoredSkill = selectSkillWithScoring(query, context, settings);
+  if (scoredSkill) {
+    console.log('[AgentFramework] Score-selected skill:', scoredSkill.id, scoredSkill.name);
+    return scoredSkill;
+  }
+  
+  // Fallback to direct detection if score-based didn't find anything
+  const selector = window.MAVSkills?.skillSelector;
+  if (!selector) {
+    console.warn('[AgentFramework] SkillSelector not available');
+    return null;
+  }
   
   const detected = selector.select(query, settings);
   console.log('[AgentFramework] Fallback detected skill:', detected?.id, detected?.name);
@@ -8201,7 +8907,7 @@ async function handleSend() {
     
     // 防止同一張卡片重複執行
     if (cardExecutionState.get(activeCard.id)?.isRunning) {
-      showToast('此卡片正在執行中，請等待完成或切換至其他卡片');
+      showToast(t('messages.cardRunning'));
       return;
     }
     
@@ -8231,7 +8937,7 @@ async function handleSend() {
   updateSearchIterationCounter();
 
   sendBtn.disabled = true;
-  sendBtn.innerHTML = '<span class="spinner"></span><span>Council 執行中...</span>';
+  sendBtn.innerHTML = `<span class="spinner"></span><span>${t('sidepanel.stageCouncilRunning')}</span>`;
   emptyState.classList.add('hidden');
   errorBanner.classList.add('hidden');
   exportBtn.style.display = 'none';
@@ -8286,6 +8992,8 @@ async function handleSend() {
           activeCard.finalAnswer = finalAnswerContent;
           activeCard.timestamp = Date.now();
           activeCard.chairmanModel = chairmanModel;
+          activeCard.skillId = currentSkill?.id || null;  // 保存 skillId 供切換回來時恢復 suggested actions
+          activeCard.searchQueries = currentSearchQueries.slice();  // 保存搜尋建議
           
           console.log('[AgentFramework] Updated card:', activeCard.id, 'hasAnswer:', !!activeCard.finalAnswer);
           
@@ -8305,6 +9013,20 @@ async function handleSend() {
           updateBreadcrumb(activeCard.id);
           updateSiblingCards();
           renderCarousel();
+        }
+        
+        // Sync currentConversation for export and other features
+        if (activeCard) {
+          currentConversation = {
+            id: activeCard.id,
+            query: activeCard.query,
+            responses: activeCard.responses || savedResponses,
+            finalAnswer: activeCard.finalAnswer || finalAnswerContent,
+            chairmanModel: activeCard.chairmanModel || chairmanModel,
+            timestamp: activeCard.timestamp || Date.now(),
+            contextItemsSnapshot: JSON.parse(JSON.stringify(contextItems))
+          };
+          console.log('[AgentFramework] Synced currentConversation from activeCard');
         }
         
         // Show branch actions and export button
@@ -8338,7 +9060,7 @@ async function handleSend() {
         .map(([model, r]) => ({ model, content: r.content, latency: r.latency }));
 
       savedResponses = successfulResponses;
-      stage1Status.textContent = `${successfulResponses.length}/${councilModels.length} 完成`;
+      stage1Status.textContent = t('sidepanel.modelsCompleted', { done: successfulResponses.length, total: councilModels.length });
       stage1Status.classList.remove('loading');
       stage1Status.classList.add('done');
       
@@ -8363,11 +9085,11 @@ async function handleSend() {
         // Update stepper: Stage 2 active
         setStepActive(2);
         
-        stage2Status.textContent = '審查中...';
+        stage2Status.textContent = t('sidepanel.stageReviewing');
         stage2Status.classList.add('loading');
         document.getElementById('stage2Content').classList.add('expanded');
 
-        reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">模型正在互相審查...</span></div>`;
+        reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">${t('sidepanel.reviewInProgress')}</span></div>`;
 
         await Promise.allSettled(councilModels.map(model => runReview(model, query, successfulResponses)));
 
@@ -8389,7 +9111,7 @@ async function handleSend() {
       } else {
         stage2Section.classList.add('stage-skipped');
         stage2Status.textContent = t('sidepanel.stageSkipped');
-        reviewResults.innerHTML = '<div class="skipped-message">互評審查已停用</div>';
+        reviewResults.innerHTML = `<div class="skipped-message">${t('sidepanel.reviewDisabled')}</div>`;
         
         // Update stepper: Stage 2 skipped
         setStepSkipped(2);
@@ -8406,7 +9128,7 @@ async function handleSend() {
         
         if (userAction.action === 'search' && userAction.queries.length > 0) {
           // Execute search
-          stage25Status.textContent = '搜尋中...';
+          stage25Status.textContent = t('sidepanel.stageSearching');
           stage25Status.className = 'stage-status loading';
           
           try {
@@ -8433,9 +9155,9 @@ async function handleSend() {
             }
           } catch (searchErr) {
             console.error('Search failed:', searchErr);
-            stage25Status.textContent = '搜尋失敗';
+            stage25Status.textContent = t('sidepanel.stageFailed');
             stage25Status.className = 'stage-status error';
-            showToast('搜尋失敗，將繼續生成結論', true);
+            showToast(t('messages.searchWillContinue'), true);
           }
         } else {
           // User skipped search
@@ -8457,7 +9179,7 @@ async function handleSend() {
       // Update Stage 3 summary
       updateStage3Summary(actualChairman);
       
-      stage3Status.textContent = '彙整中...';
+      stage3Status.textContent = t('sidepanel.stageSynthesizing');
       stage3Status.classList.add('loading');
       document.getElementById('stage3Content').classList.add('expanded');
 
@@ -8522,7 +9244,7 @@ async function handleSend() {
 
       exportBtn.style.display = 'flex';
     } catch (err) {
-      stage3Status.textContent = '失敗';
+      stage3Status.textContent = t('sidepanel.stageFailed');
       stage3Status.classList.remove('loading');
       stage3Status.classList.add('error');
       showToast(`主席彙整失敗: ${err.message}`, true);
@@ -8569,7 +9291,7 @@ async function handleSend() {
       promptLoadingEl.remove();
       
       if (!aiResult.success) {
-        showToast('AI Prompt 生成失敗，使用預設模式', true);
+        showToast(t('messages.aiPromptFailed'), true);
       } else if (aiResult.imageCount > 1) {
         showToast(`AI 識別到 ${aiResult.imageCount} 張圖片規劃`);
       }
@@ -8663,7 +9385,7 @@ async function handleSend() {
                   finalResult, 
                   onImageGenComplete, 
                   () => {
-                    showToast('已關閉圖像編輯器');
+                    showToast(t('messages.imageEditorClosed'));
                   },
                   () => {
                     // Back to style selection from multi-image editor
@@ -8676,12 +9398,12 @@ async function handleSend() {
                 startImageStyleSelection(result);
               },
               () => {
-                showToast('已取消圖像生成');
+                showToast(t('messages.imageCancelled'));
               }
             );
           },
           () => {
-            showToast('已取消圖像生成');
+            showToast(t('messages.imageCancelled'));
           }
         );
       };
@@ -8707,7 +9429,7 @@ async function handleSend() {
 function resetButton() {
   sendBtn.disabled = false;
   sendBtn.classList.remove('next-iteration');
-  sendBtn.innerHTML = '<span>送出</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
+  sendBtn.innerHTML = `<span>${t('sidepanel.send')}</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>`;
 }
 
 // 同步卡片設定到 UI toggles
@@ -8813,11 +9535,11 @@ function updateSendButtonForCurrentCard() {
   
   if (isRunning) {
     sendBtn.disabled = true;
-    sendBtn.innerHTML = '<span class="spinner"></span><span>此卡片執行中...</span>';
+    sendBtn.innerHTML = `<span class="spinner"></span><span>${t('sidepanel.stageCardRunning')}</span>`;
   } else {
     // 此卡片未執行，啟用按鈕
     sendBtn.disabled = false;
-    sendBtn.innerHTML = '<span>送出</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>';
+    sendBtn.innerHTML = `<span>${t('sidepanel.send')}</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>`;
   }
 }
 
@@ -8869,7 +9591,7 @@ function updateTabStatus(model, status) {
 // Retry a failed query for a specific model
 async function retryQuery(model) {
   if (!currentQuery) {
-    showToast('無法重試：找不到原始查詢', true);
+    showToast(t('messages.retryFailed'), true);
     return;
   }
   
@@ -8920,13 +9642,13 @@ function finalizeResponse(model, content, latency) {
     try {
       await navigator.clipboard.writeText(text);
       btn.classList.add('copied');
-      btn.querySelector('span').textContent = '已複製！';
+      btn.querySelector('span').textContent = t('sidepanel.copiedBrief');
       setTimeout(() => {
         btn.classList.remove('copied');
-        btn.querySelector('span').textContent = '複製';
+        btn.querySelector('span').textContent = t('sidepanel.copy');
       }, 1500);
     } catch (err) {
-      showToast('複製失敗', true);
+      showToast(t('messages.copyFailed'), true);
     }
   });
 }
@@ -8946,11 +9668,11 @@ async function queryModel(model, query) {
   const contentEl = document.getElementById(`content-${cssEscape(model)}`);
   
   if (shouldGenerateImage) {
-    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">使用 ${getModelName(model)} 生成圖片中...</span></div><div class="image-generating"><div class="spinner-large"></div><span>建立視覺內容中...</span></div>`;
+    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">${t('sidepanel.generatingImage', { model: getModelName(model) })}</span></div><div class="image-generating"><div class="spinner-large"></div><span>${t('sidepanel.creatingVisual')}</span></div>`;
   } else if (isVisionQuery) {
-    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">使用 ${getModelName(model)} 分析圖片...</span></div><div class="vision-stage-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>Vision 分析中</div>`;
+    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">${t('sidepanel.analyzingImage', { model: getModelName(model) })}</span></div><div class="vision-stage-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>${t('sidepanel.visionAnalyzing')}</div>`;
   } else {
-    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">連線至 ${getModelName(model)}...</span></div>`;
+    if (contentEl) contentEl.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">${t('sidepanel.connectingModel', { model: getModelName(model) })}</span></div>`;
   }
 
   try {
@@ -9169,7 +9891,7 @@ function aggregateRankings(allResponses) {
 }
 
 function renderReviewResults(ranking) {
-  if (!ranking || ranking.length === 0) { reviewResults.innerHTML = '<div class="skipped-message">無審查資料</div>'; return; }
+  if (!ranking || ranking.length === 0) { reviewResults.innerHTML = `<div class="skipped-message">${t('sidepanel.reviewNoData')}</div>`; return; }
   const rankingHtml = ranking.map((r, i) => `<div class="ranking-item rank-${i + 1}"><span class="rank-badge">${i + 1}</span><span class="ranking-model">${getModelName(r.model)}</span><span class="ranking-score">${r.avgRank.toFixed(1)}</span></div>`).join('');
   const reasons = [];
   reviews.forEach((rankings, reviewer) => { rankings.forEach(r => { if (r.reason) reasons.push({ reviewer: getModelName(reviewer), model: getModelName(r.model), reason: r.reason }); }); });
@@ -9218,7 +9940,7 @@ function renderReviewResults(ranking) {
       if (!failureInfo) return;
       
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span> 重試中...';
+      btn.innerHTML = `<span class="spinner" style="width:12px;height:12px"></span> ${t('sidepanel.stageRetrying')}`;
       
       await runReview(model, failureInfo.query, failureInfo.allResponses);
       
@@ -9369,7 +10091,7 @@ async function runChairman(query, allResponses, aggregatedRanking, withSearchMod
     // 只有當前顯示的卡片才更新 UI
     const isCurrentCard = !executingCardId || executingCardId === sessionState.currentCardId;
     if (isCurrentCard && finalAnswer) {
-      finalAnswer.innerHTML = `<div class="error-state"><p>主席彙整失敗: ${escapeHtml(err.message)}</p></div>`;
+      finalAnswer.innerHTML = `<div class="error-state"><p>${t('sidepanel.chairmanFailed', { error: escapeHtml(err.message) })}</p></div>`;
     }
     throw err;
   }
@@ -11068,13 +11790,13 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
         const prompt = textarea.value.trim();
         
         if (!prompt) {
-          showToast('請先輸入 Prompt 再進行潤色', true);
+          showToast(t('messages.enterPromptFirst'), true);
           return;
         }
         
         // Update UI to refining state
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span> 潤色中...';
+        btn.innerHTML = `<span class="spinner" style="width:12px;height:12px"></span> ${t('sidepanel.stageRefining')}`;
         
         try {
           const consistencyBlock = multiImageState.consistencyBlock?.trim() || '';
@@ -11084,10 +11806,10 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
           textarea.value = refinedPrompt;
           multiImageState.images[idx].basePrompt = refinedPrompt;
           
-          showToast('Prompt 已精煉完成');
+          showToast(t('messages.promptRefined'));
         } catch (err) {
           console.error('Refine failed:', err);
-          showToast('潤色失敗：' + err.message, true);
+          showToast(t('messages.refineFailed', { error: err.message }), true);
         } finally {
           // Reset button
           btn.disabled = false;
@@ -11108,7 +11830,7 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
       let prompt = textarea.value.trim();
       
       if (!prompt) {
-        showToast('請先輸入或編輯 Prompt', true);
+        showToast(t('messages.editPromptFirst'), true);
         return;
       }
       
@@ -11121,9 +11843,9 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
       // Update UI to generating state
       card.dataset.status = 'generating';
       card.querySelector('.status-badge').className = 'status-badge generating';
-      card.querySelector('.status-badge').textContent = '生成中...';
+      card.querySelector('.status-badge').textContent = t('sidepanel.stageGenerating');
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner" style="width:14px;height:14px"></span> 生成中...';
+      btn.innerHTML = `<span class="spinner" style="width:14px;height:14px"></span> ${t('sidepanel.stageGenerating')}`;
       
       try {
         const generatedImages = await runImageGeneration(prompt);
@@ -11163,8 +11885,8 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
           // Update UI
           card.dataset.status = 'done';
           card.querySelector('.status-badge').className = 'status-badge done';
-          card.querySelector('.status-badge').textContent = '完成';
-          btn.innerHTML = '✓ 已生成';
+          card.querySelector('.status-badge').textContent = t('sidepanel.stageComplete');
+          btn.innerHTML = `✓ ${t('sidepanel.stageComplete')}`;
           btn.classList.add('completed');
           
           // Show generated image
@@ -11237,7 +11959,7 @@ function showMultiImageEditor(aiResult, onAllComplete, onCancel, onBackToStyleSe
         
         card.dataset.status = 'error';
         card.querySelector('.status-badge').className = 'status-badge error';
-        card.querySelector('.status-badge').textContent = '失敗';
+        card.querySelector('.status-badge').textContent = t('sidepanel.stageFailed');
         btn.disabled = false;
         btn.innerHTML = `
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

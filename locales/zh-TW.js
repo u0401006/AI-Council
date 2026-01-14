@@ -125,7 +125,15 @@ window.LOCALE_ZH_TW = {
     statusMinModels: '請選擇至少 2 個模型',
     statusPromptsReset: '提示詞已重設為預設',
     statusModelsUpdated: '成功更新 {count} 個模型',
-    statusModelsUpdateFailed: '更新失敗: {error}'
+    statusModelsUpdateFailed: '更新失敗: {error}',
+    
+    // Skills
+    skillDeleted: '技能已刪除',
+    enterSkillPath: '請輸入技能路徑',
+    importingSkill: '匯入中...',
+    confirmDeleteSkill: '確定要刪除技能 "{skillId}"？',
+    invalidSkillFormat: '無效的 SKILL.md 格式',
+    invalidGitHubPath: '無效的 GitHub 路徑格式'
   },
   
   // Sidepanel
@@ -147,7 +155,7 @@ window.LOCALE_ZH_TW = {
     backToRoot: '回到根卡片',
     depthLabel: '深度: {depth}',
     cardCount: '{count} 張卡片',
-    viewInCanvas: '在畫布中檢視任務樹',
+    viewInCanvas: '在筆記中檢視任務樹',
     
     // Context Section
     contextTitle: '參考',
@@ -216,11 +224,18 @@ window.LOCALE_ZH_TW = {
     branchSearch: '延伸搜尋',
     branchImage: '生成圖片',
     branchVision: 'Vision 分析',
-    branchCanvas: '開啟畫布',
+    branchCanvas: '做筆記',
     
-    // Canvas Section
-    openInCanvas: '在畫布中開啟',
-    canvasDesc: '編輯與調整回應內容',
+    // Notes Section (formerly Canvas)
+    openInCanvas: '做筆記',
+    canvasDesc: '編輯與延伸內容',
+    
+    // Image Description Modal
+    imageDescTitle: '圖片生成',
+    imageDescHint: '描述您想要生成的圖片內容：',
+    imageDescPlaceholder: '例如：一隻在星空下奔跑的狼，極光照亮雪地...',
+    summarizeContent: '從對話摘要',
+    startImageGen: '開始生成',
     openInTab: '在新分頁開啟',
     openInWindow: '在獨立視窗開啟',
     
@@ -268,13 +283,97 @@ window.LOCALE_ZH_TW = {
     webSearchTitle: '網路搜尋',
     webSearchHint: '輸入關鍵字搜尋網路資料，結果將加入參考資料：',
     webSearchPlaceholder: '輸入搜尋關鍵字...',
-    searchPreparing: '準備搜尋中...'
+    searchPreparing: '準備搜尋中...',
+    
+    // Skills
+    noSkillsFound: '找不到符合的技能',
+    skillSourceAuto: '自動',
+    skillSourceSelected: '已選',
+    
+    // Stage Status
+    stagePreparing: '準備中...',
+    stageSearching: '搜尋中...',
+    stageReviewing: '審查中...',
+    stageSynthesizing: '彙整中...',
+    stageCouncilRunning: 'Council 執行中...',
+    stageCardRunning: '此卡片執行中...',
+    stageFailed: '失敗',
+    stageGenerating: '生成中...',
+    stageRefining: '潤色中...',
+    stageRetrying: '重試中...',
+    stageSummarizing: '摘要中...',
+    
+    // Review
+    reviewInProgress: '模型正在互相審查...',
+    reviewDisabled: '互評審查已停用',
+    reviewNoData: '無審查資料',
+    chairmanFailed: '主席彙整失敗：{error}',
+    
+    // AI Loading
+    generatingImage: '使用 {model} 生成圖片中...',
+    analyzingImage: '使用 {model} 分析圖片...',
+    connectingModel: '連線至 {model}...',
+    visionAnalyzing: 'Vision 分析中',
+    creatingVisual: '建立視覺內容中...',
+    generatingNext: '生成中...',
+    startNextRound: '開始下一輪',
+    
+    // Actions
+    download: '下載',
+    copy: '複製',
+    copiedBrief: '已複製！',
+    analyze: '分析',
+    
+    // Labels
+    chairmanLabel: '主席',
+    send: '送出',
+    generateImage: '生成圖片',
+    
+    // Summary
+    completed: '完成',
+    extendSearch: '延伸搜尋',
+    webSearchContext: '網路搜尋',
+    braveKeyNeeded: '需要設定 Brave Search API 金鑰',
+    
+    // Task Types
+    taskSearch: '搜尋',
+    taskImage: '製圖',
+    taskVision: '視覺',
+    taskExplore: '探索',
+    taskVerify: '驗證',
+    taskApply: '試試看',
+    taskConnect: '連結',
+    
+    // Branch Actions Labels
+    analyzeImageLabel: '分析圖片',
+    takeNotesLabel: '做筆記',
+    generateImageLabel: '生成圖像',
+    
+    // Suggested Actions
+    suggestedActions: '建議下一步',
+    quickInputPlaceholder: '進一步提問...',
+    
+    // UI Actions
+    proceed: '繼續',
+    cancelAction: '取消',
+    processing: '處理中...',
+    responding: '回應中...',
+    justNow: '剛剛',
+    expanded: '已展開',
+    pending: '待處理',
+    minutesAgo: '{n}分鐘前',
+    hoursAgo: '{n}小時前',
+    
+    // Misc UI
+    characters: '字元',
+    iterationQuerying: '迭代 {n}: 查詢中...',
+    modelsCompleted: '{done}/{total} 完成'
   },
   
-  // Canvas
+  // Notes (formerly Canvas)
   canvas: {
-    pageTitle: 'AI Council 畫布',
-    title: '畫布',
+    pageTitle: 'AI Council 筆記',
+    title: '筆記',
     untitled: '未命名',
     saved: '已儲存',
     saving: '儲存中...',
@@ -332,7 +431,20 @@ window.LOCALE_ZH_TW = {
     langZhCN: '简体中文',
     langEn: 'English',
     langJa: '日本語',
-    langKo: '한국어'
+    langKo: '한국어',
+    
+    // AI Prompt Modal
+    selectedText: '選取的文字',
+    customInstructions: '額外指示',
+    customInstructionsPlaceholder: '（選填）例如：使用更正式的語氣、避免使用被動語態...',
+    execute: '執行',
+    
+    // Global Chat Bar
+    globalChatPlaceholder: '基於全文提問...',
+    sendQuestion: '送出問題',
+    aiResponse: 'AI 回應',
+    insertToEditor: '插入編輯器',
+    copyResponse: '複製回應'
   },
   
   // Toast/Status Messages
@@ -347,6 +459,12 @@ window.LOCALE_ZH_TW = {
     pageCaptured: '已擷取頁面內容',
     selectionCaptured: '已擷取選取內容',
     pasted: '已貼上內容',
+    selectionCaptureFailed: '擷取選取內容失敗：{error}',
+    noContextToClear: '沒有參考資料可清除',
+    contextCleared: '已清除所有參考資料',
+    contextUpgraded: '已升級為 Session 級參考資料',
+    noCardContextToClear: '此卡片沒有 Card 級資料可清除（Session 級資料需在根卡片清除）',
+    noContextInConversation: '此對話無參考資料',
     
     // Errors
     noActiveTab: '找不到使用中的分頁',
@@ -360,6 +478,13 @@ window.LOCALE_ZH_TW = {
     noResults: '找不到相關結果',
     captureFailed: '擷取失敗：{error}',
     pasteFailed: '貼上失敗：{error}',
+    executionFailed: '執行失敗：{error}',
+    saveFailed: '儲存失敗：{error}',
+    deleteFailed: '刪除失敗：{error}',
+    loadFailed: '載入失敗：{error}',
+    clearFailed: '清除失敗：{error}',
+    copyFailed: '複製失敗',
+    retryFailed: '無法重試：找不到原始查詢',
     
     // Search
     searching: '正在搜尋「{keyword}」...',
@@ -367,6 +492,9 @@ window.LOCALE_ZH_TW = {
     searchResultsAdded: '已加入搜尋結果，正在執行 Council...',
     searchCancelled: '已取消延伸搜尋',
     maxIterationsReached: '已達搜尋次數上限',
+    searchWillContinue: '搜尋失敗，將繼續生成結論',
+    enterSearchKeyword: '請選擇或輸入延伸搜尋關鍵字',
+    enterCustomKeyword: '請輸入自訂關鍵字進行延伸搜尋',
     
     // Tasks
     taskExists: '已存在相同的待辦任務',
@@ -386,6 +514,49 @@ window.LOCALE_ZH_TW = {
     suggestionsGenerated: '已生成建議問題，可自行修改後送出',
     suggestionsFailed: '建議生成失敗，已使用預設模板',
     projectNameFailed: '專案名稱生成失敗（{error}），使用預設名稱',
+    aiPromptFailed: 'AI Prompt 生成失敗，使用預設模式',
+    councilMinModels: 'Council 需要至少 2 個模型成功回應',
+    
+    // Image
+    noConversationToSummarize: '尚無對話內容可供摘要',
+    summaryGenerated: '已生成圖片描述摘要',
+    summaryFailed: '摘要生成失敗',
+    minDescriptionLength: '請輸入至少 5 個字的描述',
+    imageEditorClosed: '已關閉圖像編輯器',
+    imageCancelled: '已取消圖像生成',
+    imageGenFailed: '圖片生成失敗：{error}',
+    invalidImageFile: '請上傳有效的圖片檔案',
+    imageSizeLimit: '圖片大小超過 20MB 限制',
+    imageDataFailed: '無法取得圖片資料',
+    imageLoaded: '已載入圖片，請輸入分析問題後送出',
+    imageLoadFailed: '圖片載入失敗',
+    imageDownloaded: '已下載圖片',
+    imageCopied: '已複製圖片',
+    imageCopyFailed: '複製圖片失敗',
+    uploadImageForAnalysis: '請上傳要分析的圖片',
+    
+    // History & Export
+    newConversationStarted: '已開始新對話',
+    newRootCardReady: '已準備新增 Root 卡片',
+    recordDeleted: '已刪除紀錄',
+    storageFull: '儲存失敗：空間不足',
+    autoCleanedOldRecords: '儲存空間不足，已自動清理舊紀錄',
+    projectLoaded: '已載入專案',
+    historyCleared: '已清除歷史紀錄',
+    noConversationToExport: '尚無對話可匯出',
+    exportedMarkdown: '已匯出 Markdown',
+    exportedJson: '已匯出 JSON',
+    copiedToClipboard: '已複製到剪貼簿',
+    noHistoryYet: '尚無歷史紀錄',
+    
+    // Prompt
+    enterPromptFirst: '請先輸入 Prompt 再進行潤色',
+    promptRefined: 'Prompt 已精煉完成',
+    refineFailed: '潤色失敗：{error}',
+    editPromptFirst: '請先輸入或編輯 Prompt',
+    
+    // Card Status
+    cardRunning: '此卡片正在執行中，請等待完成或切換至其他卡片',
     
     // Storage
     storageWarning: '儲存空間已使用 {percent}% ({used}/{total} MB)，建議清理歷史紀錄',

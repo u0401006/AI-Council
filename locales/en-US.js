@@ -125,7 +125,15 @@ window.LOCALE_EN_US = {
     statusMinModels: 'Please select at least 2 models',
     statusPromptsReset: 'Prompts reset to default',
     statusModelsUpdated: 'Successfully updated {count} models',
-    statusModelsUpdateFailed: 'Update failed: {error}'
+    statusModelsUpdateFailed: 'Update failed: {error}',
+    
+    // Skills
+    skillDeleted: 'Skill deleted',
+    enterSkillPath: 'Please enter skill path',
+    importingSkill: 'Importing...',
+    confirmDeleteSkill: 'Are you sure you want to delete skill "{skillId}"?',
+    invalidSkillFormat: 'Invalid SKILL.md format',
+    invalidGitHubPath: 'Invalid GitHub path format'
   },
   
   // Sidepanel
@@ -147,7 +155,7 @@ window.LOCALE_EN_US = {
     backToRoot: 'Back to root card',
     depthLabel: 'Depth: {depth}',
     cardCount: '{count} cards',
-    viewInCanvas: 'View task tree in canvas',
+    viewInCanvas: 'View task tree in notes',
     
     // Context Section
     contextTitle: 'Context',
@@ -216,11 +224,18 @@ window.LOCALE_EN_US = {
     branchSearch: 'Extended Search',
     branchImage: 'Generate Image',
     branchVision: 'Vision Analysis',
-    branchCanvas: 'Open Canvas',
+    branchCanvas: 'Take Notes',
     
-    // Canvas Section
-    openInCanvas: 'Open in Canvas',
-    canvasDesc: 'Edit and adjust response content',
+    // Notes Section (formerly Canvas)
+    openInCanvas: 'Take Notes',
+    canvasDesc: 'Edit and extend content',
+    
+    // Image Description Modal
+    imageDescTitle: 'Image Generation',
+    imageDescHint: 'Describe the image you want to generate:',
+    imageDescPlaceholder: 'e.g., A wolf running under a starry sky with aurora illuminating the snow...',
+    summarizeContent: 'Summarize from conversation',
+    startImageGen: 'Start Generation',
     openInTab: 'Open in new tab',
     openInWindow: 'Open in standalone window',
     
@@ -268,13 +283,97 @@ window.LOCALE_EN_US = {
     webSearchTitle: 'Web Search',
     webSearchHint: 'Enter keywords to search the web. Results will be added to context:',
     webSearchPlaceholder: 'Enter search keywords...',
-    searchPreparing: 'Preparing search...'
+    searchPreparing: 'Preparing search...',
+    
+    // Skills
+    noSkillsFound: 'No matching skills found',
+    skillSourceAuto: 'Auto',
+    skillSourceSelected: 'Selected',
+    
+    // Stage Status
+    stagePreparing: 'Preparing...',
+    stageSearching: 'Searching...',
+    stageReviewing: 'Reviewing...',
+    stageSynthesizing: 'Synthesizing...',
+    stageCouncilRunning: 'Council running...',
+    stageCardRunning: 'This card is running...',
+    stageFailed: 'Failed',
+    stageGenerating: 'Generating...',
+    stageRefining: 'Refining...',
+    stageRetrying: 'Retrying...',
+    stageSummarizing: 'Summarizing...',
+    
+    // Review
+    reviewInProgress: 'Models reviewing each other...',
+    reviewDisabled: 'Peer review disabled',
+    reviewNoData: 'No review data',
+    chairmanFailed: 'Chairman synthesis failed: {error}',
+    
+    // AI Loading
+    generatingImage: 'Generating image with {model}...',
+    analyzingImage: 'Analyzing image with {model}...',
+    connectingModel: 'Connecting to {model}...',
+    visionAnalyzing: 'Vision analyzing',
+    creatingVisual: 'Creating visual content...',
+    generatingNext: 'Generating...',
+    startNextRound: 'Start next round',
+    
+    // Actions
+    download: 'Download',
+    copy: 'Copy',
+    copiedBrief: 'Copied!',
+    analyze: 'Analyze',
+    
+    // Labels
+    chairmanLabel: 'Chairman',
+    send: 'Send',
+    generateImage: 'Generate Image',
+    
+    // Summary
+    completed: 'completed',
+    extendSearch: 'Extended Search',
+    webSearchContext: 'Web Search',
+    braveKeyNeeded: 'Brave Search API key required',
+    
+    // Task Types
+    taskSearch: 'Search',
+    taskImage: 'Image',
+    taskVision: 'Vision',
+    taskExplore: 'Explore',
+    taskVerify: 'Verify',
+    taskApply: 'Try it',
+    taskConnect: 'Connect',
+    
+    // Branch Actions Labels
+    analyzeImageLabel: 'Analyze Image',
+    takeNotesLabel: 'Take Notes',
+    generateImageLabel: 'Generate Image',
+    
+    // Suggested Actions
+    suggestedActions: 'Suggested Next Steps',
+    quickInputPlaceholder: 'Ask a follow-up question...',
+    
+    // UI Actions
+    proceed: 'Continue',
+    cancelAction: 'Cancel',
+    processing: 'Processing...',
+    responding: 'Responding...',
+    justNow: 'Just now',
+    expanded: 'Expanded',
+    pending: 'Pending',
+    minutesAgo: '{n} min ago',
+    hoursAgo: '{n} hr ago',
+    
+    // Misc UI
+    characters: 'characters',
+    iterationQuerying: 'Iteration {n}: Querying...',
+    modelsCompleted: '{done}/{total} completed'
   },
   
-  // Canvas
+  // Notes (formerly Canvas)
   canvas: {
-    pageTitle: 'AI Council Canvas',
-    title: 'Canvas',
+    pageTitle: 'AI Council Notes',
+    title: 'Notes',
     untitled: 'Untitled',
     saved: 'Saved',
     saving: 'Saving...',
@@ -332,7 +431,20 @@ window.LOCALE_EN_US = {
     langZhCN: '简体中文',
     langEn: 'English',
     langJa: '日本語',
-    langKo: '한국어'
+    langKo: '한국어',
+    
+    // AI Prompt Modal
+    selectedText: 'Selected Text',
+    customInstructions: 'Additional Instructions',
+    customInstructionsPlaceholder: '(Optional) e.g., Use a more formal tone, avoid passive voice...',
+    execute: 'Execute',
+    
+    // Global Chat Bar
+    globalChatPlaceholder: 'Ask about the document...',
+    sendQuestion: 'Send Question',
+    aiResponse: 'AI Response',
+    insertToEditor: 'Insert to Editor',
+    copyResponse: 'Copy Response'
   },
   
   // Toast/Status Messages
@@ -347,6 +459,12 @@ window.LOCALE_EN_US = {
     pageCaptured: 'Page content captured',
     selectionCaptured: 'Selection captured',
     pasted: 'Content pasted',
+    selectionCaptureFailed: 'Selection capture failed: {error}',
+    noContextToClear: 'No context to clear',
+    contextCleared: 'All context cleared',
+    contextUpgraded: 'Upgraded to session-level context',
+    noCardContextToClear: 'No card-level context to clear (session-level context can only be cleared from root card)',
+    noContextInConversation: 'No context in this conversation',
     
     // Errors
     noActiveTab: 'No active tab found',
@@ -360,6 +478,13 @@ window.LOCALE_EN_US = {
     noResults: 'No relevant results found',
     captureFailed: 'Capture failed: {error}',
     pasteFailed: 'Paste failed: {error}',
+    executionFailed: 'Execution failed: {error}',
+    saveFailed: 'Save failed: {error}',
+    deleteFailed: 'Delete failed: {error}',
+    loadFailed: 'Load failed: {error}',
+    clearFailed: 'Clear failed: {error}',
+    copyFailed: 'Copy failed',
+    retryFailed: 'Cannot retry: original query not found',
     
     // Search
     searching: 'Searching for "{keyword}"...',
@@ -367,6 +492,9 @@ window.LOCALE_EN_US = {
     searchResultsAdded: 'Search results added, running Council...',
     searchCancelled: 'Extended search cancelled',
     maxIterationsReached: 'Maximum search iterations reached',
+    searchWillContinue: 'Search failed, continuing to generate conclusion',
+    enterSearchKeyword: 'Please select or enter extended search keyword',
+    enterCustomKeyword: 'Enter custom keyword for extended search',
     
     // Tasks
     taskExists: 'Task already exists',
@@ -386,6 +514,49 @@ window.LOCALE_EN_US = {
     suggestionsGenerated: 'Suggestions generated, edit as needed and submit',
     suggestionsFailed: 'Suggestion generation failed, using default template',
     projectNameFailed: 'Project name generation failed ({error}), using default',
+    aiPromptFailed: 'AI prompt generation failed, using default mode',
+    councilMinModels: 'Council requires at least 2 models to respond successfully',
+    
+    // Image
+    noConversationToSummarize: 'No conversation content to summarize',
+    summaryGenerated: 'Image description summary generated',
+    summaryFailed: 'Summary generation failed',
+    minDescriptionLength: 'Please enter at least 5 characters for description',
+    imageEditorClosed: 'Image editor closed',
+    imageCancelled: 'Image generation cancelled',
+    imageGenFailed: 'Image generation failed: {error}',
+    invalidImageFile: 'Please upload a valid image file',
+    imageSizeLimit: 'Image size exceeds 20MB limit',
+    imageDataFailed: 'Failed to get image data',
+    imageLoaded: 'Image loaded, enter analysis question and submit',
+    imageLoadFailed: 'Image load failed',
+    imageDownloaded: 'Image downloaded',
+    imageCopied: 'Image copied',
+    imageCopyFailed: 'Failed to copy image',
+    uploadImageForAnalysis: 'Please upload an image for analysis',
+    
+    // History & Export
+    newConversationStarted: 'New conversation started',
+    newRootCardReady: 'Ready to add new root card',
+    recordDeleted: 'Record deleted',
+    storageFull: 'Save failed: storage full',
+    autoCleanedOldRecords: 'Storage full, old records auto-cleaned',
+    projectLoaded: 'Project loaded',
+    historyCleared: 'History cleared',
+    noConversationToExport: 'No conversation to export',
+    exportedMarkdown: 'Exported as Markdown',
+    exportedJson: 'Exported as JSON',
+    copiedToClipboard: 'Copied to clipboard',
+    noHistoryYet: 'No history yet',
+    
+    // Prompt
+    enterPromptFirst: 'Please enter a prompt before refining',
+    promptRefined: 'Prompt refined successfully',
+    refineFailed: 'Refine failed: {error}',
+    editPromptFirst: 'Please enter or edit prompt first',
+    
+    // Card Status
+    cardRunning: 'This card is running, please wait or switch to another card',
     
     // Storage
     storageWarning: 'Storage {percent}% used ({used}/{total} MB), consider clearing history',

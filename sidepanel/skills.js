@@ -1,6 +1,99 @@
 // ============================================
 // MAV Agent Framework - Skill System
+// Enhanced with scoring-based skill evaluation
 // ============================================
+
+/**
+ * 預設評分權重
+ */
+const SKILL_SCORING_WEIGHTS = {
+  keyword: 2,
+  keywordPattern: 3,
+  intentPattern: 4,
+  contextMatch: 5,
+  settingsMatch: 6,
+  visionMode: 8
+};
+
+/**
+ * 通用 evaluateScore 函數生成器
+ * @param {Object} scoring - skill 的 scoring 配置
+ * @returns {Function} evaluateScore 函數
+ */
+function createEvaluateScore(scoring) {
+  return function(query, context = {}, settings = {}) {
+    if (!scoring) return 0;
+    
+    let score = 0;
+    const queryLower = query.toLowerCase();
+    
+    // 關鍵字匹配
+    if (scoring.keywords) {
+      for (const kw of scoring.keywords) {
+        if (queryLower.includes(kw.toLowerCase())) {
+          score += SKILL_SCORING_WEIGHTS.keyword;
+        }
+      }
+    }
+    
+    // 正則匹配
+    if (scoring.keywordPatterns) {
+      for (const pattern of scoring.keywordPatterns) {
+        const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern, 'i');
+        if (regex.test(query)) {
+          score += SKILL_SCORING_WEIGHTS.keywordPattern;
+        }
+      }
+    }
+    
+    // 意圖匹配
+    if (scoring.intentPatterns) {
+      for (const pattern of scoring.intentPatterns) {
+        const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern, 'i');
+        if (regex.test(query)) {
+          score += SKILL_SCORING_WEIGHTS.intentPattern;
+          break; // 意圖只計一次
+        }
+      }
+    }
+    
+    // Context 來源匹配
+    if (scoring.contextPatterns && context?.items?.length > 0) {
+      const { urlContains = [], titleContains = [] } = scoring.contextPatterns;
+      
+      for (const item of context.items) {
+        const url = item.source || item.url || '';
+        const title = item.title || '';
+        
+        for (const pattern of urlContains) {
+          if (url.includes(pattern)) {
+            score += SKILL_SCORING_WEIGHTS.contextMatch;
+            break;
+          }
+        }
+        
+        for (const pattern of titleContains) {
+          if (title.includes(pattern)) {
+            score += SKILL_SCORING_WEIGHTS.contextMatch;
+            break;
+          }
+        }
+      }
+    }
+    
+    // 排除條件檢查
+    if (scoring.excludePatterns) {
+      for (const pattern of scoring.excludePatterns) {
+        const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern, 'i');
+        if (regex.test(query)) {
+          return 0; // 符合排除條件，分數歸零
+        }
+      }
+    }
+    
+    return score;
+  };
+}
 
 /**
  * Skill definitions for different query types
@@ -15,23 +108,36 @@ const SKILLS = {
     name: '研究分析者',
     description: '適用於需要深度研究、多方資料比對的問題',
     icon: '🔬',
+    priority: 9,
     
     // Category for UI grouping
     category: 'analysis',
+    
+    // Scoring configuration for evaluateScore
+    scoring: {
+      keywords: ['研究', '分析', '比較', '調查', '評估', '探討', '深入', '全面', '詳細'],
+      keywordPatterns: [/深入.*研究/, /詳細.*分析/, /全面.*比較/, /多方.*調查/],
+      intentPatterns: [/(?:需要|請|幫我).*(?:研究|分析|調查)/, /(?:深入|詳細).*(?:了解|探討)/],
+      contextPatterns: {
+        urlContains: ['arxiv.org', 'scholar.google', 'researchgate.net'],
+        titleContains: ['論文', '期刊', '研究報告']
+      },
+      excludePatterns: [/^.{0,20}$/, /簡單.*回答/] // 排除太短的問題
+    },
     
     // Side effects when this skill is selected
     sideEffects: {
       enableSearch: true
     },
     
-    // Trigger conditions
+    // Trigger conditions (legacy, kept for backward compatibility)
     trigger: (query, settings) => {
       const keywords = /研究|分析|比較|調查|評估|探討|深入|全面|詳細/;
       return keywords.test(query);
     },
     
     // Planner guidance
-    plannerHint: '這是一個研究型問題。優先使用 web_search 收集多方資料，再 query_council 進行分析比較，確保使用 peer_review 驗證分析品質。',
+    plannerHint: '這是一個研究型問題。優先使用 web_search 收集多方資料，再 query_council 進行分析比較，確保使用 peer_review 驗證分析品質。若涉及商品價格比較，可使用 price_compare 直接查詢電商平台。',
     
     // Skill instructions (injected into user prompt)
     instructions: `你正在處理一個研究分析型問題。請遵循以下指引：
@@ -40,10 +146,11 @@ const SKILLS = {
 2. **資料來源**：參考搜尋結果或已知資訊，進行交叉比對
 3. **多元觀點**：從不同角度分析問題，呈現各方觀點
 4. **結構化輸出**：使用標題、清單、表格等結構化格式呈現分析結果
-5. **標註來源**：引用資料時使用 [1]、[2] 等編號標註來源`,
+5. **標註來源**：引用資料時使用 [1]、[2] 等編號標註來源
+6. **價格比較**：若涉及商品比價，優先使用 price_compare 工具`,
     
     // Tool preferences
-    preferredTools: ['web_search', 'query_council', 'peer_review', 'synthesize'],
+    preferredTools: ['web_search', 'price_compare', 'query_council', 'peer_review', 'synthesize'],
     
     // Execution limits
     maxIterations: 8,
@@ -65,12 +172,30 @@ const SKILLS = {
     name: '教育引導者',
     description: '使用蘇格拉底式教學法，引導學習者自主探索',
     icon: '📚',
+    priority: 8,
     
     // Category for UI grouping
     category: 'quick',
     
+    // Scoring configuration
+    scoring: {
+      keywords: ['學習', '教我', '解釋', '理解', '入門', '基礎'],
+      keywordPatterns: [/教.*我/, /如何.*學/, /幫我.*理解/],
+      intentPatterns: [/(?:教|幫)我.*(?:學習|理解|了解)/]
+    },
+    
     // No side effects
     sideEffects: null,
+    
+    // Custom evaluateScore for settings-based trigger
+    evaluateScore: function(query, context, settings) {
+      // Learner mode 設定優先
+      if (settings?.learnerMode && settings.learnerMode !== 'standard') {
+        return SKILL_SCORING_WEIGHTS.settingsMatch * 2; // 高分確保被選中
+      }
+      // 否則使用一般評分
+      return createEvaluateScore(this.scoring)(query, context, settings);
+    },
     
     trigger: (query, settings) => {
       return settings?.learnerMode && settings.learnerMode !== 'standard';
@@ -112,9 +237,32 @@ const SKILLS = {
     name: '快速回答',
     description: '適用於簡單直接的問題，快速給出答案',
     icon: '⚡',
+    priority: 1, // 最低優先級，作為 fallback
     
     // Category for UI grouping
     category: 'quick',
+    
+    // Scoring configuration - 主要作為 fallback
+    scoring: {
+      keywords: [],
+      keywordPatterns: [],
+      intentPatterns: [],
+      excludePatterns: [/深入/, /詳細/, /研究/, /分析/, /比較/, /為什麼/, /如何/]
+    },
+    
+    // Custom evaluateScore - 簡單問題給基本分
+    evaluateScore: function(query, context, settings) {
+      // 排除複雜問題
+      const excludeKeywords = /深入|詳細|研究|分析|比較|為什麼|如何/;
+      if (excludeKeywords.test(query)) {
+        return 0;
+      }
+      // 短問題給基本分
+      if (query.length < 50) {
+        return SKILL_SCORING_WEIGHTS.keyword;
+      }
+      return 0;
+    },
     
     // No side effects
     sideEffects: null,
@@ -154,9 +302,17 @@ const SKILLS = {
     name: '事實查核',
     description: '驗證資訊真偽，提供可靠來源',
     icon: '✅',
+    priority: 8,
     
     // Category for UI grouping
     category: 'analysis',
+    
+    // Scoring configuration
+    scoring: {
+      keywords: ['真的嗎', '是否', '確認', '查證', '驗證', '正確嗎', '有沒有', '是不是', '查核', '事實'],
+      keywordPatterns: [/是否.*正確/, /真的.*嗎/, /查核.*事實/, /這.*是真的/],
+      intentPatterns: [/(?:查核|驗證|確認).*(?:真偽|正確|事實)/, /(?:這|那).*(?:是真的|正確)嗎/]
+    },
     
     // Side effects when this skill is selected
     sideEffects: {
@@ -199,9 +355,17 @@ const SKILLS = {
     name: '創意發想',
     description: '適用於腦力激盪、創意發想、開放性問題',
     icon: '💡',
+    priority: 6,
     
     // Category for UI grouping
     category: 'creative',
+    
+    // Scoring configuration
+    scoring: {
+      keywords: ['想法', '創意', '點子', '建議', '可能', '方法', '策略', '方案', '怎麼辦', '腦力激盪', '發想'],
+      keywordPatterns: [/有什麼.*想法/, /給我.*建議/, /提供.*方案/, /怎麼.*辦/],
+      intentPatterns: [/(?:想|要|需要).*(?:創意|點子|方案)/, /(?:有|給).*(?:建議|想法)/]
+    },
     
     // No side effects
     sideEffects: null,
@@ -241,9 +405,21 @@ const SKILLS = {
     name: '技術專家',
     description: '適用於程式碼、技術問題、除錯',
     icon: '💻',
+    priority: 7,
     
     // Category for UI grouping
     category: 'quick',
+    
+    // Scoring configuration
+    scoring: {
+      keywords: ['程式', 'code', 'coding', 'bug', '錯誤', 'API', '函數', 'function', '實作', 'implement', 'debug', '除錯'],
+      keywordPatterns: [/程式碼.*錯誤/, /如何.*實作/, /API.*使用/, /\bfunction\b/, /\bclass\b/, /\bimport\b/],
+      intentPatterns: [/(?:寫|修|debug|實作).*(?:程式|code|function)/, /(?:如何|怎麼).*(?:實作|寫|用)/],
+      contextPatterns: {
+        urlContains: ['github.com', 'stackoverflow.com', 'developer.mozilla.org', 'npmjs.com'],
+        titleContains: ['Documentation', '文件', 'API Reference', 'GitHub']
+      }
+    },
     
     // No side effects (web_search is optional)
     sideEffects: null,
@@ -283,9 +459,21 @@ const SKILLS = {
     name: '時事追蹤',
     description: '適用於新聞、時事、即時資訊查詢',
     icon: '📰',
+    priority: 8,
     
     // Category for UI grouping
     category: 'analysis',
+    
+    // Scoring configuration
+    scoring: {
+      keywords: ['最新', '現在', '今天', '昨天', '最近', '新聞', '時事', '目前', '當前', '近期', '即時'],
+      keywordPatterns: [/最新.*消息/, /近期.*發展/, /目前.*狀況/, /\d{4}年/],
+      intentPatterns: [/(?:最近|目前|現在).*(?:情況|狀況|進展)/, /(?:有什麼|最新的).*新聞/],
+      contextPatterns: {
+        urlContains: ['news.google.com', 'cna.com.tw', 'bbc.com', 'reuters.com', 'ltn.com.tw'],
+        titleContains: ['新聞', '報導', '快訊', 'News', '即時']
+      }
+    },
     
     // Side effects when this skill is selected
     sideEffects: {
@@ -328,9 +516,17 @@ const SKILLS = {
     name: '圖像設計',
     description: '適用於漫畫、插畫、圖表、視覺設計與生成',
     icon: '🎨',
+    priority: 7,
     
     // Category for UI grouping
     category: 'creative',
+    
+    // Scoring configuration
+    scoring: {
+      keywords: ['漫畫', '圖像', '圖片', '插畫', '設計圖', '畫一', '繪製', '生成圖', '圖表', '視覺', '海報', '封面', 'logo', 'icon', 'Q版', '卡通', '動漫'],
+      keywordPatterns: [/畫.*圖/, /設計.*視覺/, /生成.*圖片/, /製作.*海報/, /風格.*圖/],
+      intentPatterns: [/(?:幫我|請).*(?:畫|設計|生成).*(?:圖|插畫|海報)/, /(?:需要|想要).*(?:圖片|插畫|設計)/]
+    },
     
     // Side effects when this skill is selected
     sideEffects: {
@@ -416,9 +612,32 @@ const SKILLS = {
     name: '圖像解析',
     description: '分析上傳圖片的內容、風格、物件',
     icon: '👁️',
+    priority: 9, // 高優先級
     
     // Category for UI grouping
     category: 'visual',
+    
+    // Scoring configuration
+    scoring: {
+      keywords: ['這張圖', '圖片', '照片', '影像', '看看', '分析圖', '截圖', '圖中'],
+      keywordPatterns: [/這張.*圖/, /圖片.*是什麼/, /照片.*中/, /圖.*內容/],
+      intentPatterns: [/(?:分析|看|辨識|描述).*(?:圖片|照片|影像)/, /(?:圖|照片).*(?:是什麼|內容)/],
+      excludePatterns: [/漫畫/, /插畫/, /設計圖/, /畫一/, /繪製/, /生成圖/, /海報/, /封面/]
+    },
+    
+    // Custom evaluateScore for vision mode
+    evaluateScore: function(query, context, settings) {
+      // Vision 模式啟用時給高分
+      if (settings?.visionMode === true || context?.visionMode === true) {
+        // 排除 imageDesign 相關
+        const isImageDesign = /漫畫|插畫|設計圖|畫一|繪製|生成圖|海報|封面/i.test(query);
+        if (!isImageDesign) {
+          return SKILL_SCORING_WEIGHTS.visionMode;
+        }
+      }
+      // 否則使用一般評分
+      return createEvaluateScore(this.scoring)(query, context, settings);
+    },
     
     // Side effects when this skill is selected
     sideEffects: {
@@ -453,6 +672,68 @@ const SKILLS = {
     
     responseStyle: {
       length: 'detailed',
+      format: 'structured',
+      citations: true
+    }
+  },
+  
+  /**
+   * Price Compare Skill - for shopping and price comparison
+   */
+  priceCompare: {
+    id: 'priceCompare',
+    name: '電商比價',
+    description: '在多個電商平台比較價格，找出最便宜的選項',
+    icon: '💰',
+    priority: 9, // 高優先級，明確觸發
+    
+    // Category for UI grouping
+    category: 'analysis',
+    
+    // Scoring configuration
+    scoring: {
+      keywords: ['比價', '便宜', '最低價', '哪家', '價格', '買', '購買', '價錢', '划算', '優惠', 'momo', 'pchome', '蝦皮', '電商'],
+      keywordPatterns: [/比.*價/, /哪.*便宜/, /最.*便宜/, /哪裡買/, /去哪買/, /.*價格.*比較/],
+      intentPatterns: [
+        /(?:想|要|幫我).*(?:買|找).*(?:便宜|比價|最低)/,
+        /(?:哪家|哪裡|哪個).*(?:便宜|划算|優惠)/,
+        /(?:比較|比價).*(?:價格|價錢)/
+      ],
+      contextPatterns: {
+        urlContains: ['momo', 'pchome', 'shopee', 'yahoo', 'ruten'],
+        titleContains: ['購物', '商城', '比價', '價格']
+      }
+    },
+    
+    // Side effects when this skill is selected
+    sideEffects: {
+      enableSearch: true
+    },
+    
+    trigger: (query, settings) => {
+      const keywords = /比價|便宜|最低價|哪家|價格|哪裡買|去哪買|划算|優惠|momo|pchome|蝦皮/i;
+      const buyIntent = /(?:想|要|幫我).*(?:買|找)/;
+      return keywords.test(query) || (buyIntent.test(query) && /便宜|價格|比/.test(query));
+    },
+    
+    plannerHint: '這是電商比價問題。優先使用 price_compare 工具在多個電商平台（momo、pchome 等）並行搜尋，直接取得各平台價格進行比較。如需更多資訊可補充 web_search。synthesize 時整理成清晰的價格比較表。',
+    
+    // Skill instructions (injected into user prompt)
+    instructions: `你正在處理電商比價問題。請遵循以下指引：
+
+1. **使用 price_compare**：優先使用 price_compare 工具在電商平台直接搜尋
+2. **多平台比較**：比較 momo、pchome、蝦皮等主流平台價格
+3. **價格整理**：以表格或清單呈現各平台價格
+4. **標註差異**：說明價格差異、運費、優惠活動
+5. **購買建議**：給出最划算的購買建議`,
+    
+    preferredTools: ['price_compare', 'web_search', 'query_council', 'synthesize'],
+    
+    maxIterations: 5,
+    maxSearches: 2,
+    
+    responseStyle: {
+      length: 'standard',
       format: 'structured',
       citations: true
     }
@@ -544,6 +825,7 @@ class SkillSelector {
     const skillPriority = [
       'visionAnalysis',  // Highest: when image is uploaded (non-design)
       'imageDesign',     // Image design keywords
+      'priceCompare',    // Price comparison - high priority for shopping
       'factChecker',     // Fact checking is important
       'currentEvents',   // Time-sensitive
       'technical',       // Technical questions
@@ -820,6 +1102,27 @@ class EnhancedSkillSelector extends SkillSelector {
   }
 }
 
+/**
+ * 為所有 SKILLS 自動設置 evaluateScore 函數
+ * 如果 skill 沒有自定義 evaluateScore，則使用 createEvaluateScore 生成
+ */
+function initializeSkillScoring() {
+  for (const [skillId, skill] of Object.entries(SKILLS)) {
+    // 如果沒有自定義 evaluateScore 且有 scoring 配置，則自動生成
+    if (!skill.evaluateScore && skill.scoring) {
+      skill.evaluateScore = createEvaluateScore(skill.scoring);
+    }
+    // 如果都沒有，給一個回傳 0 的預設函數
+    if (!skill.evaluateScore) {
+      skill.evaluateScore = () => 0;
+    }
+  }
+  console.log('[Skills] Skill scoring initialized for', Object.keys(SKILLS).length, 'skills');
+}
+
+// 初始化 scoring
+initializeSkillScoring();
+
 // Create global skill selector instance
 const skillSelector = new SkillSelector();
 
@@ -832,12 +1135,14 @@ if (typeof window !== 'undefined') {
     SKILLS,
     SKILL_CATEGORIES,
     LEARNER_SYSTEM_PROMPTS,
+    SKILL_SCORING_WEIGHTS,
     SkillSelector,
     EnhancedSkillSelector,
     skillSelector,
     enhancedSkillSelector,
     applySkillToAgent,
-    getStyleInstructions
+    getStyleInstructions,
+    createEvaluateScore
   };
 }
 

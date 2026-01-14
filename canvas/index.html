@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title data-i18n="canvas.pageTitle">AI Council 畫布</title>
+  <title data-i18n="canvas.pageTitle">AI Council 筆記</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="canvas-app">
     <header class="canvas-header">
       <div class="header-left">
-        <h1 data-i18n="canvas.title">畫布</h1>
+        <h1 data-i18n="canvas.title">筆記</h1>
         <span id="docTitle" class="doc-title" data-i18n="canvas.untitled">未命名</span>
       </div>
       <div class="header-right">
@@ -163,6 +163,40 @@
       </div>
     </div>
 
+    <!-- Global Chat Bar -->
+    <div id="globalChatBar" class="global-chat-bar">
+      <div class="chat-bar-inner">
+        <div class="chat-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </div>
+        <input type="text" id="globalChatInput" class="chat-input" data-i18n-placeholder="canvas.globalChatPlaceholder" placeholder="基於全文提問..." />
+        <button id="globalChatSend" class="chat-send-btn" data-i18n-title="canvas.sendQuestion" title="送出問題">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+      <div id="chatResponseArea" class="chat-response-area hidden">
+        <div class="chat-response-header">
+          <span data-i18n="canvas.aiResponse">AI 回應</span>
+          <button id="closeChatResponse" class="close-response-btn" data-i18n-title="common.close" title="關閉">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div id="chatResponseContent" class="chat-response-content"></div>
+        <div class="chat-response-actions">
+          <button id="insertResponseBtn" class="response-action-btn" data-i18n="canvas.insertToEditor">插入編輯器</button>
+          <button id="copyResponseBtn" class="response-action-btn" data-i18n="canvas.copyResponse">複製回應</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Tree View Toggle Button (in toolbar) -->
     <button id="treeViewToggle" class="tree-view-toggle" data-i18n-title="canvas.treeViewToggle" title="任務樹視圖">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -285,6 +319,34 @@
             <button class="lang-btn" data-lang="en" data-i18n="canvas.langEn">English</button>
             <button class="lang-btn" data-lang="ja" data-i18n="canvas.langJa">日本語</button>
             <button class="lang-btn" data-lang="ko" data-i18n="canvas.langKo">한국어</button>
+          </div>
+          <div class="custom-prompt-section">
+            <label data-i18n="canvas.customInstructions">額外指示</label>
+            <textarea id="translateCustomPrompt" class="custom-prompt-input" data-i18n-placeholder="canvas.customInstructionsPlaceholder" placeholder="（選填）例如：使用正式語氣、保留專有名詞..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Custom Prompt Modal -->
+    <div id="aiPromptModal" class="modal hidden">
+      <div class="modal-content modal-md">
+        <div class="modal-header">
+          <h3 id="aiPromptTitle" data-i18n="canvas.rewrite">改寫</h3>
+          <button class="modal-close" data-close="aiPromptModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="selected-preview-section">
+            <label data-i18n="canvas.selectedText">選取的文字</label>
+            <div id="selectedPreview" class="selected-preview"></div>
+          </div>
+          <div class="custom-prompt-section">
+            <label data-i18n="canvas.customInstructions">額外指示</label>
+            <textarea id="customPromptInput" class="custom-prompt-input" data-i18n-placeholder="canvas.customInstructionsPlaceholder" placeholder="（選填）例如：使用更正式的語氣、避免使用被動語態..."></textarea>
+          </div>
+          <div class="modal-actions">
+            <button id="cancelAiBtn" class="modal-btn secondary" data-i18n="common.cancel">取消</button>
+            <button id="executeAiBtn" class="modal-btn primary" data-i18n="canvas.execute">執行</button>
           </div>
         </div>
       </div>

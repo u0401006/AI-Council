@@ -672,11 +672,11 @@ async function renderInstalledSkills() {
   installedSkillsList.querySelectorAll('.skill-delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const skillId = btn.dataset.skillId;
-      if (confirm(`確定要刪除技能 "${skillId}"？`)) {
+      if (confirm(t('options.confirmDeleteSkill', { skillId }))) {
         await skillsCache.delete(skillId);
         await renderInstalledSkills();
         await renderSkillsStorageInfo();
-        showStatus('技能已刪除', 'success');
+        showStatus(t('options.skillDeleted'), 'success');
       }
     });
   });
@@ -722,7 +722,7 @@ function parseSkillMd(content) {
   const match = content.match(frontmatterRegex);
   
   if (!match) {
-    throw new Error('Invalid SKILL.md format');
+    throw new Error(t('options.invalidSkillFormat'));
   }
   
   const metadata = parseSimpleYaml(match[1]);
@@ -733,12 +733,12 @@ function parseSkillMd(content) {
 async function importSkill() {
   const url = skillImportUrl?.value?.trim();
   if (!url) {
-    showStatus('請輸入技能路徑', 'error');
+    showStatus(t('options.enterSkillPath'), 'error');
     return;
   }
   
   importSkillBtn.disabled = true;
-  importSkillBtn.textContent = '匯入中...';
+  importSkillBtn.textContent = t('options.importingSkill');
   
   try {
     let content;
@@ -750,7 +750,7 @@ async function importSkill() {
       // GitHub path: owner/repo/path/SKILL.md
       const match = url.match(/^([^\/]+)\/([^\/]+)\/(.+)$/);
       if (!match) {
-        throw new Error('無效的 GitHub 路徑格式');
+        throw new Error(t('options.invalidGitHubPath'));
       }
       
       const [, owner, repo, path] = match;

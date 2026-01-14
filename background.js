@@ -14,6 +14,72 @@
         safesearch: ['off', 'moderate', 'strict']
         };
 
+        // ============================================
+        // 電商平台插件式配置 - 新增平台只需加 config
+        // ============================================
+        const ECOMMERCE_PLATFORMS = {
+        momo: {
+            id: 'momo',
+            name: 'momo購物網',
+            searchUrl: 'https://www.momoshop.com.tw/search/{query}?viewport=desktop&_isFuzzy=1&searchType=1',
+            // DOM 選擇器（多個備選，依序嘗試）
+            selectors: {
+            productList: ['ul.listArea > li', 'li[data-testid="prod"]', 'li.goodsItemLi'],
+            title: ['h3.prdName', 'h3', '.goodsName', 'a[title]'],
+            price: ['.price .priceAmount', '.price b', '.salePrice', '[class*="price"] b'],
+            originalPrice: ['.originPrice', 'del', '.orgPrice'],
+            link: ['a[href*="goods"]', 'a[href*="i.momo"]']
+            },
+            // 價格解析：移除非數字字元
+            priceRegex: /[\d,]+/
+        },
+        
+        pchome: {
+            id: 'pchome',
+            name: 'PChome 24h',
+            searchUrl: 'https://24h.pchome.com.tw/search/?q={query}',
+            selectors: {
+            productList: ['[class*="prod_info"]', 'li[class*="prod_container"]', '.col3f'],
+            title: ['[class*="prod_name"] h5', '.prod_name', 'h5', '.pdname'],
+            price: ['[class*="price"] b', '.price .value', '.price b'],
+            originalPrice: ['[class*="origin"]', 'del', '.originprice'],
+            link: ['a[href*="/prod"]', 'a[href*="24h.pchome"]']
+            },
+            priceRegex: /\$?([\d,]+)/
+        },
+        
+        // 預留擴展：shopee, yahoo 等
+        shopee: {
+            id: 'shopee',
+            name: '蝦皮購物',
+            searchUrl: 'https://shopee.tw/search?keyword={query}',
+            selectors: {
+            productList: ['[data-sqe="item"]', '.shopee-search-item-result__item'],
+            title: ['[data-sqe="name"]', '.Cve6sh'],
+            price: ['[class*="price"]', '.ZEgDH9'],
+            originalPrice: ['del', '.ZEgDH9 + div'],
+            link: ['a[href*="/product/"]']
+            },
+            priceRegex: /\$?([\d,]+)/,
+            // 蝦皮需要等待 JS 渲染
+            waitTime: 2000
+        },
+        
+        yahoo: {
+            id: 'yahoo',
+            name: 'Yahoo購物中心',
+            searchUrl: 'https://tw.buy.yahoo.com/search/product?p={query}',
+            selectors: {
+            productList: ['[class*="ProductCard"]', '.item'],
+            title: ['[class*="title"]', '.item-name'],
+            price: ['[class*="price"] em', '.item-price'],
+            originalPrice: ['del', '.origin'],
+            link: ['a[href*="buy.yahoo"]']
+            },
+            priceRegex: /\$?([\d,]+)/
+        }
+        };
+
         // 驗證並過濾非法的搜尋選項
         function validateSearchOptions(options) {
         const validated = {};
@@ -117,6 +183,20 @@
         
         if (message.type === 'FETCH_PAGE_CONTENTS') {
             handleFetchPageContents(message.urls)
+            .then(sendResponse)
+            .catch(err => sendResponse({ error: err.message }));
+            return true;
+        }
+        
+        if (message.type === 'GOOGLE_SEARCH_TAB') {
+            handleGoogleSearchTab(message.query, message.options)
+            .then(sendResponse)
+            .catch(err => sendResponse({ error: err.message }));
+            return true;
+        }
+        
+        if (message.type === 'ECOMMERCE_SEARCH_TAB') {
+            handleEcommerceSearch(message.query, message.platforms, message.options)
             .then(sendResponse)
             .catch(err => sendResponse({ error: err.message }));
             return true;
@@ -385,14 +465,376 @@
         }
         }
 
+        // Handle Google Search in visible tab
+        // Opens Google search in a visible tab (user can see), extracts top results, keeps tab open
+        async function handleGoogleSearchTab(query, options = {}) {
+        const { count = 10 } = options;
+        const TIMEOUT = 15000; // 15 seconds timeout for Google
+        let tabId = null;
+        
+        try {
+            // Build Google search URL
+            const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=zh-TW`;
+            
+            // Create visible tab (active: true so user can see it)
+            const tab = await chrome.tabs.create({ 
+            url: searchUrl, 
+            active: true 
+            });
+            tabId = tab.id;
+            
+            // Wait for page to load
+            await waitForTabLoad(tabId, TIMEOUT);
+            
+            // Parse Google search results by injecting a script
+            const parseResults = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: parseGoogleSearchResults,
+            args: [count]
+            });
+            
+            const results = parseResults[0]?.result || [];
+            
+            return { 
+            results, 
+            query,
+            tabId, // Return tabId so caller knows which tab was opened
+            resultCount: results.length,
+            searchUrl
+            };
+        } catch (err) {
+            // Don't close tab on error - let user see what happened
+            return { 
+            results: [], 
+            query, 
+            tabId,
+            error: err.message 
+            };
+        }
+        }
+
+        // Injected function to parse Google search results
+        // This runs in the context of the Google search page
+        function parseGoogleSearchResults(maxCount) {
+        const results = [];
+        
+        // Multiple selector strategies for robustness (Google's DOM changes frequently)
+        const selectors = [
+            // Standard organic results
+            'div.g:not(.g-blk)',
+            // Data attribute based
+            'div[data-hveid] div.g',
+            // Fallback: any div with h3 and cite
+            'div:has(> div > div > a > h3):has(cite)'
+        ];
+        
+        let containers = [];
+        
+        // Try each selector until we find results
+        for (const selector of selectors) {
+            try {
+            containers = document.querySelectorAll(selector);
+            if (containers.length > 0) break;
+            } catch (e) {
+            // Selector might not be supported, continue
+            }
+        }
+        
+        // If no containers found, try a more generic approach
+        if (containers.length === 0) {
+            // Look for h3 tags which typically contain result titles
+            const h3s = document.querySelectorAll('h3');
+            h3s.forEach((h3, i) => {
+            if (i >= maxCount) return;
+            
+            // Find parent anchor
+            const anchor = h3.closest('a');
+            if (!anchor || !anchor.href.startsWith('http')) return;
+            
+            // Skip Google's internal links
+            if (anchor.href.includes('google.com/search')) return;
+            
+            // Find snippet - usually in sibling or parent elements
+            let snippet = '';
+            const parent = h3.closest('div[data-hveid]') || h3.parentElement?.parentElement?.parentElement;
+            if (parent) {
+                // Look for text content that might be a snippet
+                const textNodes = parent.querySelectorAll('div > span, div > div > span');
+                for (const node of textNodes) {
+                if (node.textContent.length > 50 && !node.querySelector('a')) {
+                    snippet = node.textContent.trim();
+                    break;
+                }
+                }
+            }
+            
+            results.push({
+                title: h3.textContent.trim(),
+                url: anchor.href,
+                description: snippet
+            });
+            });
+            
+            return results.slice(0, maxCount);
+        }
+        
+        // Process found containers
+        containers.forEach((container, i) => {
+            if (i >= maxCount) return;
+            
+            try {
+            // Find title (h3)
+            const titleEl = container.querySelector('h3');
+            if (!titleEl) return;
+            
+            // Find link
+            const linkEl = container.querySelector('a[href^="http"]');
+            if (!linkEl) return;
+            
+            // Skip Google's own links
+            const url = linkEl.href;
+            if (url.includes('google.com/search') || url.includes('accounts.google.com')) return;
+            
+            // Find snippet/description
+            let description = '';
+            
+            // Try multiple snippet selectors
+            const snippetSelectors = [
+                '[data-sncf]',
+                '.VwiC3b',
+                '[data-snf]',
+                'div > span > em',
+                '.IsZvec'
+            ];
+            
+            for (const sel of snippetSelectors) {
+                const snippetEl = container.querySelector(sel);
+                if (snippetEl && snippetEl.textContent.length > 20) {
+                description = snippetEl.textContent.trim();
+                break;
+                }
+            }
+            
+            // If no snippet found, get any substantial text
+            if (!description) {
+                const allText = container.textContent;
+                const titleText = titleEl.textContent;
+                // Remove title from text and get remaining
+                const remaining = allText.replace(titleText, '').trim();
+                if (remaining.length > 30) {
+                description = remaining.slice(0, 300);
+                }
+            }
+            
+            results.push({
+                title: titleEl.textContent.trim(),
+                url,
+                description
+            });
+            } catch (e) {
+            // Skip problematic results
+            }
+        });
+        
+        return results;
+        }
+
+        // ============================================
+        // 電商比價功能 - 並行搜尋多平台
+        // ============================================
+        
+        // Handle ecommerce search across multiple platforms
+        async function handleEcommerceSearch(query, platforms = ['momo', 'pchome'], options = {}) {
+        const { count = 5 } = options;
+        const results = {};
+        const tabIds = {};
+        const errors = {};
+        
+        // 過濾出有效平台
+        const validPlatforms = platforms.filter(p => ECOMMERCE_PLATFORMS[p]);
+        
+        if (validPlatforms.length === 0) {
+            throw new Error('沒有有效的電商平台');
+        }
+        
+        // 並行開啟所有平台
+        const searchPromises = validPlatforms.map(async (platformId) => {
+            const platform = ECOMMERCE_PLATFORMS[platformId];
+            const searchUrl = platform.searchUrl.replace('{query}', encodeURIComponent(query));
+            
+            try {
+            // 開啟可見分頁
+            const tab = await chrome.tabs.create({ 
+                url: searchUrl, 
+                active: false // 多個分頁時不搶焦點
+            });
+            tabIds[platformId] = tab.id;
+            
+            // 等待載入
+            const waitTime = platform.waitTime || 1500;
+            await waitForTabLoad(tab.id, 15000);
+            
+            // 額外等待 JS 渲染（某些平台需要）
+            if (platform.waitTime) {
+                await new Promise(r => setTimeout(r, platform.waitTime));
+            }
+            
+            // 注入解析腳本
+            const parseResult = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: parseEcommerceResults,
+                args: [platform, count]
+            });
+            
+            results[platformId] = {
+                platform: platform.name,
+                url: searchUrl,
+                items: parseResult[0]?.result || []
+            };
+            
+            } catch (err) {
+            errors[platformId] = err.message;
+            results[platformId] = {
+                platform: platform.name,
+                url: searchUrl,
+                items: [],
+                error: err.message
+            };
+            }
+        });
+        
+        // 等待所有平台完成
+        await Promise.allSettled(searchPromises);
+        
+        // 啟用第一個分頁讓用戶看到
+        const firstTabId = Object.values(tabIds)[0];
+        if (firstTabId) {
+            try {
+            await chrome.tabs.update(firstTabId, { active: true });
+            } catch (e) {
+            // Tab may be closed
+            }
+        }
+        
+        // 找出最低價商品
+        let cheapest = null;
+        for (const [platformId, data] of Object.entries(results)) {
+            for (const item of data.items || []) {
+            if (item.price && (!cheapest || item.price < cheapest.price)) {
+                cheapest = {
+                platform: platformId,
+                platformName: data.platform,
+                ...item
+                };
+            }
+            }
+        }
+        
+        return {
+            query,
+            platforms: validPlatforms,
+            results,
+            tabIds,
+            cheapest,
+            errors: Object.keys(errors).length > 0 ? errors : null
+        };
+        }
+
+        // 通用電商頁面解析函式（注入到電商頁面執行）
+        function parseEcommerceResults(platform, maxCount) {
+        const results = [];
+        const { selectors, priceRegex } = platform;
+        
+        // 解析價格的輔助函式
+        const parsePrice = (text) => {
+            if (!text) return null;
+            const regex = typeof priceRegex === 'string' ? new RegExp(priceRegex) : priceRegex;
+            const match = text.match(regex);
+            if (match) {
+            const numStr = (match[1] || match[0]).replace(/,/g, '');
+            return parseInt(numStr) || null;
+            }
+            return null;
+        };
+        
+        // 嘗試多個選擇器找到商品列表
+        const trySelectors = (selectorList) => {
+            for (const sel of selectorList) {
+            try {
+                const els = document.querySelectorAll(sel);
+                if (els.length > 0) return els;
+            } catch (e) {
+                // Selector not supported
+            }
+            }
+            return [];
+        };
+        
+        // 找到單一元素
+        const findElement = (parent, selectorList) => {
+            for (const sel of selectorList) {
+            try {
+                const el = parent.querySelector(sel);
+                if (el) return el;
+            } catch (e) {
+                // Continue
+            }
+            }
+            return null;
+        };
+        
+        // 找商品列表
+        const products = trySelectors(selectors.productList);
+        
+        products.forEach((product, i) => {
+            if (i >= maxCount) return;
+            
+            try {
+            // 取得標題
+            const titleEl = findElement(product, selectors.title);
+            const title = titleEl?.textContent?.trim() || titleEl?.getAttribute('title') || '';
+            
+            if (!title || title.length < 3) return;
+            
+            // 取得連結
+            const linkEl = findElement(product, selectors.link);
+            const url = linkEl?.href || '';
+            
+            // 取得價格
+            const priceEl = findElement(product, selectors.price);
+            const price = parsePrice(priceEl?.textContent);
+            
+            // 取得原價
+            const origPriceEl = findElement(product, selectors.originalPrice);
+            const originalPrice = parsePrice(origPriceEl?.textContent);
+            
+            // 只加入有效商品
+            if (title && (price || url)) {
+                results.push({
+                title: title.slice(0, 100), // 限制標題長度
+                url,
+                price,
+                originalPrice,
+                discount: originalPrice && price ? Math.round((1 - price/originalPrice) * 100) : null
+                });
+            }
+            } catch (e) {
+            // Skip problematic items
+            }
+        });
+        
+        return results;
+        }
+
         // Handle open canvas
         async function handleOpenCanvas(payload) {
         // 加上時間戳確保每次都是新的載入
         const timestamp = Date.now();
         const url = `${chrome.runtime.getURL('canvas/index.html')}?t=${timestamp}`;
         
-        if (payload?.content) {
-            // Store content in local storage for canvas to retrieve
+        // Always store payload to ensure canvas gets fresh data
+        // (sidepanel already clears old canvasImport before calling)
+        if (payload) {
             await chrome.storage.local.set({ canvasImport: payload });
         }
         

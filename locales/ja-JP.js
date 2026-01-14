@@ -125,7 +125,15 @@ window.LOCALE_JA_JP = {
     statusMinModels: '少なくとも2つのモデルを選択してください',
     statusPromptsReset: 'プロンプトをデフォルトにリセットしました',
     statusModelsUpdated: '{count} 個のモデルを更新しました',
-    statusModelsUpdateFailed: '更新に失敗しました: {error}'
+    statusModelsUpdateFailed: '更新に失敗しました: {error}',
+    
+    // Skills
+    skillDeleted: 'スキルを削除しました',
+    enterSkillPath: 'スキルパスを入力してください',
+    importingSkill: 'インポート中...',
+    confirmDeleteSkill: 'スキル「{skillId}」を削除してもよろしいですか？',
+    invalidSkillFormat: '無効な SKILL.md 形式',
+    invalidGitHubPath: '無効な GitHub パス形式'
   },
   
   // Sidepanel
@@ -147,7 +155,7 @@ window.LOCALE_JA_JP = {
     backToRoot: 'ルートカードに戻る',
     depthLabel: '深度: {depth}',
     cardCount: '{count} カード',
-    viewInCanvas: 'キャンバスでタスクツリーを表示',
+    viewInCanvas: 'メモでタスクツリーを表示',
     
     // Context Section
     contextTitle: '参照',
@@ -216,11 +224,18 @@ window.LOCALE_JA_JP = {
     branchSearch: '拡張検索',
     branchImage: '画像生成',
     branchVision: 'Vision 分析',
-    branchCanvas: 'キャンバスを開く',
+    branchCanvas: 'メモを取る',
     
-    // Canvas Section
-    openInCanvas: 'キャンバスで開く',
-    canvasDesc: '回答内容を編集・調整',
+    // Notes Section (formerly Canvas)
+    openInCanvas: 'メモを取る',
+    canvasDesc: '内容を編集・拡張',
+    
+    // Image Description Modal
+    imageDescTitle: '画像生成',
+    imageDescHint: '生成したい画像の説明を入力してください：',
+    imageDescPlaceholder: '例：星空の下を走るオオカミ、オーロラが雪原を照らす...',
+    summarizeContent: '会話から要約',
+    startImageGen: '生成開始',
     openInTab: '新しいタブで開く',
     openInWindow: '独立ウィンドウで開く',
     
@@ -268,13 +283,97 @@ window.LOCALE_JA_JP = {
     webSearchTitle: 'ウェブ検索',
     webSearchHint: 'キーワードを入力してウェブを検索。結果は参照に追加されます：',
     webSearchPlaceholder: '検索キーワードを入力...',
-    searchPreparing: '検索準備中...'
+    searchPreparing: '検索準備中...',
+    
+    // Skills
+    noSkillsFound: '該当するスキルが見つかりません',
+    skillSourceAuto: '自動',
+    skillSourceSelected: '選択済み',
+    
+    // Stage Status
+    stagePreparing: '準備中...',
+    stageSearching: '検索中...',
+    stageReviewing: 'レビュー中...',
+    stageSynthesizing: '統合中...',
+    stageCouncilRunning: 'Council 実行中...',
+    stageCardRunning: 'このカード実行中...',
+    stageFailed: '失敗',
+    stageGenerating: '生成中...',
+    stageRefining: 'リファイン中...',
+    stageRetrying: '再試行中...',
+    stageSummarizing: '要約中...',
+    
+    // Review
+    reviewInProgress: 'モデルが互いにレビュー中...',
+    reviewDisabled: '相互レビューは無効です',
+    reviewNoData: 'レビューデータなし',
+    chairmanFailed: '議長の統合に失敗しました：{error}',
+    
+    // AI Loading
+    generatingImage: '{model} で画像を生成中...',
+    analyzingImage: '{model} で画像を分析中...',
+    connectingModel: '{model} に接続中...',
+    visionAnalyzing: 'Vision 分析中',
+    creatingVisual: 'ビジュアルコンテンツを作成中...',
+    generatingNext: '生成中...',
+    startNextRound: '次のラウンドを開始',
+    
+    // Actions
+    download: 'ダウンロード',
+    copy: 'コピー',
+    copiedBrief: 'コピーしました！',
+    analyze: '分析',
+    
+    // Labels
+    chairmanLabel: '議長',
+    send: '送信',
+    generateImage: '画像生成',
+    
+    // Summary
+    completed: '完了',
+    extendSearch: '拡張検索',
+    webSearchContext: 'ウェブ検索',
+    braveKeyNeeded: 'Brave Search API キーが必要です',
+    
+    // Task Types
+    taskSearch: '検索',
+    taskImage: '画像',
+    taskVision: 'ビジョン',
+    taskExplore: '探索',
+    taskVerify: '検証',
+    taskApply: 'やってみる',
+    taskConnect: '接続',
+    
+    // Branch Actions Labels
+    analyzeImageLabel: '画像を分析',
+    takeNotesLabel: 'メモを取る',
+    generateImageLabel: '画像を生成',
+    
+    // Suggested Actions
+    suggestedActions: '次のステップの提案',
+    quickInputPlaceholder: 'フォローアップの質問...',
+    
+    // UI Actions
+    proceed: '続行',
+    cancelAction: 'キャンセル',
+    processing: '処理中...',
+    responding: '応答中...',
+    justNow: 'たった今',
+    expanded: '展開済み',
+    pending: '保留中',
+    minutesAgo: '{n}分前',
+    hoursAgo: '{n}時間前',
+    
+    // Misc UI
+    characters: '文字',
+    iterationQuerying: 'イテレーション {n}: クエリ中...',
+    modelsCompleted: '{done}/{total} 完了'
   },
   
-  // Canvas
+  // Notes (formerly Canvas)
   canvas: {
-    pageTitle: 'AI Council キャンバス',
-    title: 'キャンバス',
+    pageTitle: 'AI Council メモ',
+    title: 'メモ',
     untitled: '無題',
     saved: '保存済み',
     saving: '保存中...',
@@ -332,7 +431,20 @@ window.LOCALE_JA_JP = {
     langZhCN: '简体中文',
     langEn: 'English',
     langJa: '日本語',
-    langKo: '한국어'
+    langKo: '한국어',
+    
+    // AI Prompt Modal
+    selectedText: '選択したテキスト',
+    customInstructions: '追加指示',
+    customInstructionsPlaceholder: '（任意）例：よりフォーマルなトーンで、受動態を避けて...',
+    execute: '実行',
+    
+    // Global Chat Bar
+    globalChatPlaceholder: '文書について質問...',
+    sendQuestion: '質問を送信',
+    aiResponse: 'AI 回答',
+    insertToEditor: 'エディタに挿入',
+    copyResponse: '回答をコピー'
   },
   
   // Toast/Status Messages
@@ -347,6 +459,12 @@ window.LOCALE_JA_JP = {
     pageCaptured: 'ページ内容を取得しました',
     selectionCaptured: '選択内容を取得しました',
     pasted: '内容を貼り付けました',
+    selectionCaptureFailed: '選択内容の取得に失敗しました：{error}',
+    noContextToClear: 'クリアする参照がありません',
+    contextCleared: 'すべての参照をクリアしました',
+    contextUpgraded: 'セッションレベルの参照にアップグレードしました',
+    noCardContextToClear: 'このカードにはカードレベルのデータがありません（セッションレベルのデータはルートカードでクリアしてください）',
+    noContextInConversation: 'この会話には参照がありません',
     
     // Errors
     noActiveTab: 'アクティブなタブが見つかりません',
@@ -356,10 +474,17 @@ window.LOCALE_JA_JP = {
     noKeyword: 'キーワードを入力してください',
     noQuestion: '質問を入力してください',
     braveKeyRequired: 'ウェブ検索には Brave Search API キーが必要です',
-    searchFailed: '検索に失敗しました: {error}',
+    searchFailed: '検索に失敗しました：{error}',
     noResults: '関連する結果が見つかりません',
-    captureFailed: '取得に失敗しました: {error}',
-    pasteFailed: '貼り付けに失敗しました: {error}',
+    captureFailed: '取得に失敗しました：{error}',
+    pasteFailed: '貼り付けに失敗しました：{error}',
+    executionFailed: '実行に失敗しました：{error}',
+    saveFailed: '保存に失敗しました：{error}',
+    deleteFailed: '削除に失敗しました：{error}',
+    loadFailed: '読み込みに失敗しました：{error}',
+    clearFailed: 'クリアに失敗しました：{error}',
+    copyFailed: 'コピーに失敗しました',
+    retryFailed: '再試行できません：元のクエリが見つかりません',
     
     // Search
     searching: '「{keyword}」を検索中...',
@@ -367,12 +492,15 @@ window.LOCALE_JA_JP = {
     searchResultsAdded: '検索結果を追加、Council を実行中...',
     searchCancelled: '拡張検索をキャンセルしました',
     maxIterationsReached: '検索イテレーション上限に達しました',
+    searchWillContinue: '検索に失敗しましたが、結論の生成を続行します',
+    enterSearchKeyword: '拡張検索キーワードを選択または入力してください',
+    enterCustomKeyword: 'カスタムキーワードを入力して拡張検索を行う',
     
     // Tasks
     taskExists: 'タスクは既に存在します',
     switchedToCard: 'タスクカードに切り替えました',
     childCardCreated: '子カードを作成しました。質問を編集して送信してください',
-    childCardWithFeatures: '子カードを作成しました: {features}',
+    childCardWithFeatures: '子カードを作成しました：{features}',
     exploreCardCreated: 'コンテキスト付きの探索カードを作成しました',
     taskToInput: 'タスクを入力欄に移動しました。送信して新しい会話を開始',
     maxDepthReached: '最大深度 L{depth} に達しました。これ以上展開できません',
@@ -386,6 +514,49 @@ window.LOCALE_JA_JP = {
     suggestionsGenerated: '提案を生成しました。必要に応じて編集して送信',
     suggestionsFailed: '提案の生成に失敗しました。デフォルトテンプレートを使用',
     projectNameFailed: 'プロジェクト名の生成に失敗しました（{error}）。デフォルトを使用',
+    aiPromptFailed: 'AI プロンプト生成に失敗しました。デフォルトモードを使用',
+    councilMinModels: 'Council には少なくとも2つのモデルが正常に応答する必要があります',
+    
+    // Image
+    noConversationToSummarize: '要約する会話内容がありません',
+    summaryGenerated: '画像説明の要約を生成しました',
+    summaryFailed: '要約の生成に失敗しました',
+    minDescriptionLength: '説明は5文字以上入力してください',
+    imageEditorClosed: '画像エディタを閉じました',
+    imageCancelled: '画像生成をキャンセルしました',
+    imageGenFailed: '画像生成に失敗しました：{error}',
+    invalidImageFile: '有効な画像ファイルをアップロードしてください',
+    imageSizeLimit: '画像サイズが20MB制限を超えています',
+    imageDataFailed: '画像データを取得できませんでした',
+    imageLoaded: '画像を読み込みました。分析の質問を入力して送信してください',
+    imageLoadFailed: '画像の読み込みに失敗しました',
+    imageDownloaded: '画像をダウンロードしました',
+    imageCopied: '画像をコピーしました',
+    imageCopyFailed: '画像のコピーに失敗しました',
+    uploadImageForAnalysis: '分析する画像をアップロードしてください',
+    
+    // History & Export
+    newConversationStarted: '新しい会話を開始しました',
+    newRootCardReady: '新しいルートカードを追加する準備ができました',
+    recordDeleted: '記録を削除しました',
+    storageFull: '保存に失敗しました：ストレージがいっぱいです',
+    autoCleanedOldRecords: 'ストレージがいっぱいのため、古い記録を自動クリアしました',
+    projectLoaded: 'プロジェクトを読み込みました',
+    historyCleared: '履歴をクリアしました',
+    noConversationToExport: 'エクスポートする会話がありません',
+    exportedMarkdown: 'Markdown でエクスポートしました',
+    exportedJson: 'JSON でエクスポートしました',
+    copiedToClipboard: 'クリップボードにコピーしました',
+    noHistoryYet: 'まだ履歴がありません',
+    
+    // Prompt
+    enterPromptFirst: 'リファインする前にプロンプトを入力してください',
+    promptRefined: 'プロンプトのリファインが完了しました',
+    refineFailed: 'リファインに失敗しました：{error}',
+    editPromptFirst: 'まずプロンプトを入力または編集してください',
+    
+    // Card Status
+    cardRunning: 'このカードは実行中です。完了を待つか、他のカードに切り替えてください',
     
     // Storage
     storageWarning: 'ストレージ使用率 {percent}%（{used}/{total} MB）。履歴のクリアを検討してください',

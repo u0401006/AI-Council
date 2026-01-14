@@ -3,9 +3,9 @@ name: current-events
 description: 適用於新聞、時事、即時資訊查詢。當用戶詢問最新、現在、今天、最近的事件或新聞時觸發。
 metadata:
   author: mav
-  version: "1.0"
+  version: "1.1"
   icon: "\U0001F4F0"
-  mav-tools: web_search query_council synthesize
+  mav-tools: web_search google_search_tab query_council synthesize
   max-iterations: 5
   max-searches: 2
   response-length: standard
@@ -27,7 +27,9 @@ metadata:
 ## Instructions
 
 1. 這是一個時事問題，需要最新資訊
-2. **必須先** 使用 `web_search` 獲取最新資訊
+2. **選擇搜尋工具**：
+   - `web_search`：快速取得 Brave API 結果（預設）
+   - `google_search_tab`：需要個人化結果、或用戶明確要求 Google 搜尋時使用（會開啟可見分頁）
 3. 使用 `query_council` 分析整理搜尋結果
 4. **不需要** `peer_review`（新聞重時效，非深度分析）
 5. `synthesize` 時標註資訊來源和時間

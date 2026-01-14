@@ -71,6 +71,55 @@ const TOOL_DEFINITIONS = {
     }
   },
   
+  google_search_tab: {
+    name: 'google_search_tab',
+    description: '開啟 Google 搜尋分頁，利用用戶登入狀態取得個人化搜尋結果。分頁會保持開啟讓用戶可查看。適用於需要個人化結果或用戶想直接瀏覽搜尋頁的情況。',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: '搜尋關鍵字'
+        },
+        count: {
+          type: 'number',
+          default: 10,
+          description: '抓取結果數量 (1-15)'
+        }
+      },
+      required: ['query']
+    }
+  },
+  
+  price_compare: {
+    name: 'price_compare',
+    description: '電商比價工具。並行搜尋多個電商平台（momo、pchome、shopee、yahoo），抓取商品價格進行比較。開啟可見分頁讓用戶查看。回傳各平台結果及最低價商品。',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: '搜尋商品關鍵字'
+        },
+        platforms: {
+          type: 'array',
+          items: { 
+            type: 'string',
+            enum: ['momo', 'pchome', 'shopee', 'yahoo']
+          },
+          default: ['momo', 'pchome'],
+          description: '要搜尋的電商平台列表'
+        },
+        count: {
+          type: 'number',
+          default: 5,
+          description: '每個平台抓取的商品數量 (1-10)'
+        }
+      },
+      required: ['query']
+    }
+  },
+  
   peer_review: {
     name: 'peer_review',
     description: '讓模型匿名互評其他模型的回答，產出排名與評語。支援加權整合評估。',
@@ -452,6 +501,34 @@ function createToolExecutors(appContext) {
                 query,
                 results: response?.results || [],
                 resultCount: response?.results?.length || 0
+              });
+            }
+          }
+        );
+      });
+    },
+    
+    /**
+     * Google Search Tab - opens visible Google search tab with user's login state
+     */
+    google_search_tab: async (params, context) => {
+      const { query, count = 10 } = params;
+      
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          { type: 'GOOGLE_SEARCH_TAB', query, options: { count } },
+          response => {
+            if (response?.error && response.results?.length === 0) {
+              reject(new Error(response.error));
+            } else {
+              resolve({
+                query,
+                results: response?.results || [],
+                resultCount: response?.results?.length || 0,
+                tabId: response?.tabId,
+                searchUrl: response?.searchUrl,
+                // Indicate this is from Google with user's personalization
+                source: 'google_personalized'
               });
             }
           }

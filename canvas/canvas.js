@@ -18,9 +18,30 @@ const aiLoadingText = document.getElementById('aiLoadingText');
 const importModal = document.getElementById('importModal');
 const exportModal = document.getElementById('exportModal');
 const translateModal = document.getElementById('translateModal');
+const aiPromptModal = document.getElementById('aiPromptModal');
+const aiPromptTitle = document.getElementById('aiPromptTitle');
+const selectedPreview = document.getElementById('selectedPreview');
+const customPromptInput = document.getElementById('customPromptInput');
+const translateCustomPrompt = document.getElementById('translateCustomPrompt');
 const importList = document.getElementById('importList');
 const importEmpty = document.getElementById('importEmpty');
 const toastContainer = document.getElementById('toastContainer');
+
+// Current AI action state
+let currentAiAction = null;
+
+// Global Chat DOM Elements
+const globalChatBar = document.getElementById('globalChatBar');
+const globalChatInput = document.getElementById('globalChatInput');
+const globalChatSend = document.getElementById('globalChatSend');
+const chatResponseArea = document.getElementById('chatResponseArea');
+const chatResponseContent = document.getElementById('chatResponseContent');
+const closeChatResponse = document.getElementById('closeChatResponse');
+const insertResponseBtn = document.getElementById('insertResponseBtn');
+const copyResponseBtn = document.getElementById('copyResponseBtn');
+
+// Store the last AI response for insertion
+let lastChatResponse = '';
 
 // ============================================
 // Initialize
@@ -72,8 +93,39 @@ function setupEventListeners() {
 
   // Language buttons
   document.querySelectorAll('.lang-btn').forEach(btn => {
-    btn.addEventListener('click', () => handleTranslate(btn.dataset.lang));
+    btn.addEventListener('click', () => handleTranslateLanguageSelect(btn.dataset.lang));
   });
+
+  // AI Prompt Modal buttons
+  document.getElementById('executeAiBtn').addEventListener('click', executeWithCustomPrompt);
+  document.getElementById('cancelAiBtn').addEventListener('click', () => {
+    aiPromptModal.classList.add('hidden');
+    currentAiAction = null;
+  });
+
+  // Global Chat Bar
+  if (globalChatSend) {
+    globalChatSend.addEventListener('click', handleGlobalChat);
+  }
+  if (globalChatInput) {
+    globalChatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleGlobalChat();
+      }
+    });
+  }
+  if (closeChatResponse) {
+    closeChatResponse.addEventListener('click', () => {
+      chatResponseArea.classList.add('hidden');
+    });
+  }
+  if (insertResponseBtn) {
+    insertResponseBtn.addEventListener('click', insertResponseToEditor);
+  }
+  if (copyResponseBtn) {
+    copyResponseBtn.addEventListener('click', copyResponse);
+  }
 
   // Close modals on backdrop click
   document.querySelectorAll('.modal').forEach(modal => {
@@ -100,17 +152,26 @@ async function checkForImport() {
   const result = await chrome.storage.local.get('canvasImport');
   if (result.canvasImport) {
     const { content, title, query } = result.canvasImport;
+    // Always clear import data after reading
+    await chrome.storage.local.remove('canvasImport');
+    
     if (content) {
+      // Has content - import it
       editor.innerHTML = markdownToHtml(content);
       docTitle.textContent = title || query?.slice(0, 30) || t('messages.imported');
       currentDocId = crypto.randomUUID(); // 建立新文件 ID
-      await chrome.storage.local.remove('canvasImport');
       showToast(t('messages.imported'));
       scheduleSave(); // 自動儲存匯入的內容
       return true; // 有匯入
+    } else {
+      // No content - start fresh document
+      editor.innerHTML = '<p><br></p>';
+      docTitle.textContent = title || '做筆記';
+      currentDocId = crypto.randomUUID();
+      return true; // 標記為已處理，不載入舊文件
     }
   }
-  return false; // 沒有匯入
+  return false; // 沒有匯入請求
 }
 
 async function showImportModal() {
@@ -318,17 +379,88 @@ async function handleAiAction(action) {
   aiToolbar.classList.add('hidden');
   
   if (action === 'translate') {
+    // Reset translate custom prompt
+    if (translateCustomPrompt) translateCustomPrompt.value = '';
     translateModal.classList.remove('hidden');
     return;
   }
   
-  const prompts = {
-    rewrite: `Rewrite the following text to be clearer and more concise. Keep the same meaning and tone. Return only the rewritten text, no explanations.\n\nText:\n${selectedText}`,
-    summarize: `Summarize the following text in 1-2 sentences. Return only the summary, no explanations.\n\nText:\n${selectedText}`,
-    expand: `Expand on the following text with more detail and examples. Keep the same style. Return only the expanded text, no explanations.\n\nText:\n${selectedText}`
+  // Show custom prompt modal for other actions
+  showAiPromptModal(action);
+}
+
+// Show AI prompt modal with action-specific title
+function showAiPromptModal(action) {
+  currentAiAction = action;
+  
+  // Set modal title based on action
+  const titleKeys = {
+    rewrite: 'canvas.rewrite',
+    summarize: 'canvas.summarize',
+    expand: 'canvas.expand'
   };
   
-  await executeAiEdit(prompts[action], action);
+  aiPromptTitle.textContent = t(titleKeys[action]);
+  aiPromptTitle.dataset.i18n = titleKeys[action];
+  
+  // Show selected text preview (truncate if too long)
+  const previewText = selectedText.length > 200 
+    ? selectedText.slice(0, 200) + '...' 
+    : selectedText;
+  selectedPreview.textContent = previewText;
+  
+  // Clear previous custom prompt
+  customPromptInput.value = '';
+  
+  // Show modal
+  aiPromptModal.classList.remove('hidden');
+  customPromptInput.focus();
+}
+
+// Execute AI action with custom prompt
+async function executeWithCustomPrompt() {
+  if (!selectedText || !selectedRange || !currentAiAction) {
+    showToast(t('messages.noSelection'), true);
+    aiPromptModal.classList.add('hidden');
+    return;
+  }
+  
+  const customInstructions = customPromptInput.value.trim();
+  aiPromptModal.classList.add('hidden');
+  
+  const basePrompts = {
+    rewrite: 'Rewrite the following text to be clearer and more concise. Keep the same meaning and tone.',
+    summarize: 'Summarize the following text in 1-2 sentences.',
+    expand: 'Expand on the following text with more detail and examples. Keep the same style.'
+  };
+  
+  let prompt = basePrompts[currentAiAction];
+  
+  // Add custom instructions if provided
+  if (customInstructions) {
+    prompt += `\n\nAdditional instructions: ${customInstructions}`;
+  }
+  
+  prompt += `\n\nReturn only the result, no explanations.\n\nText:\n${selectedText}`;
+  
+  await executeAiEdit(prompt, currentAiAction);
+  currentAiAction = null;
+}
+
+// Store selected language for translate
+let selectedTranslateLang = null;
+
+// Handle translate language selection
+function handleTranslateLanguageSelect(lang) {
+  selectedTranslateLang = lang;
+  
+  // Highlight selected language button
+  translateModal.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lang === lang);
+  });
+  
+  // Execute translation with custom instructions
+  handleTranslate(lang);
 }
 
 async function handleTranslate(lang) {
@@ -347,8 +479,177 @@ async function handleTranslate(lang) {
     'ko': 'Korean'
   };
   
-  const prompt = `Translate the following text to ${langNames[lang]}. Return only the translation, no explanations.\n\nText:\n${selectedText}`;
+  const customInstructions = translateCustomPrompt ? translateCustomPrompt.value.trim() : '';
+  
+  let prompt = `Translate the following text to ${langNames[lang]}.`;
+  
+  // Add custom instructions if provided
+  if (customInstructions) {
+    prompt += `\n\nAdditional instructions: ${customInstructions}`;
+  }
+  
+  prompt += `\n\nReturn only the translation, no explanations.\n\nText:\n${selectedText}`;
+  
   await executeAiEdit(prompt, 'translate');
+  
+  // Reset state
+  selectedTranslateLang = null;
+  translateModal.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+}
+
+// ============================================
+// Global Chat - Context-aware Q&A
+// ============================================
+async function handleGlobalChat() {
+  const question = globalChatInput.value.trim();
+  
+  if (!question) {
+    showToast(t('messages.noQuestion'), true);
+    return;
+  }
+  
+  // Get full document content as context
+  const documentContent = editor.innerText.trim();
+  
+  if (!documentContent) {
+    showToast(t('messages.noContent'), true);
+    return;
+  }
+  
+  // Disable input while processing
+  globalChatInput.disabled = true;
+  globalChatSend.disabled = true;
+  
+  // Show loading state in response area
+  chatResponseArea.classList.remove('hidden');
+  chatResponseContent.innerHTML = `
+    <div class="chat-loading">
+      <div class="ai-spinner"></div>
+      <span>${t('canvas.aiProcessing')}</span>
+    </div>
+  `;
+  
+  try {
+    const prompt = `You are a helpful assistant. The user has a document and wants to ask a question about it.
+
+DOCUMENT CONTENT:
+---
+${documentContent}
+---
+
+USER QUESTION: ${question}
+
+Please answer the user's question based on the document content. If the question is not related to the document, you can still provide a helpful answer but mention that it's not directly from the document. Be concise and helpful.`;
+
+    const result = await chrome.runtime.sendMessage({
+      type: 'QUERY_MODEL',
+      payload: {
+        model: 'anthropic/claude-sonnet-4',
+        messages: [{ role: 'user', content: prompt }]
+      }
+    });
+    
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    
+    const response = result.choices?.[0]?.message?.content?.trim();
+    if (!response) {
+      throw new Error(t('common.error'));
+    }
+    
+    // Store response and display it
+    lastChatResponse = response;
+    displayChatResponse(response);
+    
+    // Clear input
+    globalChatInput.value = '';
+    
+  } catch (err) {
+    chatResponseContent.innerHTML = `<div style="color: var(--error);">${t('common.error')}: ${err.message}</div>`;
+    showToast(`${t('common.error')}: ${err.message}`, true);
+  } finally {
+    // Re-enable input
+    globalChatInput.disabled = false;
+    globalChatSend.disabled = false;
+    globalChatInput.focus();
+  }
+}
+
+// Display chat response with basic markdown rendering
+function displayChatResponse(response) {
+  // Convert basic markdown to HTML
+  let html = escapeHtml(response);
+  
+  // Bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  // Code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  
+  chatResponseContent.innerHTML = html;
+}
+
+// Insert AI response to editor at cursor position or end
+function insertResponseToEditor() {
+  if (!lastChatResponse) return;
+  
+  editor.focus();
+  
+  // Try to insert at cursor position
+  const selection = window.getSelection();
+  if (selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    
+    // Check if selection is within editor
+    if (editor.contains(range.commonAncestorContainer)) {
+      // Insert as a new paragraph
+      const p = document.createElement('p');
+      p.textContent = lastChatResponse;
+      range.insertNode(p);
+      
+      // Move cursor after inserted content
+      range.setStartAfter(p);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } else {
+      // Append to end
+      appendToEditor(lastChatResponse);
+    }
+  } else {
+    appendToEditor(lastChatResponse);
+  }
+  
+  scheduleSave();
+  showToast(t('messages.imported'));
+  chatResponseArea.classList.add('hidden');
+}
+
+// Append text to end of editor
+function appendToEditor(text) {
+  const p = document.createElement('p');
+  p.innerHTML = '<br>';
+  editor.appendChild(p);
+  
+  const content = document.createElement('p');
+  content.textContent = text;
+  editor.appendChild(content);
+}
+
+// Copy response to clipboard
+async function copyResponse() {
+  if (!lastChatResponse) return;
+  
+  try {
+    await navigator.clipboard.writeText(lastChatResponse);
+    showToast(t('messages.copied'));
+  } catch (err) {
+    showToast(t('common.error'), true);
+  }
 }
 
 async function executeAiEdit(prompt, actionName) {

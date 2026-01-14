@@ -1,0 +1,123 @@
+{
+  "version": "1.0",
+  "description": "AI Council Skill 評估規則配置 - 借鏡 Claude Code Showcase",
+  "config": {
+    "minScore": 3,
+    "maxSkillsToShow": 3,
+    "showMatchReasons": true
+  },
+  "scoring": {
+    "keyword": 2,
+    "keywordPattern": 3,
+    "intentPattern": 4,
+    "contextMatch": 5,
+    "settingsMatch": 6,
+    "visionMode": 8
+  },
+  "contextMappings": {
+    "arxiv.org": "researcher",
+    "scholar.google": "researcher",
+    "researchgate.net": "researcher",
+    "github.com": "technical",
+    "stackoverflow.com": "technical",
+    "developer.mozilla.org": "technical",
+    "news.google.com": "currentEvents",
+    "cna.com.tw": "currentEvents",
+    "bbc.com": "currentEvents",
+    "reuters.com": "currentEvents",
+    "momoshop.com.tw": "priceCompare",
+    "pchome.com.tw": "priceCompare",
+    "24h.pchome.com.tw": "priceCompare",
+    "shopee.tw": "priceCompare",
+    "buy.yahoo.com": "priceCompare",
+    "ruten.com.tw": "priceCompare"
+  },
+  "skills": {
+    "researcher": {
+      "priority": 9,
+      "triggers": {
+        "keywords": ["研究", "分析", "比較", "調查", "評估", "探討", "深入", "全面", "詳細"],
+        "keywordPatterns": ["深入.*研究", "詳細.*分析", "全面.*比較", "多方.*調查"],
+        "intentPatterns": ["(?:需要|請|幫我).*(?:研究|分析|調查)", "(?:深入|詳細).*(?:了解|探討)"]
+      },
+      "excludePatterns": ["簡單", "快速回答"]
+    },
+    "factChecker": {
+      "priority": 8,
+      "triggers": {
+        "keywords": ["真的嗎", "是否", "確認", "查證", "驗證", "正確嗎", "有沒有", "是不是", "查核"],
+        "keywordPatterns": ["是否.*正確", "真的.*嗎", "查核.*事實"],
+        "intentPatterns": ["(?:查核|驗證|確認).*(?:真偽|正確|事實)", "(?:這|那).*(?:是真的|正確)嗎"]
+      }
+    },
+    "currentEvents": {
+      "priority": 8,
+      "triggers": {
+        "keywords": ["最新", "現在", "今天", "昨天", "最近", "新聞", "時事", "目前", "當前", "近期"],
+        "keywordPatterns": ["最新.*消息", "近期.*發展", "目前.*狀況"],
+        "intentPatterns": ["(?:最近|目前|現在).*(?:情況|狀況|進展)", "(?:有什麼|最新的).*新聞"]
+      }
+    },
+    "technical": {
+      "priority": 7,
+      "triggers": {
+        "keywords": ["程式", "code", "coding", "bug", "錯誤", "API", "函數", "function", "實作", "implement", "debug"],
+        "keywordPatterns": ["程式碼.*錯誤", "如何.*實作", "API.*使用", "\\bfunction\\b", "\\bclass\\b"],
+        "intentPatterns": ["(?:寫|修|debug|實作).*(?:程式|code|function)", "(?:如何|怎麼).*(?:實作|寫)"]
+      }
+    },
+    "creative": {
+      "priority": 6,
+      "triggers": {
+        "keywords": ["想法", "創意", "點子", "建議", "可能", "方法", "策略", "方案", "怎麼辦", "腦力激盪"],
+        "keywordPatterns": ["有什麼.*想法", "給我.*建議", "提供.*方案"],
+        "intentPatterns": ["(?:想|要|需要).*(?:創意|點子|方案)", "(?:有|給).*(?:建議|想法)"]
+      }
+    },
+    "imageDesign": {
+      "priority": 7,
+      "triggers": {
+        "keywords": ["漫畫", "圖像", "圖片", "插畫", "設計圖", "畫一", "繪製", "生成圖", "圖表", "視覺", "海報", "封面", "logo", "icon"],
+        "keywordPatterns": ["畫.*圖", "設計.*視覺", "生成.*圖片", "製作.*海報"],
+        "intentPatterns": ["(?:幫我|請).*(?:畫|設計|生成).*(?:圖|插畫|海報)", "(?:需要|想要).*(?:圖片|插畫)"]
+      }
+    },
+    "visionAnalysis": {
+      "priority": 9,
+      "triggers": {
+        "keywords": ["這張圖", "圖片", "照片", "影像", "看看", "分析圖", "截圖"],
+        "keywordPatterns": ["這張.*圖", "圖片.*是什麼", "照片.*中"],
+        "intentPatterns": ["(?:分析|看|辨識|描述).*(?:圖片|照片|影像)", "(?:圖|照片).*(?:是什麼|內容)"]
+      },
+      "requireVisionMode": true
+    },
+    "priceCompare": {
+      "priority": 9,
+      "triggers": {
+        "keywords": ["比價", "便宜", "最低價", "哪家", "價格", "買", "購買", "價錢", "划算", "優惠", "momo", "pchome", "蝦皮", "電商"],
+        "keywordPatterns": ["比.*價", "哪.*便宜", "最.*便宜", "哪裡買", "去哪買", "價格.*比較"],
+        "intentPatterns": ["(?:想|要|幫我).*(?:買|找).*(?:便宜|比價|最低)", "(?:哪家|哪裡|哪個).*(?:便宜|划算|優惠)", "(?:比較|比價).*(?:價格|價錢)"]
+      }
+    },
+    "educator": {
+      "priority": 8,
+      "triggers": {
+        "keywords": ["學習", "教我", "解釋", "理解"],
+        "keywordPatterns": ["教.*我", "如何.*學"],
+        "intentPatterns": ["(?:教|幫)我.*(?:學習|理解|了解)"]
+      },
+      "requireLearnerMode": true
+    },
+    "quickAnswer": {
+      "priority": 1,
+      "triggers": {
+        "keywords": [],
+        "keywordPatterns": [],
+        "intentPatterns": []
+      },
+      "excludePatterns": ["深入", "詳細", "研究", "分析", "比較"],
+      "isDefault": true
+    }
+  }
+}
+
