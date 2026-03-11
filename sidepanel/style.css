@@ -28,6 +28,11 @@
   --stage-3: #10b981;
   --font-sans: 'Plus Jakarta Sans', -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
+  /* Alias tokens — mapped from core tokens for component compatibility */
+  --text-tertiary: #a1a1aa;        /* softer than --text-muted; used in placeholders/hints */
+  --bg-hover: #e4e4e7;             /* alias of --bg-elevated; used for hover backgrounds */
+  --accent-primary: #6366f1;       /* alias of --accent; used in legacy component refs */
+  --border: #d4d4d8;               /* alias of --border-color; used in newer component blocks */
 }
 
 html, body {
@@ -476,14 +481,18 @@ body {
   border-bottom: 1px solid var(--border-color);
 }
 
+/* .stage-label — canonical definition (merged from two conflicting declarations).
+   Variants (.stage-label-secondary, -search, -accent, -agent) defined below in
+   the Stage Sections block; .stage-skipped overrides background there. */
 .stage-label {
   padding: 0.25rem 0.5rem;
-  background: var(--accent);
+  background: var(--stage-1);
   border-radius: 4px;
   font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  color: #ffffff;
 }
 
 .stage-title {
@@ -1038,17 +1047,8 @@ body {
   flex-shrink: 0;
 }
 
-/* Legacy stage-label (kept for backwards compatibility) */
-.stage-label {
-  padding: 0.25rem 0.5rem;
-  background: var(--stage-1);
-  border-radius: 4px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #ffffff;
-}
+/* .stage-label canonical definition is at the top of Stage Header block (~line 484).
+   Variant modifier classes are kept below for specificity layering. */
 
 .stage-label-secondary {
   background: var(--stage-2);
@@ -2651,9 +2651,7 @@ body {
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+/* @keyframes spin — defined once near .spinner (line ~796); do not re-declare here */
 
 /* ============================================
    Style Selection UI (Phase 1)
@@ -5513,9 +5511,7 @@ body {
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+/* @keyframes spin — defined once near .spinner; do not re-declare here */
 
 /* Progress reasoning text */
 .progress-content .progress-reasoning {
