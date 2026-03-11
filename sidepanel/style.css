@@ -2656,9 +2656,7 @@ body {
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+/* @keyframes spin — defined once near .spinner (line ~796); do not re-declare here */
 
 /* ============================================
    Style Selection UI (Phase 1)
@@ -5518,9 +5516,7 @@ body {
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+/* @keyframes spin — defined once near .spinner; do not re-declare here */
 
 /* Progress reasoning text */
 .progress-content .progress-reasoning {
