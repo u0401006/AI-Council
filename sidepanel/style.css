@@ -28,6 +28,11 @@
   --stage-3: #10b981;
   --font-sans: 'Plus Jakarta Sans', -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
+  /* Alias tokens — mapped from core tokens for component compatibility */
+  --text-tertiary: #a1a1aa;        /* softer than --text-muted; used in placeholders/hints */
+  --bg-hover: #e4e4e7;             /* alias of --bg-elevated; used for hover backgrounds */
+  --accent-primary: #6366f1;       /* alias of --accent; used in legacy component refs */
+  --border: #d4d4d8;               /* alias of --border-color; used in newer component blocks */
 }
 
 html, body {
