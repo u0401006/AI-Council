@@ -33,11 +33,6 @@
         <input type="password" id="apiKey" data-i18n-placeholder="options.apiKeyPlaceholder" placeholder="sk-or-v1-..." spellcheck="false">
         <p class="hint" data-i18n-html="options.apiKeyHint">前往 <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> 取得金鑰</p>
       </div>
-      <div class="field">
-        <label for="braveApiKey" data-i18n="options.braveApiKeyLabel">Brave Search API 金鑰（選填）</label>
-        <input type="password" id="braveApiKey" data-i18n-placeholder="options.braveApiKeyPlaceholder" placeholder="BSA..." spellcheck="false">
-        <p class="hint" data-i18n-html="options.braveApiKeyHint">前往 <a href="https://brave.com/search/api/" target="_blank">brave.com/search/api</a> 取得金鑰（免費額度 2000 次/月）</p>
-      </div>
     </section>
 
     <section class="card">
@@ -62,26 +57,12 @@
       </div>
     </section>
 
-    <section class="card">
-      <h2 data-i18n="options.plannerSection">規劃模型</h2>
-      <div class="field">
-        <label for="plannerModel" data-i18n="options.plannerLabel">選擇負責決策規劃的模型</label>
-        <select id="plannerModel">
-          <option value="">停用（使用規則式）</option>
-          <!-- Populated by JS from council models -->
-        </select>
-        <p class="hint" data-i18n="options.plannerHint">用於複雜問題的動態決策。留空則全程使用規則式流程（省 token）</p>
-      </div>
-    </section>
+    <!-- 規劃模型 section removed (translation-focus mode) -->
 
     <section class="card">
       <h2 data-i18n="options.optionsSection">選項</h2>
-      <div class="field checkbox-field">
-        <input type="checkbox" id="enableReview" checked>
-        <label for="enableReview" data-i18n="options.enableReviewLabel">啟用互評審查</label>
-      </div>
-      <p class="hint" data-i18n="options.enableReviewHint">停用可節省 API 費用，但會跳過模型排名</p>
-      
+      <!-- enableReview: 固定啟用，UI 不可勾選 (translation-focus mode) -->
+
       <div class="field" style="margin-top: 1rem;">
         <label for="maxSearchIterations" data-i18n="options.maxSearchLabel">網搜迭代上限</label>
         <select id="maxSearchIterations">
@@ -105,118 +86,11 @@
       </div>
     </section>
 
-    <section class="card">
-      <h2 data-i18n="options.learnerSection">學習者模式</h2>
-      <p class="hint" data-i18n="options.learnerHint">針對不同年齡層調整 AI 的回應方式，啟用教練式引導探索</p>
-      <p class="hint" style="color: var(--warning, #f59e0b);" data-i18n="options.learnerWarning">選擇年齡層後，將使用內建的教練式提示詞，下方「提示詞範本」的自訂設定會被覆蓋。</p>
-      
-      <div class="field">
-        <div class="radio-group" id="learnerModeGroup">
-          <label class="radio-item">
-            <input type="radio" name="learnerMode" value="standard" checked>
-            <span class="radio-label" data-i18n="options.learnerStandard">標準模式</span>
-            <span class="radio-hint" data-i18n="options.learnerStandardHint">完整回答，適合成人使用</span>
-          </label>
-          <label class="radio-item">
-            <input type="radio" name="learnerMode" value="9-10">
-            <span class="radio-label" data-i18n="options.learner9_10">9-10 歲</span>
-            <span class="radio-hint" data-i18n="options.learner9_10Hint">簡單詞彙、生活例子、發現式引導</span>
-          </label>
-          <label class="radio-item">
-            <input type="radio" name="learnerMode" value="11-12">
-            <span class="radio-label" data-i18n="options.learner11_12">11-12 歲</span>
-            <span class="radio-hint" data-i18n="options.learner11_12Hint">給線索推導、連結已知、探索式學習</span>
-          </label>
-          <label class="radio-item">
-            <input type="radio" name="learnerMode" value="13-15">
-            <span class="radio-label" data-i18n="options.learner13_15">13-15 歲</span>
-            <span class="radio-hint" data-i18n="options.learner13_15Hint">方法論引導、框架思考、批判分析</span>
-          </label>
-          <label class="radio-item">
-            <input type="radio" name="learnerMode" value="16-18">
-            <span class="radio-label" data-i18n="options.learner16_18">16-18 歲</span>
-            <span class="radio-hint" data-i18n="options.learner16_18Hint">學術深度、多元觀點、自主研究導向</span>
-          </label>
-        </div>
-      </div>
-    </section>
+    <!-- 學習者模式 section removed (translation-focus mode) -->
 
-    <section class="card" id="skillsSection">
-      <div class="section-header">
-        <h2 data-i18n="options.skillsSection">Agent Skills</h2>
-        <button type="button" id="browseSkillsBtn" class="btn-secondary" data-i18n="options.browseSkillsBtn">瀏覽 SkillsMP</button>
-      </div>
-      <p class="hint" data-i18n="options.skillsHint">管理已安裝的 Agent Skills，可從 SkillsMP 或 GitHub 匯入新技能</p>
-      
-      <div class="field" style="margin-top: 1rem;">
-        <div id="skillsStorageInfo" class="storage-info">
-          <!-- Populated by JS -->
-        </div>
-      </div>
+    <!-- Agent Skills section removed (translation-focus mode) -->
 
-      <div class="field" style="margin-top: 1rem;">
-        <label data-i18n="options.installedSkillsLabel">已安裝技能</label>
-        <div id="installedSkillsList" class="skills-list">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-
-      <div class="field" style="margin-top: 1rem;">
-        <label for="skillImportUrl" data-i18n="options.importSkillLabel">匯入技能</label>
-        <div class="import-skill-row">
-          <input type="text" id="skillImportUrl" placeholder="GitHub: owner/repo/path/SKILL.md 或 SkillsMP slug" spellcheck="false">
-          <button type="button" id="importSkillBtn" class="btn-secondary" data-i18n="options.importSkillBtn">匯入</button>
-        </div>
-        <p class="hint" data-i18n="options.importSkillHint">支援 GitHub raw 路徑或 SkillsMP skill slug</p>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2 data-i18n="options.outputStyleSection">回應風格</h2>
-      <p class="hint" data-i18n="options.outputStyleHint">控制 AI 回應的長度與格式偏好（標準模式適用）</p>
-      
-      <div class="field" style="margin-top: 1rem;">
-        <label for="outputLength" data-i18n="options.outputLengthLabel">長度偏好</label>
-        <div class="radio-group" id="outputLengthGroup">
-          <label class="radio-item">
-            <input type="radio" name="outputLength" value="concise">
-            <span class="radio-label" data-i18n="options.lengthConcise">簡潔</span>
-            <span class="radio-hint" data-i18n="options.lengthConciseHint">約 500 字，重點摘要</span>
-          </label>
-          <label class="radio-item">
-            <input type="radio" name="outputLength" value="standard" checked>
-            <span class="radio-label" data-i18n="options.lengthStandard">標準</span>
-            <span class="radio-hint" data-i18n="options.lengthStandardHint">約 800 字，適度展開</span>
-          </label>
-          <label class="radio-item">
-            <input type="radio" name="outputLength" value="detailed">
-            <span class="radio-label" data-i18n="options.lengthDetailed">詳盡</span>
-            <span class="radio-hint" data-i18n="options.lengthDetailedHint">約 1200 字，完整說明</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="field" style="margin-top: 1rem;">
-        <label for="outputFormat" data-i18n="options.outputFormatLabel">格式偏好</label>
-        <div class="radio-group" id="outputFormatGroup">
-          <label class="radio-item">
-            <input type="radio" name="outputFormat" value="bullet">
-            <span class="radio-label" data-i18n="options.formatBullet">條列式優先</span>
-            <span class="radio-hint" data-i18n="options.formatBulletHint">使用項目符號，每點簡短</span>
-          </label>
-          <label class="radio-item">
-            <input type="radio" name="outputFormat" value="mixed" checked>
-            <span class="radio-label" data-i18n="options.formatMixed">混合</span>
-            <span class="radio-hint" data-i18n="options.formatMixedHint">依內容性質靈活選擇</span>
-          </label>
-          <label class="radio-item">
-            <input type="radio" name="outputFormat" value="paragraph">
-            <span class="radio-label" data-i18n="options.formatParagraph">段落式</span>
-            <span class="radio-hint" data-i18n="options.formatParagraphHint">使用完整段落說明</span>
-          </label>
-        </div>
-      </div>
-    </section>
+    <!-- 回應風格 section removed (translation-focus mode) -->
 
     <section class="card" id="promptSection">
       <div class="section-header">

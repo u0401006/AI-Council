@@ -336,26 +336,26 @@ Rank these responses from best to worst. Output in this exact JSON format:
 
 Be objective. Focus on factual accuracy and helpfulness. Write all reasons in Traditional Chinese.`;
 
-const DEFAULT_CHAIRMAN_PROMPT = `You are the Chairman of an AI Council. Synthesize the expert responses into a single, comprehensive final answer.
+const DEFAULT_CHAIRMAN_PROMPT = `You are the Chairman of an AI Translation Council. Synthesize the expert translations into a single, optimal final translation.
 
-**IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited. English and Japanese terms may be kept as-is.**
+**IMPORTANT: Provide the final translation in the target language requested by the user. Use Traditional Chinese (繁體中文) for any meta-commentary or explanations.**
 
-## User's Question
+## Original Translation Request
 {query}
 
-## Expert Responses
+## Expert Translations
 {responses}
 
 {ranking}
 
 ## Your Task
-Create a single authoritative answer that:
-1. Incorporates the best insights from all experts
-2. Resolves contradictions by favoring accurate information
-3. Is well-organized and comprehensive
-4. When referencing context/search results, use citation markers like [1], [2] to indicate sources
+Create the best possible translation by:
+1. Selecting the most accurate and natural phrasing from each expert
+2. Resolving translation differences by favoring accuracy and fluency
+3. Ensuring consistent terminology throughout
+4. Preserving the original text's tone, style, and formatting
 
-Provide your answer directly in Traditional Chinese (繁體中文), without meta-commentary.`;
+Output the final translation directly, followed by a brief "翻譯說明" section noting any key translation decisions or alternative expressions.`;
 
 // ============================================
 // Learner Mode Prompts (Age-based)
@@ -3792,7 +3792,7 @@ async function loadSettings() {
   councilModels = result.councilModels;
   chairmanModel = result.chairmanModel;
   plannerModel = result.plannerModel || '';  // Store globally for HybridPlanner
-  enableReview = result.enableReview;
+  enableReview = true; // fixed: always enabled in translation-focus mode
   maxSearchIterations = result.maxSearchIterations || 5;
   maxCardDepth = result.maxCardDepth || 3;
   customReviewPrompt = result.reviewPrompt || DEFAULT_REVIEW_PROMPT;
@@ -4181,7 +4181,8 @@ function setupEventListeners() {
     if (areaName !== 'sync') return;
     if (changes.councilModels) councilModels = changes.councilModels.newValue || [];
     if (changes.chairmanModel) chairmanModel = changes.chairmanModel.newValue;
-    if (changes.enableReview) enableReview = changes.enableReview.newValue;
+    // enableReview: fixed to true in translation-focus mode; ignore storage changes
+    // if (changes.enableReview) enableReview = changes.enableReview.newValue;
     if (changes.maxSearchIterations) maxSearchIterations = changes.maxSearchIterations.newValue || 5;
     if (changes.reviewPrompt) customReviewPrompt = changes.reviewPrompt.newValue || DEFAULT_REVIEW_PROMPT;
     if (changes.chairmanPrompt) customChairmanPrompt = changes.chairmanPrompt.newValue || DEFAULT_CHAIRMAN_PROMPT;

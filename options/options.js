@@ -39,18 +39,25 @@ function getDefaultReviewPrompt(language) {
   const langInstruction = i18n.t('ai.languageInstruction');
   const langName = i18n.t('ai.languageName');
   
-  return `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
+  return `You are an impartial translation evaluator. Rank the following translations based on accuracy, fluency, and naturalness.
 
 ${langInstruction}
 
-## User's Question
+## Original Translation Request
 {query}
 
-## Responses to Evaluate
+## Translations to Evaluate
 {responses}
 
+## Evaluation Criteria
+1. Faithfulness to the original text
+2. Fluency and naturalness in the target language
+3. Terminology consistency
+4. Cultural adaptation
+5. Format preservation
+
 ## Your Task
-Rank these responses from best to worst. Output in this exact JSON format:
+Rank these translations from best to worst. Output in this exact JSON format:
 \`\`\`json
 {
   "rankings": [
@@ -60,33 +67,33 @@ Rank these responses from best to worst. Output in this exact JSON format:
 }
 \`\`\`
 
-Be objective. Focus on factual accuracy and helpfulness. Write all reasons in ${langName}.`;
+Be objective. Focus on translation quality. Write all reasons in ${langName}.`;
 }
 
 function getDefaultChairmanPrompt(language) {
   const langInstruction = i18n.t('ai.languageInstruction');
   const langName = i18n.t('ai.languageName');
   
-  return `You are the Chairman of an AI Council. Synthesize the expert responses into a single, comprehensive final answer.
+  return `You are the Chairman of an AI Translation Council. Synthesize the expert translations into a single, optimal final translation.
 
 ${langInstruction}
 
-## User's Question
+## Original Translation Request
 {query}
 
-## Expert Responses
+## Expert Translations
 {responses}
 
 {ranking}
 
 ## Your Task
-Create a single authoritative answer that:
-1. Incorporates the best insights from all experts
-2. Resolves contradictions by favoring accurate information
-3. Is well-organized and comprehensive
-4. When referencing context/search results, use citation markers like [1], [2] to indicate sources
+Create the best possible translation by:
+1. Selecting the most accurate and natural phrasing from each expert
+2. Resolving translation differences by favoring accuracy and fluency
+3. Ensuring consistent terminology throughout
+4. Preserving the original text's tone, style, and formatting
 
-Provide your answer directly in ${langName}, without meta-commentary.`;
+Output the final translation directly in the requested target language, followed by a brief translation notes section in ${langName}.`;
 }
 
 // Default output style settings
@@ -231,6 +238,7 @@ function renderChairmanSelect() {
 }
 
 function renderPlannerSelect() {
+  if (!plannerSelect) return; // plannerSelect removed in translation-focus mode
   const disabledText = t('options.plannerDisabled') || '停用（使用規則式）';
   const disabledOption = `<option value="">${disabledText}</option>`;
   const modelOptions = AVAILABLE_MODELS.map(model => 
@@ -269,12 +277,12 @@ async function loadSettings() {
   }
 
   apiKeyInput.value = result.apiKey;
-  braveApiKeyInput.value = result.braveApiKey;
-  enableReviewCheckbox.checked = result.enableReview;
+  if (braveApiKeyInput) braveApiKeyInput.value = result.braveApiKey;
+  // enableReview: fixed to true in translation-focus mode (checkbox removed from UI)
   maxSearchIterationsSelect.value = result.maxSearchIterations;
   if (maxCardDepthSelect) maxCardDepthSelect.value = result.maxCardDepth;
   chairmanSelect.value = result.chairmanModel;
-  plannerSelect.value = result.plannerModel || '';
+  if (plannerSelect) plannerSelect.value = result.plannerModel || '';
   
   // Use stored prompts or generate defaults based on current language
   reviewPromptTextarea.value = result.reviewPrompt || getDefaultReviewPrompt(result.language);
@@ -306,12 +314,12 @@ async function loadSettings() {
 async function saveSettings() {
   const language = languageSelect.value;
   const apiKey = apiKeyInput.value.trim();
-  const braveApiKey = braveApiKeyInput.value.trim();
-  const enableReview = enableReviewCheckbox.checked;
+  const braveApiKey = braveApiKeyInput ? braveApiKeyInput.value.trim() : ''; // braveApiKey UI removed
+  const enableReview = true; // Translation-Focus: always enabled
   const maxSearchIterations = parseInt(maxSearchIterationsSelect.value, 10) || 5;
   const maxCardDepth = parseInt(maxCardDepthSelect?.value, 10) || 3;
   const chairmanModel = chairmanSelect.value;
-  const plannerModel = plannerSelect.value;  // Empty string means disabled
+  const plannerModel = plannerSelect ? plannerSelect.value : ''; // plannerSelect UI removed
   const reviewPrompt = reviewPromptTextarea.value.trim() || getDefaultReviewPrompt(language);
   const chairmanPrompt = chairmanPromptTextarea.value.trim() || getDefaultChairmanPrompt(language);
   
@@ -319,11 +327,11 @@ async function saveSettings() {
   const checkboxes = modelListEl.querySelectorAll('[data-model]:checked');
   const councilModels = Array.from(checkboxes).map(cb => cb.value);
 
-  // Get output style settings
+  // Output style: use stored value or default (UI removed in translation-focus mode)
   const outputLength = document.querySelector('input[name="outputLength"]:checked')?.value || DEFAULT_OUTPUT_LENGTH;
   const outputFormat = document.querySelector('input[name="outputFormat"]:checked')?.value || DEFAULT_OUTPUT_FORMAT;
   
-  // Get learner mode setting
+  // Learner mode: fixed to standard in translation-focus mode (UI removed)
   const learnerMode = document.querySelector('input[name="learnerMode"]:checked')?.value || 'standard';
 
   if (councilModels.length < 2) {
