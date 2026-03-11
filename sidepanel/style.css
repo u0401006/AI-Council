@@ -481,14 +481,18 @@ body {
   border-bottom: 1px solid var(--border-color);
 }
 
+/* .stage-label — canonical definition (merged from two conflicting declarations).
+   Variants (.stage-label-secondary, -search, -accent, -agent) defined below in
+   the Stage Sections block; .stage-skipped overrides background there. */
 .stage-label {
   padding: 0.25rem 0.5rem;
-  background: var(--accent);
+  background: var(--stage-1);
   border-radius: 4px;
   font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  color: #ffffff;
 }
 
 .stage-title {
@@ -1043,17 +1047,8 @@ body {
   flex-shrink: 0;
 }
 
-/* Legacy stage-label (kept for backwards compatibility) */
-.stage-label {
-  padding: 0.25rem 0.5rem;
-  background: var(--stage-1);
-  border-radius: 4px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #ffffff;
-}
+/* .stage-label canonical definition is at the top of Stage Header block (~line 484).
+   Variant modifier classes are kept below for specificity layering. */
 
 .stage-label-secondary {
   background: var(--stage-2);
