@@ -313,18 +313,25 @@ const IMAGE_MODELS = ['google/gemini-3-pro-image-preview', 'google/gemini-2.5-fl
 const DEFAULT_IMAGE_MODEL = 'google/gemini-3-pro-image-preview';
 
 // Default prompts (same as options.js)
-const DEFAULT_REVIEW_PROMPT = `You are an impartial evaluator. Rank the following responses to a user's question based on accuracy, completeness, and insight.
+const DEFAULT_REVIEW_PROMPT = `You are an impartial translation evaluator. Rank the following translations based on accuracy, fluency, and naturalness in the target language.
 
 **IMPORTANT: You MUST respond in Traditional Chinese (繁體中文) using Taiwan-standard expressions. Simplified Chinese is strictly prohibited.**
 
-## User's Question
+## Original Translation Request
 {query}
 
-## Responses to Evaluate
+## Translations to Evaluate
 {responses}
 
+## Evaluation Criteria
+1. **忠實度**：翻譯是否準確反映原文含義？
+2. **流暢度**：譯文是否符合目標語言的自然表達？
+3. **術語一致性**：專業術語翻譯是否正確且一致？
+4. **文化適配**：慣用語和文化相關表達是否妥善處理？
+5. **格式完整**：是否保留原文的段落與格式結構？
+
 ## Your Task
-Rank these responses from best to worst. Output in this exact JSON format:
+Rank these translations from best to worst. Output in this exact JSON format:
 \`\`\`json
 {
   "rankings": [
@@ -334,7 +341,7 @@ Rank these responses from best to worst. Output in this exact JSON format:
 }
 \`\`\`
 
-Be objective. Focus on factual accuracy and helpfulness. Write all reasons in Traditional Chinese.`;
+Be objective. Focus on translation quality. Write all reasons in Traditional Chinese.`;
 
 const DEFAULT_CHAIRMAN_PROMPT = `You are the Chairman of an AI Translation Council. Synthesize the expert translations into a single, optimal final translation.
 
@@ -563,9 +570,9 @@ let councilModels = [];
 let chairmanModel = '';
 let plannerModel = '';  // Empty means disabled (use rule-based planner)
 const REVIEW_WINNER_VALUE = '__review_winner__'; // 互評勝者選項的特殊值
-let enableReview = true;
-let enableImage = false;
-let enableSearchMode = false;
+let enableReview = true; // Translation-Focus: always true, hard-coded
+let enableImage = false; // Translation-Focus: always false, image gen removed
+let enableSearchMode = false; // Translation-Focus: always false, web search removed
 let maxSearchIterations = 5;
 let maxCardDepth = 3; // 任務深度上限 (L0-L3)
 let searchIteration = 0;
@@ -2911,77 +2918,19 @@ class SkillSelectorUI {
  * @param {boolean} options.userSelected - True if user explicitly selected this skill
  */
 function applySkillSideEffects(skill, options = {}) {
-  const { userSelected = false } = options;
-  
-  // Reset all modes first
+  // Translation-Focus: image, search, vision all permanently disabled
   enableImage = false;
   enableSearchMode = false;
+  visionMode = false;
   
-  // Determine if we should enable/disable vision mode
-  const skillRequiresVision = skill?.sideEffects?.enableVision === true;
-  const hasUploadedImage = uploadedImage !== null;
+  if (imageToggle) imageToggle.checked = false;
+  if (searchModeToggle) searchModeToggle.checked = false;
+  if (visionToggle) visionToggle.checked = false;
+  if (visionUploadSection) visionUploadSection.classList.add('hidden');
   
-  // Vision mode logic:
-  // - If skill requires vision: enable it and show upload UI
-  // - If user explicitly selected a non-vision skill: force disable vision and clear image
-  // - If skill auto-detected and doesn't require vision but image exists: keep vision
-  // - If no image uploaded: disable vision
-  if (skillRequiresVision) {
-    visionMode = true;
-    if (visionUploadSection) {
-      visionUploadSection.classList.remove('hidden');
-    }
-  } else if (userSelected) {
-    // User explicitly selected a skill that doesn't require vision
-    // Force disable vision mode and clear uploaded image
-    visionMode = false;
-    clearUploadedImage();
-    if (visionUploadSection) {
-      visionUploadSection.classList.add('hidden');
-    }
-    console.log('[SkillSideEffects] User selected non-vision skill - cleared vision state');
-  } else if (!hasUploadedImage) {
-    // Auto-detected skill, no image uploaded
-    visionMode = false;
-    if (visionUploadSection) {
-      visionUploadSection.classList.add('hidden');
-    }
-  }
-  // If auto-detected, image exists, and skill doesn't require vision: keep current state
-  
-  if (!skill?.sideEffects) {
-    // Update hidden toggles for backward compatibility
-    if (imageToggle) imageToggle.checked = enableImage;
-    if (searchModeToggle) searchModeToggle.checked = enableSearchMode;
-    if (visionToggle) visionToggle.checked = visionMode;
-    return;
-  }
-  
-  const effects = skill.sideEffects;
-  
-  if (effects.enableImage) {
-    enableImage = true;
-  }
-  if (effects.enableSearch) {
-    enableSearchMode = true;
-  }
-  
-  // Update hidden toggles for backward compatibility
-  if (imageToggle) imageToggle.checked = enableImage;
-  if (searchModeToggle) searchModeToggle.checked = enableSearchMode;
-  if (visionToggle) visionToggle.checked = visionMode;
-  
-  // Update current card settings if in task planner mode
   updateCurrentCardSettings();
   
-  console.log('[SkillSideEffects] Applied:', {
-    skill: skill?.id || null,
-    enableImage,
-    enableSearchMode,
-    visionMode,
-    userSelected,
-    hasUploadedImage: uploadedImage !== null
-  });
+  console.log('[TranslationFocus] Side effects: image=off, search=off, vision=off');
 }
 
 /**
@@ -7809,28 +7758,15 @@ function registerAgentTools() {
  * Now uses the unified skill selector with priority: user selection > detected
  */
 function getCurrentSkillForQuery(query) {
-  // Use the unified resolveActiveSkill function
-  const { skill, source } = resolveActiveSkill();
-  
-  if (skill) {
-    console.log('[AgentFramework] Selected skill:', skill.id, skill.name, '(source:', source + ')');
-    return skill;
-  }
-  
-  // Fallback to direct detection if resolveActiveSkill didn't find anything
+  // Translation-Focus: only translation skills
   const selector = window.MAVSkills?.skillSelector;
   if (!selector) {
-    console.warn('[AgentFramework] SkillSelector not available');
-    return null;
+    console.warn('[TranslationFocus] SkillSelector not available, using default translation skill');
+    return window.MAVSkills?.SKILLS?.translatorSingle || null;
   }
   
-  const settings = {
-    visionMode: visionMode,
-    learnerMode: learnerMode
-  };
-  
-  const detected = selector.select(query, settings);
-  console.log('[AgentFramework] Fallback detected skill:', detected?.id, detected?.name);
+  const detected = selector.select(query, {});
+  console.log('[TranslationFocus] Selected skill:', detected?.id, detected?.name);
   return detected;
 }
 
@@ -7868,41 +7804,18 @@ async function runWithAgentLoop(query, options = {}) {
     });
   }
   
-  // Create planner (HybridPlanner auto-switches between LLM and rule-based)
-  let preferredTools = currentSkill?.preferredTools || ['query_council', 'peer_review', 'synthesize'];
+  // Translation-Focus: always use peer_review, no web_search
+  let preferredTools = ['query_council', 'peer_review', 'synthesize'];
   
-  // 根據用戶設定調整 preferredTools
-  // 如果用戶啟用了 enableReview 但 skill 沒有包含 peer_review，則加入
-  if (enableReview && !preferredTools.includes('peer_review')) {
-    // 在 query_council 後、synthesize 前插入 peer_review
-    const synthesizeIdx = preferredTools.indexOf('synthesize');
-    if (synthesizeIdx > 0) {
-      preferredTools = [...preferredTools.slice(0, synthesizeIdx), 'peer_review', ...preferredTools.slice(synthesizeIdx)];
-    } else {
-      preferredTools = [...preferredTools, 'peer_review'];
-    }
-    console.log('[AgentFramework] Added peer_review based on enableReview setting');
-  }
-  // 如果用戶關閉了 enableReview，則移除 peer_review
-  if (!enableReview && preferredTools.includes('peer_review')) {
-    preferredTools = preferredTools.filter(t => t !== 'peer_review');
-    console.log('[AgentFramework] Removed peer_review based on enableReview setting');
-  }
-  
-  const planner = new window.MAVPlanner.HybridPlanner({
-    model: plannerModel || null,  // Empty string means use rule-based only
-    complexityThreshold: 0.5,
-    useWeightedEvaluation: false
-  });
+  const planner = new window.MAVPlanner.RuleBasedPlanner();
   planner.setPreferredTools(preferredTools);
   planner.setSkill(currentSkill);
   if (currentSkill?.plannerHint) {
     planner.setSkillHint(currentSkill.plannerHint);
   }
   
-  console.log('[AgentFramework] Preferred tools:', preferredTools);
-  console.log('[AgentFramework] enableReview:', enableReview);
-  console.log('[AgentFramework] Planner model:', plannerModel || '(rule-based)');
+  console.log('[TranslationFocus] Preferred tools:', preferredTools);
+  console.log('[TranslationFocus] Peer review: always enabled');
   
   // Create agent loop
   const agentLoop = new window.MAVAgent.AgentLoop({
@@ -8532,8 +8445,8 @@ async function handleSend() {
     }
     } // End of legacy flow else block
 
-    // === IMAGE GENERATION (if enabled) ===
-    if (enableImage && finalAnswerContent) {
+    // === IMAGE GENERATION (disabled in Translation-Focus) ===
+    if (false && enableImage && finalAnswerContent) {
       currentStage = 'imageGen';
       // Show loading while AI generates prompts
       const promptLoadingEl = document.createElement('div');
