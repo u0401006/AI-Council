@@ -1213,3 +1213,58 @@ body {
   height: 16px;
   border-width: 2px;
 }
+
+/* ============================================
+   TTS Controls
+   ============================================ */
+
+.tts-group {
+  margin-left: auto;
+}
+
+.tts-btn {
+  color: var(--accent);
+}
+
+.tts-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.tts-btn.hidden {
+  display: none;
+}
+
+.tts-btn.paused svg {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* TTS playing indicator */
+.tts-group.playing .tts-btn:not(.hidden) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+/* TTS voice name display */
+.tts-voice-name {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.tts-voice-btn {
+  border-left: 1px solid var(--border-color);
+  margin-left: 2px;
+  padding-left: 6px;
+}

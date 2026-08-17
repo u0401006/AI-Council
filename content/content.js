@@ -127,8 +127,10 @@ function showToast(message) {
       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
       <polyline points="22 4 12 14.01 9 11.01"></polyline>
     </svg>
-    <span>${message}</span>
   `;
+  const messageEl = document.createElement('span');
+  messageEl.textContent = String(message || '');
+  toast.appendChild(messageEl);
   
   // Apply styles
   toast.style.cssText = `
@@ -198,4 +200,3 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   return false;
 });
-

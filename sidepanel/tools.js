@@ -468,13 +468,7 @@ function createToolExecutors(appContext) {
       );
       
       // Process results
-      const responses = results
-        .filter(r => r.status === 'fulfilled')
-        .map(r => r.value);
-      
-      const failures = results
-        .filter(r => r.status === 'rejected')
-        .map((r, i) => ({ model: targetModels[i], error: r.reason?.message || 'Unknown error' }));
+      const { responses, failures } = window.MAVCoreUtils.mapSettledModelResults(targetModels, results);
       
       return {
         responses,
@@ -513,6 +507,9 @@ function createToolExecutors(appContext) {
      */
     google_search_tab: async (params, context) => {
       const { query, count = 10 } = params;
+      if (typeof ensureWebsiteAccess === 'function' && !(await ensureWebsiteAccess(['https://www.google.com/*']))) {
+        throw new Error('Website access permission was not granted');
+      }
       
       return new Promise((resolve, reject) => {
         chrome.runtime.sendMessage(
@@ -574,22 +571,8 @@ function createToolExecutors(appContext) {
         .map(r => r.value);
       
       // Calculate aggregated ranking (standard)
-      const scores = new Map();
-      for (const review of reviews) {
-        if (review.rankings) {
-          review.rankings.forEach((rank, idx) => {
-            const model = responses[idx]?.model;
-            if (model) {
-              const current = scores.get(model) || 0;
-              scores.set(model, current + (responses.length - rank.rank));
-            }
-          });
-        }
-      }
-      
-      const aggregatedRanking = Array.from(scores.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(([model, score]) => ({ model, score }));
+      const aggregatedRanking = window.MAVCoreUtils.aggregatePeerReviewScores(reviews, responses.length);
+      const scores = new Map(aggregatedRanking.map(({ model, score }) => [model, score]));
       
       // Calculate weighted ranking if weights provided
       let weightedRanking = null;
@@ -761,4 +744,3 @@ if (typeof window !== 'undefined') {
     formatContributionContext
   };
 }
-

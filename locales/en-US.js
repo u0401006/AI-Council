@@ -5,12 +5,12 @@ window.LOCALE_EN_US = {
     languageInstruction: '**IMPORTANT: You MUST respond in English. Use clear, professional American English.**',
     languageName: 'English'
   },
-  
+
   // CSS Content (for ::after, ::before pseudo-elements)
   css: {
     contextEmpty: 'No context added yet'
   },
-  
+
   // Common
   common: {
     save: 'Save',
@@ -30,12 +30,12 @@ window.LOCALE_EN_US = {
     times: 'times',
     depth: 'Depth'
   },
-  
+
   // Options Page
   options: {
     pageTitle: 'AI Council Settings',
     subtitle: 'Multi-model AI Council Settings',
-    
+
     // API Section
     apiSection: 'API Settings',
     apiKeyLabel: 'OpenRouter API Key',
@@ -44,24 +44,38 @@ window.LOCALE_EN_US = {
     braveApiKeyLabel: 'Brave Search API Key (Optional)',
     braveApiKeyPlaceholder: 'BSA...',
     braveApiKeyHint: 'Get your key at <a href="https://brave.com/search/api/" target="_blank">brave.com/search/api</a> (2000 free queries/month)',
-    
+
     // Language Section
     languageSection: 'Interface Language',
     languageLabel: 'Select interface and AI response language',
     languageHint: 'AI responses will also use the selected language',
-    
+
     // Models Section
     modelsSection: 'Participating Models',
     updateModelsBtn: 'Update from OpenRouter',
     updateModelsLoading: 'Updating...',
     modelsHint: 'Select models to participate in discussions. <span class="vision-badge">VIS</span> = vision support, <span class="image-badge">IMG</span> = image generation. Pricing: $input/$output per million tokens',
-    
+
     // Chairman Section
     chairmanSection: 'Chairman Model',
     chairmanLabel: 'Select the model to synthesize the final answer',
     chairmanHint: 'Select "Review Winner" to dynamically assign the top-ranked model as chairman',
     reviewWinner: 'Review Winner (Dynamic)',
-    
+
+    // Planner Section
+    plannerSection: 'Planner Model',
+    plannerLabel: 'Select the model responsible for planning decisions',
+    plannerHint: 'Used for dynamic decisions on complex questions. Leave empty to use the lower-cost rule-based flow.',
+
+    // Skills Section
+    skillsSection: 'Skill Management',
+    browseSkillsBtn: 'Browse Skill Marketplace',
+    skillsHint: 'Manage installed skills or import a SKILL.md from a local path.',
+    installedSkillsLabel: 'Installed Skills',
+    importSkillLabel: 'Import Skill',
+    importSkillBtn: 'Import',
+    importSkillHint: 'Enter a local skill directory containing SKILL.md.',
+
     // Options Section
     optionsSection: 'Options',
     enableReviewLabel: 'Enable Peer Review (Stage 2)',
@@ -71,7 +85,7 @@ window.LOCALE_EN_US = {
     maxDepthLabel: 'Max Task Depth',
     maxDepthHint: 'Maximum depth for subtask expansion in task planner',
     depthOption: 'L0 - L{max} ({layers} levels)',
-    
+
     // Learner Mode Section
     learnerSection: 'Learner Mode',
     learnerHint: 'Adjust AI responses for different age groups with guided exploration',
@@ -87,7 +101,7 @@ window.LOCALE_EN_US = {
     learner16_18: 'Ages 16-18',
     learner16_18Hint: 'Academic depth, multiple perspectives, research-oriented',
     learnerModeNote: 'Currently using built-in prompts for ages {mode}',
-    
+
     // Output Style Section
     outputStyleSection: 'Response Style',
     outputStyleHint: 'Control AI response length and format preferences (Standard mode)',
@@ -105,7 +119,7 @@ window.LOCALE_EN_US = {
     formatMixedHint: 'Flexible based on content',
     formatParagraph: 'Paragraphs',
     formatParagraphHint: 'Use full paragraphs',
-    
+
     // Prompts Section
     promptsSection: 'Prompt Templates',
     resetPromptsBtn: 'Reset to Default',
@@ -116,17 +130,17 @@ window.LOCALE_EN_US = {
     chairmanPromptLabel: 'Chairman Prompt (Stage 3)',
     chairmanPromptHint: 'Instructions for chairman to synthesize final answer',
     chairmanPromptPlaceholder: 'Enter chairman instructions...',
-    
+
     // Actions
     saveBtn: 'Save Settings',
-    
+
     // Status Messages
     statusSaved: 'Settings saved',
     statusMinModels: 'Please select at least 2 models',
     statusPromptsReset: 'Prompts reset to default',
     statusModelsUpdated: 'Successfully updated {count} models',
     statusModelsUpdateFailed: 'Update failed: {error}',
-    
+
     // Skills
     skillDeleted: 'Skill deleted',
     enterSkillPath: 'Please enter skill path',
@@ -135,28 +149,28 @@ window.LOCALE_EN_US = {
     invalidSkillFormat: 'Invalid SKILL.md format',
     invalidGitHubPath: 'Invalid GitHub path format'
   },
-  
+
   // Sidepanel
   sidepanel: {
     title: 'AI Council',
-    
+
     // Header Buttons
     newChat: 'New Chat',
     history: 'History',
     export: 'Export',
     settings: 'Settings',
-    
+
     // History Panel
     historyTitle: 'History',
     clearHistory: 'Clear All',
     closeHistory: 'Close',
-    
+
     // Breadcrumb
     backToRoot: 'Back to root card',
     depthLabel: 'Depth: {depth}',
     cardCount: '{count} cards',
     viewInCanvas: 'View task tree in notes',
-    
+
     // Context Section
     contextTitle: 'Context',
     capturePage: 'Capture Page',
@@ -164,11 +178,11 @@ window.LOCALE_EN_US = {
     webSearch: 'Search',
     paste: 'Paste',
     clearContext: 'Clear all context',
-    
+
     // Search Iteration
     extendSearch: 'Extended search:',
     cancelSearch: 'Cancel',
-    
+
     // Input
     inputPlaceholder: 'Enter your question...',
     uploadImageHint: 'Click or drag image here',
@@ -178,25 +192,25 @@ window.LOCALE_EN_US = {
     searchToggle: 'Enable AI search iteration mode',
     modelCount: '{count} models',
     sendBtn: 'Send',
-    
+
     // Skill Selector
     selectSkill: 'Select skill mode',
     autoDetect: 'Auto Detect',
     searchSkills: 'Search skills...',
     recommended: 'Recommended',
     clearSkillSelection: 'Clear selection (use auto-detect)',
-    
+
     // Cost Tracker
     costTitle: 'Cost Tracker',
     costInput: 'Input',
     costOutput: 'Output',
     costImageTokens: 'Image tokens',
-    
+
     // Stepper
     stepResponse: 'Response',
     stepReview: 'Review',
     stepSynthesis: 'Synthesis',
-    
+
     // Stages (no numbered labels, icon-based UI)
     stage1Title: 'Model Responses',
     stage2Title: 'Peer Review',
@@ -204,7 +218,7 @@ window.LOCALE_EN_US = {
     stage4Title: 'Chairman Synthesis',
     stageComplete: 'Complete',
     stageSkipped: 'Skipped',
-    
+
     // Search Suggestions
     searchSuggestionsIntro: 'Based on model responses, here are suggested search keywords (select up to 3):',
     customKeywordPlaceholder: 'Enter custom keyword...',
@@ -212,24 +226,24 @@ window.LOCALE_EN_US = {
     executeSearch: 'Execute Search',
     skipSearch: 'Skip Search',
     noSuggestions: 'No search suggestions from models',
-    
+
     // Search Strategy
     searchStrategyTitle: 'Extended Search',
     searchIterationCount: '{current}/{max} times',
     customSearchPlaceholder: 'Enter custom keyword...',
     searchStrategyHint: 'Click AI suggestions or enter custom keywords. Results will be added to context and Council will re-run',
-    
+
     // Branch Actions
     branchActionsTitle: 'Next Steps',
     branchSearch: 'Extended Search',
     branchImage: 'Generate Image',
     branchVision: 'Vision Analysis',
     branchCanvas: 'Take Notes',
-    
+
     // Notes Section (formerly Canvas)
     openInCanvas: 'Take Notes',
     canvasDesc: 'Edit and extend content',
-    
+
     // Image Description Modal
     imageDescTitle: 'Image Generation',
     imageDescHint: 'Describe the image you want to generate:',
@@ -238,10 +252,10 @@ window.LOCALE_EN_US = {
     startImageGen: 'Start Generation',
     openInTab: 'Open in new tab',
     openInWindow: 'Open in standalone window',
-    
+
     // Empty State
     emptyState: 'Enter a question to query multiple AI models',
-    
+
     // Todo Section
     todoTitle: 'To-do Tasks',
     addTask: 'Add Task',
@@ -251,45 +265,45 @@ window.LOCALE_EN_US = {
     priorityHigh: 'High',
     priorityMedium: 'Medium',
     priorityLow: 'Low',
-    
+
     // Conversation Cost
     conversationCostTitle: 'Conversation Cost',
     costStage1: 'Model Responses',
     costStage2: 'Peer Review',
     costStage3: 'Chairman Synthesis',
     costImageGen: 'Image Generation',
-    
+
     // Export Modal
     exportTitle: 'Export Conversation',
     exportMd: 'Markdown (.md)',
     exportJson: 'JSON (.json)',
     copyClipboard: 'Copy to Clipboard',
-    
+
     // New Conversation Modal
     newConvTitle: 'Start New Conversation',
     newSessionOption: 'Create New Session',
     newSessionDesc: 'Clear all cards and start fresh',
     newRootOption: 'Add Root Card',
     newRootDesc: 'Add another topic in current session',
-    
+
     // Paste Modal
     pasteTitle: 'Paste Context',
     pasteHint: 'Paste the content you want to add as context:',
     pastePlaceholder: 'Paste content here...',
     pasteCharCount: '{count} characters',
     confirmPaste: 'Confirm Paste',
-    
+
     // Web Search Modal
     webSearchTitle: 'Web Search',
     webSearchHint: 'Enter keywords to search the web. Results will be added to context:',
     webSearchPlaceholder: 'Enter search keywords...',
     searchPreparing: 'Preparing search...',
-    
+
     // Skills
     noSkillsFound: 'No matching skills found',
     skillSourceAuto: 'Auto',
     skillSourceSelected: 'Selected',
-    
+
     // Stage Status
     stagePreparing: 'Preparing...',
     stageSearching: 'Searching...',
@@ -302,13 +316,13 @@ window.LOCALE_EN_US = {
     stageRefining: 'Refining...',
     stageRetrying: 'Retrying...',
     stageSummarizing: 'Summarizing...',
-    
+
     // Review
     reviewInProgress: 'Models reviewing each other...',
     reviewDisabled: 'Peer review disabled',
     reviewNoData: 'No review data',
     chairmanFailed: 'Chairman synthesis failed: {error}',
-    
+
     // AI Loading
     generatingImage: 'Generating image with {model}...',
     analyzingImage: 'Analyzing image with {model}...',
@@ -317,24 +331,24 @@ window.LOCALE_EN_US = {
     creatingVisual: 'Creating visual content...',
     generatingNext: 'Generating...',
     startNextRound: 'Start next round',
-    
+
     // Actions
     download: 'Download',
     copy: 'Copy',
     copiedBrief: 'Copied!',
     analyze: 'Analyze',
-    
+
     // Labels
     chairmanLabel: 'Chairman',
     send: 'Send',
     generateImage: 'Generate Image',
-    
+
     // Summary
     completed: 'completed',
     extendSearch: 'Extended Search',
     webSearchContext: 'Web Search',
     braveKeyNeeded: 'Brave Search API key required',
-    
+
     // Task Types
     taskSearch: 'Search',
     taskImage: 'Image',
@@ -343,16 +357,16 @@ window.LOCALE_EN_US = {
     taskVerify: 'Verify',
     taskApply: 'Try it',
     taskConnect: 'Connect',
-    
+
     // Branch Actions Labels
     analyzeImageLabel: 'Analyze Image',
     takeNotesLabel: 'Take Notes',
     generateImageLabel: 'Generate Image',
-    
+
     // Suggested Actions
     suggestedActions: 'Suggested Next Steps',
     quickInputPlaceholder: 'Ask a follow-up question...',
-    
+
     // UI Actions
     proceed: 'Continue',
     cancelAction: 'Cancel',
@@ -363,13 +377,13 @@ window.LOCALE_EN_US = {
     pending: 'Pending',
     minutesAgo: '{n} min ago',
     hoursAgo: '{n} hr ago',
-    
+
     // Misc UI
     characters: 'characters',
     iterationQuerying: 'Iteration {n}: Querying...',
     modelsCompleted: '{done}/{total} completed'
   },
-  
+
   // Notes (formerly Canvas)
   canvas: {
     pageTitle: 'AI Council Notes',
@@ -377,13 +391,13 @@ window.LOCALE_EN_US = {
     untitled: 'Untitled',
     saved: 'Saved',
     saving: 'Saving...',
-    
+
     // Header Buttons
     import: 'Import',
     importTitle: 'Import from Council',
     export: 'Export',
     newDoc: 'New Document',
-    
+
     // Toolbar
     bold: 'Bold (Ctrl+B)',
     italic: 'Italic (Ctrl+I)',
@@ -396,7 +410,7 @@ window.LOCALE_EN_US = {
     quote: 'Quote',
     link: 'Link',
     divider: 'Divider',
-    
+
     // Tree View
     treeViewTitle: 'Task Tree',
     closeSidebar: 'Close Sidebar',
@@ -404,27 +418,27 @@ window.LOCALE_EN_US = {
     treeEmptyHint: 'Card hierarchy will appear here after creating tasks in Council',
     reload: 'Reload',
     treeViewToggle: 'Task Tree View',
-    
+
     // Editor
     editorPlaceholder: 'Start writing...',
-    
+
     // AI Toolbar
     rewrite: 'Rewrite',
     summarize: 'Summarize',
     expand: 'Expand',
     translate: 'Translate',
     aiProcessing: 'AI Processing...',
-    
+
     // Import Modal
     importTitle: 'Import Content',
     importEmpty: 'No Council responses available to import.',
-    
+
     // Export Modal
     exportTitle: 'Export Document',
     exportMd: 'Markdown (.md)',
     exportTxt: 'Plain Text (.txt)',
     copyClipboard: 'Copy to Clipboard',
-    
+
     // Translate Modal
     translateTitle: 'Translate to',
     langZhTW: '繁體中文',
@@ -432,28 +446,37 @@ window.LOCALE_EN_US = {
     langEn: 'English',
     langJa: '日本語',
     langKo: '한국어',
-    
+
     // AI Prompt Modal
     selectedText: 'Selected Text',
     customInstructions: 'Additional Instructions',
     customInstructionsPlaceholder: '(Optional) e.g., Use a more formal tone, avoid passive voice...',
     execute: 'Execute',
-    
+
     // Global Chat Bar
     globalChatPlaceholder: 'Ask about the document...',
     sendQuestion: 'Send Question',
     aiResponse: 'AI Response',
     insertToEditor: 'Insert to Editor',
-    copyResponse: 'Copy Response'
+    copyResponse: 'Copy Response',
+
+    // TTS
+    ttsPlay: 'Read Aloud',
+    ttsPause: 'Pause',
+    ttsStop: 'Stop',
+    ttsVoice: 'Switch Voice',
+    ttsNoContent: 'No content to read',
+    ttsNotSupported: 'Text-to-speech not supported in this browser',
+    ttsError: 'Speech playback failed'
   },
-  
+
   // Toast/Status Messages
   messages: {
     // General
     settingsSaved: 'Settings saved',
     copied: 'Copied',
     imported: 'Content imported',
-    
+
     // Context
     contextAdded: 'Added to context',
     pageCaptured: 'Page content captured',
@@ -465,7 +488,7 @@ window.LOCALE_EN_US = {
     contextUpgraded: 'Upgraded to session-level context',
     noCardContextToClear: 'No card-level context to clear (session-level context can only be cleared from root card)',
     noContextInConversation: 'No context in this conversation',
-    
+
     // Errors
     noActiveTab: 'No active tab found',
     noContent: 'Page has no content',
@@ -485,7 +508,7 @@ window.LOCALE_EN_US = {
     clearFailed: 'Clear failed: {error}',
     copyFailed: 'Copy failed',
     retryFailed: 'Cannot retry: original query not found',
-    
+
     // Search
     searching: 'Searching for "{keyword}"...',
     fetchingResults: 'Fetching search result pages...',
@@ -495,7 +518,7 @@ window.LOCALE_EN_US = {
     searchWillContinue: 'Search failed, continuing to generate conclusion',
     enterSearchKeyword: 'Please select or enter extended search keyword',
     enterCustomKeyword: 'Enter custom keyword for extended search',
-    
+
     // Tasks
     taskExists: 'Task already exists',
     switchedToCard: 'Switched to task card',
@@ -508,7 +531,7 @@ window.LOCALE_EN_US = {
     keywordExists: 'Keyword exists, auto-selected',
     selectAtLeastOne: 'Please select at least one keyword',
     maxThreeKeywords: 'Maximum 3 keywords allowed',
-    
+
     // AI
     generatingSuggestions: 'AI is generating suggested follow-up questions...',
     suggestionsGenerated: 'Suggestions generated, edit as needed and submit',
@@ -516,7 +539,7 @@ window.LOCALE_EN_US = {
     projectNameFailed: 'Project name generation failed ({error}), using default',
     aiPromptFailed: 'AI prompt generation failed, using default mode',
     councilMinModels: 'Council requires at least 2 models to respond successfully',
-    
+
     // Image
     noConversationToSummarize: 'No conversation content to summarize',
     summaryGenerated: 'Image description summary generated',
@@ -534,7 +557,7 @@ window.LOCALE_EN_US = {
     imageCopied: 'Image copied',
     imageCopyFailed: 'Failed to copy image',
     uploadImageForAnalysis: 'Please upload an image for analysis',
-    
+
     // History & Export
     newConversationStarted: 'New conversation started',
     newRootCardReady: 'Ready to add new root card',
@@ -548,21 +571,21 @@ window.LOCALE_EN_US = {
     exportedJson: 'Exported as JSON',
     copiedToClipboard: 'Copied to clipboard',
     noHistoryYet: 'No history yet',
-    
+
     // Prompt
     enterPromptFirst: 'Please enter a prompt before refining',
     promptRefined: 'Prompt refined successfully',
     refineFailed: 'Refine failed: {error}',
     editPromptFirst: 'Please enter or edit prompt first',
-    
+
     // Card Status
     cardRunning: 'This card is running, please wait or switch to another card',
-    
+
     // Storage
     storageWarning: 'Storage {percent}% used ({used}/{total} MB), consider clearing history',
     storageError: 'Insufficient storage, please clear history'
   },
-  
+
   // Error Messages
   errors: {
     connectionFailed: '{model} temporarily unavailable',
@@ -576,4 +599,3 @@ window.LOCALE_EN_US = {
     genericError: '{model} encountered an error'
   }
 };
-

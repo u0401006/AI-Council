@@ -974,6 +974,33 @@ body {
   font-style: italic;
 }
 
+.response-content table {
+  width: 100%;
+  margin: 1rem 0;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.response-content th,
+.response-content td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+}
+
+.response-content th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.response-content td {
+  background: var(--bg-secondary);
+}
+
+.response-content tr:hover td {
+  background: var(--bg-tertiary);
+}
+
 /* ============================================
    Stage Sections (Phase 3)
    ============================================ */

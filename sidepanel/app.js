@@ -15,13 +15,35 @@ function parseMarkdown(text) {
     inlineCodes.push(code);
     return `__INLINE_CODE_${inlineCodes.length - 1}__`;
   });
+  // Table parsing - detect and convert markdown tables
+  html = html.replace(/^(\|.+\|)\n(\|[-:| ]+\|)\n((?:\|.+\|\n?)+)/gm, (match, headerRow, separator, bodyRows) => {
+    const parseRow = row => row.split('|').slice(1, -1).map(cell => cell.trim());
+    const headers = parseRow(headerRow);
+    const alignments = parseRow(separator).map(cell => {
+      if (cell.startsWith(':') && cell.endsWith(':')) return 'center';
+      if (cell.endsWith(':')) return 'right';
+      return 'left';
+    });
+    const rows = bodyRows.trim().split('\n').map(parseRow);
+    let table = '<table><thead><tr>';
+    headers.forEach((h, i) => { table += `<th style="text-align:${alignments[i]}">${h}</th>`; });
+    table += '</tr></thead><tbody>';
+    rows.forEach(row => {
+      table += '<tr>';
+      row.forEach((cell, i) => { table += `<td style="text-align:${alignments[i] || 'left'}">${cell}</td>`; });
+      table += '</tr>';
+    });
+    table += '</tbody></table>';
+    return table;
+  });
   html = html
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/^### (.+)$/gm, '<h4>$1</h4>')
     .replace(/^## (.+)$/gm, '<h3>$1</h3>')
     .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) =>
+      `<a href="${MAVCoreUtils.sanitizeLinkUrl(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`)
     .replace(/^[\-\*] (.+)$/gm, '<li>$1</li>')
     .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
     .replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
@@ -31,7 +53,7 @@ function parseMarkdown(text) {
   html = html.replace(/<p><\/p>/g, '').replace(/<p>(<h[234]>)/g, '$1').replace(/(<\/h[234]>)<\/p>/g, '$1')
     .replace(/<p>(<ul>)/g, '$1').replace(/(<\/ul>)<\/p>/g, '$1').replace(/<p>(<blockquote>)/g, '$1')
     .replace(/(<\/blockquote>)<\/p>/g, '$1').replace(/<p>(<pre>)/g, '$1').replace(/(<\/pre>)<\/p>/g, '$1')
-    .replace(/<p>(<hr>)<\/p>/g, '$1');
+    .replace(/<p>(<hr>)<\/p>/g, '$1').replace(/<p>(<table>)/g, '$1').replace(/(<\/table>)<\/p>/g, '$1');
   codeBlocks.forEach((block, i) => {
     html = html.replace(`__CODE_BLOCK_${i}__`, `<pre><code class="language-${block.lang}">${block.code}</code></pre>`);
   });
@@ -3661,7 +3683,19 @@ async function safeStorageSet(data) {
 let hasBraveApiKey = false;
 
 async function checkApiKeys() {
-  const result = await chrome.storage.sync.get(['apiKey', 'braveApiKey']);
+  const result = await chrome.storage.local.get(['apiKey', 'braveApiKey']);
+  const legacy = await chrome.storage.sync.get(['apiKey', 'braveApiKey']);
+  if ((!result.apiKey && legacy.apiKey) || (!result.braveApiKey && legacy.braveApiKey)) {
+    await chrome.storage.local.set({
+      apiKey: result.apiKey || legacy.apiKey || '',
+      braveApiKey: result.braveApiKey || legacy.braveApiKey || ''
+    });
+    result.apiKey ||= legacy.apiKey;
+    result.braveApiKey ||= legacy.braveApiKey;
+  }
+  if (legacy.apiKey || legacy.braveApiKey) {
+    await chrome.storage.sync.remove(['apiKey', 'braveApiKey']);
+  }
   const hasOpenRouter = !!result.apiKey;
   hasBraveApiKey = !!result.braveApiKey;
   
@@ -3711,6 +3745,21 @@ function updateSearchUIState(hasBrave) {
     webSearchBtn.title = hasBrave ? t('sidepanel.webSearchContext') : t('sidepanel.braveKeyNeeded');
     webSearchBtn.style.opacity = hasBrave ? '1' : '0.5';
   }
+}
+
+async function ensureWebsiteAccess(requestedOrigins = null) {
+  let origins = requestedOrigins;
+  if (!origins) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    try {
+      const url = new URL(tab?.url || '');
+      origins = [`${url.origin}/*`];
+    } catch (_) {
+      return false;
+    }
+  }
+  if (await chrome.permissions.contains({ origins })) return true;
+  return chrome.permissions.request({ origins });
 }
 
 // ============================================
@@ -4234,6 +4283,10 @@ async function getActiveTabId() {
 
 async function capturePageContent() {
   try {
+    if (!(await ensureWebsiteAccess())) {
+      showToast('需要網站存取權限才能擷取頁面', true);
+      return;
+    }
     capturePageBtn.disabled = true;
     capturePageBtn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span>';
     
@@ -4274,6 +4327,10 @@ async function capturePageContent() {
 
 async function captureSelection() {
   try {
+    if (!(await ensureWebsiteAccess())) {
+      showToast('需要網站存取權限才能讀取選取文字', true);
+      return;
+    }
     captureSelectionBtn.disabled = true;
     
     const tabId = await getActiveTabId();
@@ -7743,12 +7800,17 @@ let currentSkill = null;
 let orchestratorInstance = null;
 let hookManagerInstance = null;
 let skillEvaluatorInstance = null;
+let agentFrameworkInitialized = false;
 
 /**
  * Initialize Agent Framework components
  * Now includes Hook Manager and Skill Evaluator initialization
  */
 function initAgentFramework() {
+  if (agentFrameworkInitialized) {
+    return;
+  }
+  agentFrameworkInitialized = true;
   console.log('[AgentFramework] Initializing...');
   
   // Initialize Hook Manager
@@ -8260,7 +8322,8 @@ function registerAgentTools() {
       ranking, 
       enableSearchMode,
       null, // targetCardId
-      searchResults
+      searchResults,
+      actualChairman // Chairman override from peer review winner
     );
     
     const result = {
@@ -8839,7 +8902,7 @@ async function handleSend() {
   }
 
   // Check OpenRouter API Key
-  const keyResult = await chrome.storage.sync.get('apiKey');
+  const keyResult = await chrome.storage.local.get('apiKey');
   if (!keyResult.apiKey) {
     showError('請先設定 OpenRouter API 金鑰。點擊右上角設定按鈕進行設定。');
     return;
@@ -9036,222 +9099,9 @@ async function handleSend() {
       } else {
         throw new Error(result.error || 'Agent Framework execution failed');
       }
-    } 
-    // =========================================
-    // Legacy Flow (已棄用 - 改用 Agent Framework)
-    // =========================================
-    else {
-      console.error('[handleSend] Legacy flow is deprecated. Stage elements have been removed.');
-      console.error('[handleSend] Please ensure useAgentFramework is true and Agent Framework is loaded.');
-      showError('舊版流程已棄用，請確認 Agent Framework 已正確載入。');
-      resetButton();
-      return;
-
-      // Build prompt with context if available
-      let promptWithContext = buildPromptWithContext(query);
-      
-      // 總是要求模型提供搜尋建議
-      promptWithContext += COUNCIL_SEARCH_SUFFIX;
-      
-      await Promise.allSettled(councilModels.map(model => queryModel(model, promptWithContext)));
-      
-      const successfulResponses = Array.from(responses.entries())
-        .filter(([_, r]) => r.status === 'done')
-        .map(([model, r]) => ({ model, content: r.content, latency: r.latency }));
-
-      savedResponses = successfulResponses;
-      stage1Status.textContent = t('sidepanel.modelsCompleted', { done: successfulResponses.length, total: councilModels.length });
-      stage1Status.classList.remove('loading');
-      stage1Status.classList.add('done');
-      
-      // Update stepper: Stage 1 done
-      setStepDone(1);
-      
-      // Update Stage 1 summary
-      updateStage1Summary(successfulResponses.map(r => ({ ...r, status: 'done' })));
-
-      document.getElementById('stage1Content').classList.remove('expanded');
-      stage1Section.classList.add('collapsed');
-
-      if (successfulResponses.length < 2) {
-        showError('Council 需要至少 2 個模型成功回應。');
-        resetButton();
-        return;
-      }
-
-      // === STAGE 2 ===
-      if (enableReview && successfulResponses.length >= 2) {
-        currentStage = 'stage2';
-        // Update stepper: Stage 2 active
-        setStepActive(2);
-        
-        stage2Status.textContent = t('sidepanel.stageReviewing');
-        stage2Status.classList.add('loading');
-        document.getElementById('stage2Content').classList.add('expanded');
-
-        reviewResults.innerHTML = `<div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">${t('sidepanel.reviewInProgress')}</span></div>`;
-
-        await Promise.allSettled(councilModels.map(model => runReview(model, query, successfulResponses)));
-
-        aggregatedRanking = aggregateRankings(successfulResponses);
-        renderReviewResults(aggregatedRanking);
-
-        stage2Status.textContent = t('sidepanel.stageComplete');
-        stage2Status.classList.remove('loading');
-        stage2Status.classList.add('done');
-        
-        // Update stepper: Stage 2 done
-        setStepDone(2);
-        
-        // Update Stage 2 summary
-        updateStage2Summary(aggregatedRanking);
-        
-        document.getElementById('stage2Content').classList.remove('expanded');
-        stage2Section.classList.add('collapsed');
-      } else {
-        stage2Section.classList.add('stage-skipped');
-        stage2Status.textContent = t('sidepanel.stageSkipped');
-        reviewResults.innerHTML = `<div class="skipped-message">${t('sidepanel.reviewDisabled')}</div>`;
-        
-        // Update stepper: Stage 2 skipped
-        setStepSkipped(2);
-      }
-
-      // === STAGE 3: Search Suggestions (僅當有建議時顯示) ===
-      let searchResults = null;
-      // 提取所有模型的搜尋建議
-      const allSuggestions = extractAllSearchSuggestions(responses);
-      
-      if (allSuggestions.some(s => s.queries.length > 0)) {
-        // 有搜尋建議，顯示 Stage 3 讓用戶選擇
-        const userAction = await showStage25AndWaitForAction(allSuggestions);
-        
-        if (userAction.action === 'search' && userAction.queries.length > 0) {
-          // Execute search
-          stage25Status.textContent = t('sidepanel.stageSearching');
-          stage25Status.className = 'stage-status loading';
-          
-          try {
-            searchResults = await executeMultipleSearches(userAction.queries.slice(0, 3));
-            searchIteration++;
-            updateSearchIterationCounter();
-            
-            stage25Status.textContent = t('sidepanel.stageComplete');
-            stage25Status.className = 'stage-status done';
-            stage25Section.classList.add('collapsed');
-            
-            // Add search results to context (auto scope: root → session, subtask → card)
-            if (searchResults && searchResults.length > 0) {
-              for (const r of searchResults) {
-                if (contextItems.length < 20) {
-                  await addContextItem({
-                    title: `搜尋: ${r.query}`,
-                    content: r.results.map(item => `${item.title}\n${item.snippet}`).join('\n\n'),
-                    url: '',
-                    type: 'search'
-                  }); // Uses 'auto' scope
-                }
-              }
-            }
-          } catch (searchErr) {
-            console.error('Search failed:', searchErr);
-            stage25Status.textContent = t('sidepanel.stageFailed');
-            stage25Status.className = 'stage-status error';
-            showToast(t('messages.searchWillContinue'), true);
-          }
-        } else {
-          // User skipped search
-          stage25Section.classList.add('collapsed');
-        }
-      } else {
-        // No suggestions from models, hide stage 3
-        stage25Section.classList.add('hidden');
-      }
-
-      // === STAGE 3 ===
-      currentStage = 'stage3';
-      // Update stepper: Stage 3 active
-      setStepActive(3);
-      
-      // 決定實際使用的主席模型
-      const actualChairman = resolveChairmanModel(aggregatedRanking, successfulResponses);
-      
-      // Update Stage 3 summary
-      updateStage3Summary(actualChairman);
-      
-      stage3Status.textContent = t('sidepanel.stageSynthesizing');
-      stage3Status.classList.add('loading');
-      document.getElementById('stage3Content').classList.add('expanded');
-
-      finalAnswer.innerHTML = `
-        <div class="chairman-badge">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-          </svg>
-          ${getModelName(actualChairman)}
-        </div>
-        <div class="loading-indicator"><div class="loading-dots"><span></span><span></span><span></span></div><span class="loading-text">主席正在彙整...</span></div>
-      `;
-
-      try {
-        finalAnswerContent = await runChairman(query, successfulResponses, aggregatedRanking, enableSearchMode, targetCardId, searchResults);
-
-      stage3Status.textContent = t('sidepanel.stageComplete');
-      stage3Status.classList.remove('loading');
-      stage3Status.classList.add('done');
-      
-      // Update stepper: All done
-      setAllStepsDone();
-
-      // Show branch actions (replaces old canvas section)
-      showBranchActions();
-      
-      // Show conversation cost summary
-      renderConversationCost();
-
-      // Save conversation first (without images)
-      await saveCurrentConversation({
-        query,
-        models: councilModels,
-        chairmanModel: actualChairman,
-        responses: savedResponses,
-        ranking: aggregatedRanking,
-        finalAnswer: finalAnswerContent,
-        generatedImages: []
-      });
-      
-      // Update card with results
-      if (enableTaskPlanner && activeCard) {
-        activeCard.responses = savedResponses;
-        activeCard.finalAnswer = finalAnswerContent;
-        activeCard.timestamp = Date.now();
-        
-        // 生成脈絡摘要供子卡片繼承（非阻塞）
-        generateContextSummary(query, finalAnswerContent).then(summary => {
-          if (summary && activeCard) {
-            activeCard.contextSummary = summary;
-            console.log('[handleSend] Generated context summary for card:', activeCard.id);
-            // 儲存 session
-            saveSession();
-          }
-        });
-        
-        // Update breadcrumb and carousel
-        updateBreadcrumb(activeCard.id);
-        updateSiblingCards();
-        renderCarousel();
-      }
-
-      exportBtn.style.display = 'flex';
-    } catch (err) {
-      stage3Status.textContent = t('sidepanel.stageFailed');
-      stage3Status.classList.remove('loading');
-      stage3Status.classList.add('error');
-      showToast(`主席彙整失敗: ${err.message}`, true);
-      resetButton();
-      return;
+    } else {
+      throw new Error('Agent Framework is unavailable. Reload the extension and try again.');
     }
-    } // End of legacy flow else block
 
     // === IMAGE GENERATION (if enabled) ===
     if (enableImage && finalAnswerContent) {
@@ -9866,11 +9716,13 @@ async function runReview(reviewerModel, query, allResponses) {
     // Success - clear any previous failure
     reviewFailures.delete(reviewerModel);
     const otherModels = allResponses.filter(r => r.model !== reviewerModel).map(r => r.model);
-    reviews.set(reviewerModel, parseResult.rankings.map(r => ({ 
+    const mappedRankings = parseResult.rankings.map(r => ({
       model: otherModels[r.response.charCodeAt(0) - 65], 
       rank: r.rank, 
       reason: r.reason 
-    })));
+    })).filter(r => r.model);
+    reviews.set(reviewerModel, mappedRankings);
+    return { reviewerModel, rankings: mappedRankings };
   } catch (err) { 
     console.error(`Review by ${reviewerModel} failed:`, err);
     reviewFailures.set(reviewerModel, {

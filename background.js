@@ -233,13 +233,25 @@
         });
 
         async function getApiKey() {
-        const result = await chrome.storage.sync.get('apiKey');
-        return result.apiKey;
+        const local = await chrome.storage.local.get('apiKey');
+        if (local.apiKey) return local.apiKey;
+        const legacy = await chrome.storage.sync.get('apiKey');
+        if (legacy.apiKey) {
+            await chrome.storage.local.set({ apiKey: legacy.apiKey });
+            await chrome.storage.sync.remove('apiKey');
+        }
+        return legacy.apiKey;
         }
 
         async function getBraveApiKey() {
-        const result = await chrome.storage.sync.get('braveApiKey');
-        return result.braveApiKey;
+        const local = await chrome.storage.local.get('braveApiKey');
+        if (local.braveApiKey) return local.braveApiKey;
+        const legacy = await chrome.storage.sync.get('braveApiKey');
+        if (legacy.braveApiKey) {
+            await chrome.storage.local.set({ braveApiKey: legacy.braveApiKey });
+            await chrome.storage.sync.remove('braveApiKey');
+        }
+        return legacy.braveApiKey;
         }
 
         // Handle web search request

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Council - Video Voiceover Generator</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #e4e4e4;
+    }
+    h1 {
+      text-align: center;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      text-align: center;
+      color: #888;
+      margin-bottom: 2rem;
+    }
+    .controls {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .controls label {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      font-size: 0.85rem;
+      color: #aaa;
+    }
+    .controls select, .controls input {
+      padding: 0.5rem;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: #2a2a4a;
+      color: #fff;
+      min-width: 120px;
+    }
+    .segment {
+      background: #2a2a4a;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      border: 1px solid #333;
+    }
+    .segment-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .segment-title {
+      font-weight: 600;
+      color: #6b8afd;
+    }
+    .segment-time {
+      font-size: 0.85rem;
+      color: #666;
+      background: #1a1a2e;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+    }
+    .script-text {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: #fff;
+      margin-bottom: 1rem;
+      padding: 1rem;
+      background: #1a1a2e;
+      border-radius: 8px;
+      border-left: 3px solid #6b8afd;
+    }
+    .btn-group {
+      display: flex;
+      gap: 0.5rem;
+    }
+    button {
+      padding: 0.6rem 1.2rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .btn-play {
+      background: #4ade80;
+      color: #000;
+    }
+    .btn-play:hover {
+      background: #22c55e;
+    }
+    .btn-stop {
+      background: #f87171;
+      color: #fff;
+    }
+    .btn-stop:hover {
+      background: #ef4444;
+    }
+    .btn-all {
+      background: #6b8afd;
+      color: #fff;
+      padding: 1rem 2rem;
+      font-size: 1.1rem;
+    }
+    .btn-all:hover {
+      background: #4f6ef7;
+    }
+    .play-all-section {
+      text-align: center;
+      margin: 2rem 0;
+    }
+    .tip {
+      background: #3a3a5a;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 2rem;
+      font-size: 0.9rem;
+      color: #aaa;
+    }
+    .tip strong {
+      color: #6b8afd;
+    }
+    .status {
+      text-align: center;
+      padding: 0.5rem;
+      margin-bottom: 1rem;
+      border-radius: 6px;
+      display: none;
+    }
+    .status.playing {
+      display: block;
+      background: #22c55e33;
+      color: #4ade80;
+    }
+  </style>
+</head>
+<body>
+  <h1>AI Council Video Voiceover</h1>
+  <p class="subtitle">Use Web Speech API to preview and record voiceover</p>
+
+  <div class="controls">
+    <label>
+      Voice
+      <select id="voiceSelect"></select>
+    </label>
+    <label>
+      Speed
+      <input type="range" id="speed" min="0.5" max="2" step="0.1" value="1.1">
+      <span id="speedVal">1.1x</span>
+    </label>
+    <label>
+      Pitch
+      <input type="range" id="pitch" min="0.5" max="2" step="0.1" value="1.0">
+      <span id="pitchVal">1.0</span>
+    </label>
+  </div>
+
+  <div id="status" class="status"></div>
+
+  <div class="play-all-section">
+    <button class="btn-all" onclick="playAll()">▶ Play Full Script (~48 sec)</button>
+    <button class="btn-stop" onclick="stopAll()">⏹ Stop</button>
+  </div>
+
+  <div id="segments"></div>
+
+  <div class="tip">
+    <strong>Recording Tip:</strong> To capture audio for your video, use a screen recorder like OBS, QuickTime, or Loom while playing the script. For higher quality, consider using professional TTS services like ElevenLabs, Amazon Polly, or Google Cloud TTS.
+  </div>
+
+  <script>
+    const SEGMENTS = [
+      {
+        id: 1,
+        title: "Self Introduction",
+        time: "0:00 - 0:08",
+        text: "Hey! Ever asked ChatGPT something... and wondered if it's actually right? Yeah, me too. That's why I built AI Council."
+      },
+      {
+        id: 2,
+        title: "Extension Introduction",
+        time: "0:08 - 0:16",
+        text: "AI Council asks GPT, Claude, Gemini, AND Grok — all at once. Four AIs. One question. Real answers."
+      },
+      {
+        id: 3,
+        title: "Key Feature: Peer Review",
+        time: "0:16 - 0:24",
+        text: "Here's the magic — they review each other. Anonymously. No bias. Just rankings. The best answer wins."
+      },
+      {
+        id: 4,
+        title: "Key Feature: Skills",
+        time: "0:24 - 0:32",
+        text: "Need research? Fact-checking? Code help? Nine Skills auto-match your question. Zero setup."
+      },
+      {
+        id: 5,
+        title: "Key Feature: Image Generation",
+        time: "0:32 - 0:40",
+        text: "Want images? It keeps your style consistent — across TEN pictures. Same characters. Same vibe. Every time."
+      },
+      {
+        id: 6,
+        title: "Call to Action",
+        time: "0:40 - 0:48",
+        text: "Free. Open source. Your API keys, your data. Grab it on Chrome Web Store. Link in bio!"
+      }
+    ];
+
+    const synth = window.speechSynthesis;
+    let voices = [];
+    let currentSegmentIndex = 0;
+    let isPlayingAll = false;
+
+    // Load voices
+    function loadVoices() {
+      voices = synth.getVoices();
+      const select = document.getElementById('voiceSelect');
+      select.innerHTML = '';
+
+      // Prefer English voices
+      const enVoices = voices.filter(v => v.lang.includes('en'));
+      const otherVoices = voices.filter(v => !v.lang.includes('en'));
+
+      [...enVoices, ...otherVoices].forEach((voice, i) => {
+        const option = document.createElement('option');
+        option.value = voices.indexOf(voice);
+        option.textContent = `${voice.name} (${voice.lang})`;
+        if (voice.name.includes('Google US English') || voice.name.includes('Samantha')) {
+          option.selected = true;
+        }
+        select.appendChild(option);
+      });
+    }
+
+    loadVoices();
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    // Speed/pitch display
+    document.getElementById('speed').addEventListener('input', (e) => {
+      document.getElementById('speedVal').textContent = e.target.value + 'x';
+    });
+    document.getElementById('pitch').addEventListener('input', (e) => {
+      document.getElementById('pitchVal').textContent = e.target.value;
+    });
+
+    // Render segments
+    function renderSegments() {
+      const container = document.getElementById('segments');
+      container.innerHTML = SEGMENTS.map(seg => `
+        <div class="segment" id="segment-${seg.id}">
+          <div class="segment-header">
+            <span class="segment-title">${seg.id}. ${seg.title}</span>
+            <span class="segment-time">${seg.time}</span>
+          </div>
+          <div class="script-text">"${seg.text}"</div>
+          <div class="btn-group">
+            <button class="btn-play" onclick="playSegment(${seg.id - 1})">▶ Play</button>
+            <button class="btn-stop" onclick="stopAll()">⏹ Stop</button>
+          </div>
+        </div>
+      `).join('');
+    }
+    renderSegments();
+
+    // Play single segment
+    function playSegment(index) {
+      stopAll();
+      const seg = SEGMENTS[index];
+      speak(seg.text, () => {
+        if (isPlayingAll && index < SEGMENTS.length - 1) {
+          setTimeout(() => playSegment(index + 1), 500);
+        } else {
+          isPlayingAll = false;
+          updateStatus('');
+        }
+      });
+      updateStatus(`Playing: ${seg.title}`);
+    }
+
+    // Play all segments
+    function playAll() {
+      isPlayingAll = true;
+      currentSegmentIndex = 0;
+      playSegment(0);
+    }
+
+    // Stop all
+    function stopAll() {
+      synth.cancel();
+      isPlayingAll = false;
+      updateStatus('');
+    }
+
+    // Speak text
+    function speak(text, onEnd) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voiceIndex = document.getElementById('voiceSelect').value;
+      utterance.voice = voices[voiceIndex];
+      utterance.rate = parseFloat(document.getElementById('speed').value);
+      utterance.pitch = parseFloat(document.getElementById('pitch').value);
+      utterance.onend = onEnd;
+      synth.speak(utterance);
+    }
+
+    // Update status
+    function updateStatus(msg) {
+      const el = document.getElementById('status');
+      if (msg) {
+        el.textContent = msg;
+        el.classList.add('playing');
+      } else {
+        el.classList.remove('playing');
+      }
+    }
+  </script>
+</body>
+</html>

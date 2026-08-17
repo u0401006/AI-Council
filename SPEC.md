@@ -1,7 +1,7 @@
 # AI Council 產品規格書
 
-> 版本：2.2  
-> 更新日期：2026-01-07  
+> 版本：2.3
+> 更新日期：2026-01-14
 > 狀態：Chrome Extension 已上線，React Native iOS 規劃中
 
 ---
@@ -13,12 +13,14 @@
 3. [技術棧（現況）](#3-技術棧現況)
 4. [Agent Planner 框架](#4-agent-planner-框架)
 5. [Skills 系統](#5-skills-系統)
-6. [多語言支援](#6-多語言支援)
-7. [圖片生成系統規格](#7-圖片生成系統規格)
-8. [React Native iOS 移轉技術細節](#8-react-native-ios-移轉技術細節)
-9. [移轉需補足項目](#9-移轉需補足項目)
-10. [相關文件索引](#10-相關文件索引)
-11. [使用手冊](#11-使用手冊)
+6. [Lifecycle Hooks 系統](#6-lifecycle-hooks-系統)
+7. [Multi-Agent Orchestration](#7-multi-agent-orchestration)
+8. [多語言支援](#8-多語言支援)
+9. [圖片生成系統規格](#9-圖片生成系統規格)
+10. [React Native iOS 移轉技術細節](#10-react-native-ios-移轉技術細節)
+11. [移轉需補足項目](#11-移轉需補足項目)
+12. [相關文件索引](#12-相關文件索引)
+13. [使用手冊](#13-使用手冊)
 
 ---
 
@@ -143,33 +145,61 @@ AI Council 提供 **學習者模式**，依年齡層調整回答策略：
 ```
 mav-extension/
 ├── manifest.json              # Chrome Extension Manifest V3
-├── background.js              # Service Worker（894 行）
+├── background.js              # Service Worker
 │                              # - API 呼叫代理
 │                              # - 串流處理
 │                              # - Context Menu 處理
 │
-├── sidepanel/                 # 主要 UI
+├── sidepanel/                 # 主要 UI 與核心邏輯
 │   ├── index.html
 │   ├── style.css
-│   └── app.js                 # 主應用（8362 行）
-│                              # - Council 三階段邏輯
-│                              # - Markdown 渲染
-│                              # - 串流 UI
-│                              # - Context 管理
-│                              # - 學習者模式
+│   ├── app.js                 # 主應用（UI + Council 邏輯）
+│   ├── agent.js               # Agent Loop 核心
+│   ├── planner.js             # Planner 類別（決策邏輯）
+│   ├── tools.js               # Tool 定義與 Registry
+│   ├── orchestrator.js        # Multi-Agent Orchestration
+│   ├── hooks.js               # Lifecycle Hooks 系統
+│   ├── skill-loader.js        # Skill 載入器
+│   ├── skill-evaluator.js     # Skill 評估器
+│   ├── skill-rules.json       # Skill 匹配規則
+│   ├── skills-bundle.js       # 打包的 Skills
+│   ├── skills.js              # Skills 定義（Legacy）
+│   └── legacy.js              # 舊版相容層
 │
 ├── canvas/                    # WYSIWYG 編輯器
 │   ├── index.html
 │   ├── style.css
-│   └── canvas.js              # 編輯器邏輯（841 行）
+│   └── canvas.js
 │
 ├── options/                   # 設定頁
 │   ├── index.html
 │   ├── style.css
-│   └── options.js             # 設定邏輯（442 行）
+│   └── options.js
 │
 ├── content/                   # Content Script
-│   └── content.js             # 頁面內容擷取（202 行）
+│   └── content.js             # 頁面內容擷取
+│
+├── locales/                   # 多語言支援
+│   ├── i18n.js
+│   ├── en-US.js
+│   ├── ja-JP.js
+│   └── zh-TW.js
+│
+├── skills/                    # Skill 定義（SKILL.md 格式）
+│   ├── quick-answer/
+│   ├── researcher/
+│   ├── educator/
+│   ├── fact-checker/
+│   ├── current-events/
+│   ├── creative/
+│   ├── technical/
+│   ├── image-design/
+│   └── vision-analysis/
+│
+├── docs/                      # GitHub Pages 網站
+│   ├── index.html
+│   ├── style.css
+│   └── assets/
 │
 └── icons/                     # 圖示資源
 ```
@@ -233,6 +263,7 @@ GET https://api.search.brave.com/res/v1/web/search
   "braveApiKey": "BSA...",            // Brave Search API Key
   "councilModels": ["openai/gpt-5.1", ...],
   "chairmanModel": "anthropic/claude-sonnet-4.5",
+  "plannerModel": "openai/gpt-4o-mini", // Planner 決策模型
   "enableReview": true,
   "maxSearchIterations": 5,
   "maxCardDepth": 3,
@@ -249,7 +280,9 @@ GET https://api.search.brave.com/res/v1/web/search
   "contextItems": [...],              // Context 項目
   "canvasDocuments": [...],           // Canvas 文件
   "canvasImport": {...},              // 匯入暫存
-  "availableModels": [...]            // 動態模型列表
+  "availableModels": [...],           // 動態模型列表
+  "skillsBundle": {...},              // 自訂 Skills
+  "externalSkillsCache": {...}        // 外部 Skills LRU Cache
 }
 ```
 
@@ -282,12 +315,18 @@ chrome.runtime.onConnect.addListener(port => {
 | 匿名互評 | ✅ | 各模型評估其他回答，輸出 JSON 排名 |
 | 主席綜合 | ✅ | 指定模型產出最終答案 |
 | Web Search | ✅ | Brave Search 整合，AI 延伸搜尋 |
+| Google Search Tab | ✅ | 開啟 Google 搜尋分頁，個人化搜尋 |
+| Price Compare | ✅ | 電商比價（momo, pchome, shopee, yahoo）|
 | Vision Mode | ✅ | 圖片輸入分析（支援拖曳/貼上） |
 | Image Generation | ✅ | Gemini Image 模型生成圖片 |
 | Context System | ✅ | 右鍵加入選取文字/頁面內容 |
 | Canvas | ✅ | WYSIWYG Markdown 編輯器 |
 | 學習者模式 | ✅ | 四種年齡層探索式學習 |
 | 動態模型更新 | ✅ | 從 OpenRouter 自動抓取最新模型 |
+| Agent Planner | ✅ | 智能任務規劃（4 種 Planner） |
+| Skills 系統 | ✅ | 9 種專業技能自動匹配 |
+| Lifecycle Hooks | ✅ | 生命週期事件註冊 |
+| Multi-Agent Orchestration | ✅ | 異質任務分配、動態主席 |
 
 ---
 
@@ -331,14 +370,71 @@ AI Council 採用 **Agent Planner** 框架，實現智能任務規劃與多工�
 
 | 工具 | 說明 | 參數 |
 |------|------|------|
-| `query_council` | 並行查詢多個 LLM 模型 | `query`, `models?`, `includeSearchSuffix?` |
+| `query_council` | 並行查詢多個 LLM 模型 | `query`, `models?`, `includeSearchSuffix?`, `skillId?`, `taskDescription?` |
 | `web_search` | Brave Search API 網路搜尋 | `query`, `count?`, `freshness?` |
+| `google_search_tab` | 開啟 Google 搜尋分頁 | `query`, `count?` |
+| `price_compare` | 電商比價工具 | `query`, `platforms?`, `count?` |
 | `peer_review` | 匿名互評，產出排名 | `responses`, `query`, `modelWeights?`, `evaluationMode?` |
-| `synthesize` | 主席綜合所有資訊 | `query`, `responses`, `reviews?`, `searches?` |
-| `request_user_input` | 暫停並詢問使用者 | `message`, `inputType`, `options?`, `suggestedSearches?` |
+| `synthesize` | 主席綜合所有資訊 | `query`, `responses`, `reviews?`, `searches?`, `useWeightedIntegration?`, `chairmanOverride?` |
+| `request_user_input` | 暫停並詢問使用者 | `message`, `inputType`, `options?`, `suggestedSearches?`, `placeholder?` |
 | `final_answer` | 輸出最終答案 | `content`, `summary?` |
 
-### 4.3 Planner 決策原則
+### 4.3 Tool 定義格式
+
+```javascript
+// sidepanel/tools.js
+const TOOL_DEFINITIONS = {
+  query_council: {
+    name: 'query_council',
+    description: '並行查詢多個 LLM 模型獲取初步回答。適用於需要多元觀點的問題。支援異質任務分配。',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: '要查詢的問題' },
+        models: { type: 'array', items: { type: 'string' }, description: '要查詢的模型列表' },
+        includeSearchSuffix: { type: 'boolean', default: true, description: '是否要求模型提供搜尋建議' },
+        skillId: { type: 'string', description: '套用的 skill ID' },
+        taskDescription: { type: 'string', description: '具體任務描述' }
+      },
+      required: ['query']
+    }
+  },
+
+  request_user_input: {
+    name: 'request_user_input',
+    description: '暫停執行並詢問使用者下一步行動。',
+    parameters: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', description: '顯示給使用者的訊息' },
+        inputType: {
+          type: 'string',
+          enum: ['choice', 'search', 'text', 'confirm'],
+          description: '互動類型'
+        },
+        options: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              label: { type: 'string' },
+              action: { type: 'string', enum: ['search', 'proceed', 'deepen', 'rephrase', 'switch_focus', 'clarify'] },
+              value: { type: 'string' },
+              icon: { type: 'string' }
+            }
+          }
+        },
+        suggestedSearches: { type: 'array', items: { type: 'string' } },
+        placeholder: { type: 'string' }
+      },
+      required: ['message']
+    }
+  }
+  // ... 其他工具定義
+};
+```
+
+### 4.4 Planner 決策原則
 
 ```javascript
 // 決策流程示意
@@ -353,41 +449,90 @@ AI Council 採用 **Agent Planner** 框架，實現智能任務規劃與多工�
 
 4. 事實查核問題：
    web_search → query_council → peer_review → synthesize
+
+5. 圖像設計問題：
+   query_council → synthesize → final_answer
 ```
 
-### 4.4 Planner 類型
+### 4.5 Planner 類型
 
-| 類型 | 說明 | 適用場景 |
-|------|------|---------|
-| `RuleBasedPlanner` | 規則導向，無需 LLM | 簡單問題、節省 token |
-| `Planner` | LLM 決策 | 複雜多變的問題 |
-| `HybridPlanner` | 自動切換 | 根據問題複雜度選擇 |
-| `OrchestratedPlanner` | 支援動態主席 | 多輪互評時輪換 Chairman |
+| 類型 | 說明 | 適用場景 | 檔案位置 |
+|------|------|---------|----------|
+| `Planner` | LLM 決策 | 複雜多變的問題 | `planner.js` |
+| `RuleBasedPlanner` | 規則導向，無需 LLM | 簡單問題、節省 token | `planner.js` |
+| `HybridPlanner` | 自動切換 | 根據問題複雜度選擇 | `planner.js` |
+| `OrchestratedPlanner` | 支援動態主席 | 多輪互評時輪換 Chairman | `planner.js` |
 
-### 4.5 狀態評估
+### 4.6 狀態評估
 
 Planner 在每次迭代時評估以下狀態：
 
 ```javascript
+// AgentContext.getSummary()
 {
-  has_responses: boolean,    // 是否已有模型回答
-  has_reviews: boolean,      // 是否已完成互評
-  has_searches: boolean,     // 是否已執行搜尋
-  iteration: number,         // 目前迭代次數
-  max_iterations: number,    // 最大迭代次數
-  response_count: number,    // 已收到幾個模型的回答
-  last_actions: string[]     // 最近執行的動作
+  query: string,              // 用戶問題
+  iteration: number,          // 目前迭代次數
+  maxIterations: number,      // 最大迭代次數
+  hasResponses: boolean,      // 是否已有模型回答
+  responseCount: number,      // 已收到幾個模型的回答
+  hasReviews: boolean,        // 是否已完成互評
+  hasSearches: boolean,       // 是否已執行搜尋
+  searchCount: number,        // 搜尋次數
+  lastActions: string[],      // 最近執行的動作
+  elapsedTime: number,        // 已用時間（ms）
+  skill: string,              // 當前 Skill ID
+  // Multi-Agent Orchestration
+  hasAssignmentPlan: boolean, // 是否有任務分配計畫
+  assignmentStrategy: string, // 分配策略
+  currentChairman: string,    // 當前主席
+  roundWinner: string,        // 本輪互評勝者
+  taskCount: number           // 任務組數
 }
 ```
 
-### 4.6 相關檔案
+### 4.7 Agent Loop 執行流程
+
+```javascript
+// sidepanel/agent.js - AgentLoop.run()
+async run(query, options) {
+  const context = new AgentContext(query, options);
+
+  while (context.iteration < context.maxIterations && !context.completed) {
+    context.iteration++;
+
+    // 1. Planner 決策下一步
+    const action = await this.planner.plan(context);
+
+    // 2. 執行工具
+    const result = await this.toolRegistry.execute(action.tool, action.parameters, context);
+
+    // 3. 更新上下文
+    context.updateFromResult(action.tool, result);
+    context.addHistory(action, result);
+
+    // 4. 檢查終止條件
+    if (action.tool === 'final_answer') {
+      context.completed = true;
+    }
+
+    // 5. request_user_input 處理（暫停等待用戶）
+    if (action.tool === 'request_user_input') {
+      // 根據用戶選擇決定繼續或結束
+    }
+  }
+
+  return { success: true, content: context.lastSynthesis };
+}
+```
+
+### 4.8 相關檔案
 
 | 檔案 | 功能 |
 |------|------|
-| `sidepanel/planner.js` | Planner 類別定義 |
-| `sidepanel/tools.js` | Tool 定義與執行器 |
-| `sidepanel/agent.js` | Agent Context 管理 |
-| `sidepanel/orchestrator.js` | 多 Agent 協作支援 |
+| `sidepanel/planner.js` | Planner 類別定義（4 種） |
+| `sidepanel/tools.js` | Tool 定義與 ToolRegistry |
+| `sidepanel/agent.js` | AgentContext, AgentLoop |
+| `sidepanel/orchestrator.js` | Multi-Agent 協作支援 |
 
 ---
 
@@ -469,6 +614,17 @@ metadata:
 2. 使用 query_council 讓多個模型分析
 3. 使用 peer_review 交叉驗證
 4. synthesize 產出結構化報告
+
+## Response Guidelines
+
+- 使用結構化格式
+- 標註所有引用來源
+- 提供多元觀點的比較分析
+
+## Example Queries
+
+- 「深入分析 2024 年 AI 產業的發展趨勢」
+- 「比較 React 和 Vue 框架的優缺點」
 ```
 
 ### 5.4 Skill 設定選項
@@ -484,7 +640,31 @@ metadata:
 | `mav-ui` | UI 特殊功能 | - |
 | `require-vision` | 需要 Vision 模型 | `false` |
 
-### 5.5 外部 Skill 支援
+### 5.5 Skill Loader 架構
+
+```javascript
+// sidepanel/skill-loader.js
+class SkillLoader {
+  // 三層載入架構
+  // Layer 1: Metadata（啟動時載入所有 skill 的 name + description）
+  // Layer 2: Instructions（選中 skill 時載入完整內容）
+  // Layer 3: References（按需載入參考文件）
+
+  async initialize() {
+    // 載入 bundled skills + 外部 skills cache
+  }
+
+  async loadInstructions(skillId) {
+    // 解析 SKILL.md，建構 skill 物件
+  }
+
+  async selectSkill(query, settings) {
+    // 根據 query 和 settings 選擇最適合的 skill
+  }
+}
+```
+
+### 5.6 外部 Skill 支援
 
 AI Council 支援從外部來源匯入 Skills：
 
@@ -503,11 +683,229 @@ await skillLoader.importFromContent(skillMdContent, { skillId: 'custom-skill' })
 
 ---
 
-## 6. 多語言支援
+## 6. Lifecycle Hooks 系統
+
+Lifecycle Hooks 系統允許在執行流程的關鍵點註冊自訂處理邏輯。
+
+### 6.1 Hook 事件
+
+| 事件 | 觸發時機 | 用途 |
+|------|---------|------|
+| `skill:evaluate` | 評估 skill 時 | 自訂 skill 匹配邏輯 |
+| `skill:activate` | skill 被選中 | 記錄、初始化 |
+| `tool:before` | 工具執行前 | 參數修改、阻止執行 |
+| `tool:after` | 工具執行後 | 結果處理、記錄 |
+| `query:submit` | 用戶送出問題 | 預處理、驗證 |
+| `synthesize:before` | 綜合前 | 參數調整 |
+| `synthesize:after` | 綜合後 | 結果後處理 |
+| `complete` | 流程結束 | 統計、清理 |
+
+### 6.2 HookManager API
+
+```javascript
+// sidepanel/hooks.js
+const hookManager = new HookManager();
+
+// 註冊 hook
+const handlerId = hookManager.register('tool:before', async (payload) => {
+  const { toolName, params, context } = payload;
+
+  // 修改參數
+  if (toolName === 'web_search' && params.query.length > 50) {
+    return { params: { ...params, query: params.query.slice(0, 50) } };
+  }
+
+  // 阻止執行
+  if (shouldBlock) {
+    return { block: true, message: '操作被阻止' };
+  }
+}, { priority: 10 });
+
+// 移除 hook
+hookManager.unregister('tool:before', handlerId);
+
+// 觸發事件
+const result = await hookManager.trigger('tool:before', { toolName, params, context });
+```
+
+### 6.3 Hook Result 格式
+
+```typescript
+interface HookResult {
+  block?: boolean;        // 是否阻止後續動作
+  message?: string;       // 阻止原因
+  params?: object;        // 修改後的參數
+  suppressOutput?: boolean; // 是否隱藏輸出
+  data?: any;             // 任意附加資料
+}
+```
+
+### 6.4 預設 Hooks
+
+```javascript
+// sidepanel/hooks.js - DefaultHooks
+const DefaultHooks = {
+  // peer_review 後自動 promote winner 為 Chairman
+  autoPromoteChairman(orchestrator) { ... },
+
+  // web_search 前優化搜尋關鍵字
+  optimizeSearchQuery() { ... },
+
+  // 流程結束後記錄統計
+  logCompletionStats() { ... },
+
+  // Skill 啟用時記錄
+  logSkillActivation() { ... }
+};
+```
+
+### 6.5 Planner 與 Hooks 整合
+
+Planner 類別內建 Hook 整合：
+
+```javascript
+// planner.js
+class Planner {
+  async plan(context) {
+    const action = await this._queryPlanner(systemPrompt, userPrompt);
+
+    // 觸發 tool:before hook，可能修改或阻止 action
+    return this._applyHooksAndReturn(action, context);
+  }
+
+  async _applyHooksAndReturn(action, context) {
+    const hookResult = await hookManager.trigger('tool:before', {
+      toolName: action.tool,
+      params: action.parameters,
+      context
+    });
+
+    if (hookResult?.block) {
+      return hookResult.alternative || { tool: 'final_answer', ... };
+    }
+
+    if (hookResult?.params) {
+      action.parameters = { ...action.parameters, ...hookResult.params };
+    }
+
+    return action;
+  }
+}
+```
+
+---
+
+## 7. Multi-Agent Orchestration
+
+Multi-Agent Orchestration 支援異質任務分配和動態主席輪換。
+
+### 7.1 分配策略
+
+| 策略 | 說明 | 適用場景 |
+|------|------|---------|
+| `homogeneous` | 所有模型相同任務 | 需要多角度驗證的問題 |
+| `heterogeneous` | 不同模型不同任務 | 複雜多面向問題 |
+| `mixed` | 部分相同、部分不同 | 需要深度驗證+補充觀點 |
+
+### 7.2 Orchestrator 類別
+
+```javascript
+// sidepanel/orchestrator.js
+class Orchestrator {
+  // 分析任務複雜度和需求
+  async analyzeTask(query, context) {
+    return new TaskAnalysis({
+      complexity: 'medium',
+      requiresFactCheck: true,
+      suggestedStrategy: 'mixed',
+      suggestedSkills: ['researcher', 'fact-checker'],
+      subtasks: [
+        { description: '收集資料', skill: 'researcher', weight: 0.6 },
+        { description: '驗證事實', skill: 'fact-checker', weight: 0.4 }
+      ]
+    });
+  }
+
+  // 建立任務分配計畫
+  async createAssignmentPlan(analysis, models) {
+    return new AssignmentPlan({
+      strategy: analysis.suggestedStrategy,
+      assignments: [
+        { model: 'openai/gpt-5.1', skill: 'researcher', task: '收集資料', weight: 0.3 },
+        { model: 'anthropic/claude-sonnet-4.5', skill: 'researcher', task: '收集資料', weight: 0.3 },
+        { model: 'google/gemini-3-pro', skill: 'fact-checker', task: '驗證事實', weight: 0.4 }
+      ]
+    });
+  }
+
+  // 將互評勝者提升為主席
+  promoteToChairman(winnerModel) {
+    // 檢查連任限制（最多 3 任）
+    // 更新主席歷史
+    this.chairmanModel = winnerModel;
+  }
+}
+```
+
+### 7.3 加權評估模式
+
+| 模式 | 說明 |
+|------|------|
+| `standard` | 傳統互評，所有回答同等權重 |
+| `weighted` | 根據任務權重調整評分 |
+| `contribution` | 計算各模型對最終答案的貢獻度 |
+
+```javascript
+// peer_review 加權計算
+// finalScore = taskWeight × modelStrength × peerRank
+
+// 貢獻度計算
+function calculateContributionScores(taskGroups, responses, reviews) {
+  // 每個任務組評估貢獻
+  // 組內排名 + 任務權重 = 總貢獻度
+}
+```
+
+### 7.4 AssignmentPlan 驗證規則
+
+```javascript
+class AssignmentPlan {
+  validate() {
+    const errors = [];
+
+    // Rule 1: 至少 2 個模型執行相同任務（確保互相驗證）
+    // Rule 2: 最多 3 種不同 skills（避免過度分散）
+    // Rule 3: 任務權重總和應為 1.0
+
+    return { valid: errors.length === 0, errors };
+  }
+}
+```
+
+### 7.5 動態主席輪換
+
+```
+Round 1:
+  Models: [GPT-5.1, Claude, Gemini, Grok]
+  Chairman: Claude (初始設定)
+  Winner: GPT-5.1 (互評最高分)
+
+Round 2:
+  Chairman: GPT-5.1 (上輪勝者)
+  Winner: Gemini
+
+Round 3:
+  Chairman: Gemini
+  ...
+```
+
+---
+
+## 8. 多語言支援
 
 AI Council 支援多語言介面，透過 i18n 模組實現。
 
-### 6.1 支援語言
+### 8.1 支援語言
 
 | 語言 | 代碼 | 檔案 |
 |------|------|------|
@@ -515,100 +913,66 @@ AI Council 支援多語言介面，透過 i18n 模組實現。
 | English | `en-US` | `locales/en-US.js` |
 | 日本語 | `ja-JP` | `locales/ja-JP.js` |
 
-### 6.2 i18n 架構
+### 8.2 i18n 架構
 
 ```javascript
 // locales/i18n.js
 const i18n = {
   currentLocale: 'zh-TW',
   translations: {},
-  
-  // 初始化
+
   async init() {
     const result = await chrome.storage.sync.get({ language: 'zh-TW' });
     this.currentLocale = result.language;
     await this.loadTranslations(this.currentLocale);
     this.applyToPage();
   },
-  
-  // 取得翻譯
+
   t(key, params = {}) {
     let text = this.getNestedValue(this.translations, key);
-    // 支援 {name} 參數替換
     Object.keys(params).forEach(k => {
       text = text.replace(new RegExp(`\\{${k}\\}`, 'g'), params[k]);
     });
     return text;
   },
-  
-  // 套用到頁面
+
   applyToPage() {
     document.querySelectorAll('[data-i18n]').forEach(el => {
       el.textContent = this.t(el.getAttribute('data-i18n'));
     });
+  },
+
+  getAILanguageInstruction() {
+    return this.translations?.ai?.languageInstruction || '';
   }
 };
 ```
 
-### 6.3 使用方式
+### 8.3 使用方式
 
 **HTML 標記：**
 
 ```html
-<!-- 文字內容 -->
 <span data-i18n="sidebar.title">側邊欄標題</span>
-
-<!-- placeholder -->
 <input data-i18n-placeholder="input.searchHint">
-
-<!-- title (tooltip) -->
 <button data-i18n-title="button.submit">送出</button>
 ```
 
 **JavaScript 呼叫：**
 
 ```javascript
-// 簡單取值
 const text = i18n.t('messages.welcome');
-
-// 帶參數
 const greeting = i18n.t('messages.greeting', { name: 'User' });
-
-// 取得 AI 回應語言指示
 const instruction = i18n.getAILanguageInstruction();
-```
-
-### 6.4 翻譯檔結構
-
-```javascript
-// locales/zh-TW.js
-window.LOCALE_ZH_TW = {
-  sidebar: {
-    title: 'AI Council',
-    send: '送出',
-    clear: '清除'
-  },
-  messages: {
-    welcome: '歡迎使用 AI Council',
-    greeting: '你好，{name}！'
-  },
-  ai: {
-    languageInstruction: '請用繁體中文回答。',
-    languageName: '繁體中文'
-  },
-  css: {
-    contextEmpty: '尚無 Context'
-  }
-};
 ```
 
 ---
 
-## 7. 圖片生成系統規格
+## 9. 圖片生成系統規格
 
 圖片生成系統採用**符號學兩軸論**（索緒爾理論）設計，透過五階段流程實現高品質、可控的多圖片生成。
 
-### 7.1 系統流程總覽
+### 9.1 系統流程總覽
 
 ```
 Council 討論完成
@@ -658,9 +1022,9 @@ Council 討論完成
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 7.2 符號學兩軸論架構
+### 9.2 符號學兩軸論架構
 
-#### 7.2.1 核心概念
+#### 9.2.1 核心概念
 
 | 軸向 | 名稱 | 說明 |
 |------|------|------|
@@ -673,7 +1037,7 @@ Council 討論完成
             = [角色一致性] + [畫風一致性] + [場景一致性] + [該圖特定描述]
 ```
 
-#### 7.2.2 系譜軸層級結構
+#### 9.2.2 系譜軸層級結構
 
 ```
 系譜軸（Paradigmatic Axis）
@@ -695,418 +1059,35 @@ Council 討論完成
 │
 └── 單圖系譜軸（Image Paradigms）─ 每張圖獨立
     ├── scene（場景系譜軸）
-    │   └── {場景元素}
-    │       └── {屬性}: [選項1, 選項2, ...]
-    │
     ├── object（物件系譜軸）
-    │   └── {物件名}
-    │       └── {屬性}: [選項1, 選項2, ...]
-    │
     └── composition（構圖系譜軸）
         ├── 視角: [平視, 俯視, 仰視]
         ├── 景深: [遠景全身, 中景半身, 近景特寫]
         └── 位置: [主體置中, 三分法左, 三分法右]
 ```
 
-### 7.3 Prompt 選擇器分層邏輯
+### 9.3 Placeholder 置換規則
 
-#### 7.3.1 全局系譜軸選擇器（Phase 2）
+| 類型 | 格式 | 範例 |
+|------|------|------|
+| 角色屬性 | `{角色名.屬性}` | `{爸爸.面貌}`, `{媽媽.表情}` |
+| 風格屬性 | `{style.屬性}` | `{style.線條}`, `{style.質感}` |
+| 色彩屬性 | `{color.屬性}` | `{color.色溫}`, `{color.光線}` |
+| 場景屬性 | `{scene.元素.屬性}` | `{scene.庭園.狀態}` |
+| 構圖屬性 | `{comp.屬性}` | `{comp.視角}`, `{comp.景深}` |
 
-**觸發時機**：風格選擇 UI 顯示時
-
-**實作位置**：`showStyleSelectionUI()` → `buildParadigmAxisHtml()`
-
-**UI 結構**：
-```html
-<div class="global-paradigms-container">
-  <div class="paradigm-axis-section" data-axis="characters">
-    <div class="paradigm-subject" data-subject="爸爸">
-      <div class="paradigm-attribute-row">
-        <span class="paradigm-attr-label">面貌</span>
-        <div class="paradigm-chips-row">
-          <button class="paradigm-chip" data-axis="characters" 
-                  data-subject="爸爸" data-attr="面貌" data-value="方臉">方臉</button>
-          <button class="paradigm-chip" ...>圓臉</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-```
-
-**選擇邏輯**：
-```javascript
-// 點擊 chip 時的處理
-const paradigmSelections = {
-  characters: {},      // 角色選擇
-  style: {},           // 風格選擇
-  colorAtmosphere: {}  // 色彩選擇
-};
-
-// 同一屬性列只能選一個（radio 行為）
-chip.closest('.paradigm-chips-row').querySelectorAll('.paradigm-chip')
-    .forEach(c => c.classList.remove('selected'));
-
-// 儲存選擇
-paradigmSelections[axis][subject][attr] = value;
-// 例：paradigmSelections.characters.爸爸.面貌 = "方臉"
-```
-
-#### 7.3.2 單圖系譜軸選擇器（Phase 5）
-
-**觸發時機**：多圖編輯器中每張圖卡
-
-**實作位置**：`showMultiImageEditor()` → `buildImageParadigmAxisHtml()`
-
-**資料結構**：
-```javascript
-multiImageState.images[idx].imageParadigmSelections = {
-  scene: {},       // {元素: {屬性: 值}}
-  object: {},      // {物件: {屬性: 值}}
-  composition: {}  // {屬性: 值}
-};
-```
-
-**UI 結構**：
-```html
-<div class="image-paradigm-row">
-  <span class="image-paradigm-label">神社階梯</span>
-  <div class="image-paradigm-chips">
-    <button class="image-paradigm-chip" data-image-idx="0" 
-            data-axis="scene" data-subject="神社階梯" 
-            data-attr="狀態" data-value="積雪覆蓋">積雪覆蓋</button>
-  </div>
-</div>
-```
-
-### 7.4 一致性設定（Consistency Block）
-
-#### 7.4.1 結構定義
-
-```javascript
-const consistencyBlock = {
-  characters: "所有角色的精確外觀描述，使用 {角色名.屬性} placeholder",
-  style: "畫風描述，使用 {style.屬性} placeholder",
-  scene_coherence: "場景連貫性要求"
-};
-```
-
-#### 7.4.2 一致性確保機制
-
-**1. AI 生成階段**：`IMAGE_PROMPT_SYSTEM` 指導 AI 產出統一的 consistency_block
-
-**2. 風格整合階段**：`integrateStyleIntoPrompts()` 將選定風格融入
-```javascript
-const styleIntegrationPrompt = `
-將選定的風格融入一致性區塊描述中...
-名稱：${selectedStyle.name}
-描述：${selectedStyle.description}
-原始一致性區塊：${consistencyText}
-`;
-```
-
-**3. 最終組合**：每張圖生成時自動 prepend consistency_block
-```javascript
-// Phase 5 生成按鈕邏輯
-const consistencyBlock = multiImageState.consistencyBlock?.trim();
-if (consistencyBlock) {
-  prompt = consistencyBlock + '\n\n' + prompt;
-}
-```
-
-#### 7.4.3 一致性描述格式
-
-```
-【角色】爸爸（面貌:方臉，表情:微笑）；媽媽（面貌:鵝蛋臉，表情:溫柔微笑）
-【畫風】細膩手繪，紙本紋理
-【色彩】暖色調，低飽和日系，柔和自然光
-【場景】京都冬日，積雪場景，和風建築
-```
-
-### 7.5 變項置換（Placeholder Substitution）
-
-#### 7.5.1 Placeholder 命名規則
-
-| 類型 | 格式 | 範例 | 用途位置 |
-|------|------|------|----------|
-| 角色屬性 | `{角色名.屬性}` | `{爸爸.面貌}`, `{媽媽.表情}` | consistency_block |
-| 風格屬性 | `{style.屬性}` | `{style.線條}`, `{style.質感}` | consistency_block |
-| 色彩屬性 | `{color.屬性}` | `{color.色溫}`, `{color.光線}` | consistency_block |
-| 場景屬性 | `{scene.元素.屬性}` | `{scene.庭園.狀態}` | base_prompt |
-| 物件屬性 | `{object.物件.屬性}` | `{object.燈籠.數量}` | base_prompt |
-| 構圖屬性 | `{comp.屬性}` | `{comp.視角}`, `{comp.景深}` | base_prompt |
-
-#### 7.5.2 置換函數：`composePromptFromParadigms()`
-
-**函數簽名**：
-```javascript
-function composePromptFromParadigms(basePrompt, globalSelections, imageSelections)
-```
-
-**置換流程**：
-```javascript
-// 1. 全局 placeholder 置換
-if (globalSelections) {
-  // 角色: {角色名.屬性} → 選定值
-  patterns = [`{${charName}.${attrName}}`, `{characters.${charName}.${attrName}}`];
-  
-  // 風格: {style.屬性} → 選定值
-  patterns = [`{style.${attrName}}`, `{${styleName}.${attrName}}`];
-  
-  // 色彩: {color.屬性} → 選定值
-  patterns = [`{color.${attrName}}`, `{${colorName}.${attrName}}`];
-}
-
-// 2. 單圖 placeholder 置換（僅當 imageSelections 非 null）
-if (imageSelections) {
-  // 場景: {scene.元素.屬性} → 選定值
-  // 物件: {object.物件.屬性} → 選定值
-  // 構圖: {comp.屬性} → 選定值
-}
-
-// 3. 清理未選擇的 placeholder
-prompt = prompt
-  .replace(/[，、；：]?\s*\{[^{}]+\}\s*[，、；：]?/g, ...)  // 移除並清理標點
-  .replace(/\{[^{}]+\}/g, '')                               // 移除殘留
-  .replace(/\s{2,}/g, ' ')                                   // 清理多餘空白
-  .trim();
-```
-
-#### 7.5.3 置換時機
-
-| 階段 | 函數 | 置換範圍 |
-|------|------|----------|
-| Phase 3 | `integrateStyleIntoPrompts()` | 全局 placeholder（consistency_block + global_context） |
-| Phase 5 | 生成按鈕 click handler | 單圖 placeholder（base_prompt） |
-
-### 7.6 潤飾邏輯（Prompt Refinement）
-
-#### 7.6.1 系統 Prompt：`REFINE_PROMPT_SYSTEM`
-
-```javascript
-const REFINE_PROMPT_SYSTEM = `你是圖像 Prompt 精煉專家。將用戶編輯後的 prompt 進行潤色，確保品質。
-
-## 精煉原則
-1. **去除重複**：刪除重複的描述（如角色描述出現兩次）
-2. **融合一致性區塊**：確保一致性描述自然融入 prompt，不是生硬的前置
-3. **語句流暢**：調整語序使描述更自然
-4. **保持完整**：不要刪除重要細節
-5. **填補 placeholder**：如果還有未置換的 {placeholder}，用合理的預設值填入
-
-## 輸出要求
-只輸出精煉後的 prompt，不要加任何說明或 markdown 格式。
-字數控制在 150-250 字。`;
-```
-
-#### 7.6.2 潤飾函數：`refinePromptWithAI()`
-
-**觸發時機**：Phase 5 多圖編輯器中點擊「潤色」按鈕
-
-**輸入**：
-- `prompt`: 當前 textarea 內容（base_prompt）
-- `consistencyBlock`: 一致性區塊文字
-
-**處理流程**：
-```javascript
-async function refinePromptWithAI(prompt, consistencyBlock) {
-  const refineRequest = `
-## 一致性描述
-${consistencyBlock || '（無）'}
-
-## 原始 Prompt
-${prompt}
-
-請精煉上述 prompt，確保一致性描述自然融入，移除重複內容，使語句流暢。`;
-
-  const result = await queryModelNonStreaming(
-    getAvailableHelperModel(), 
-    REFINE_PROMPT_SYSTEM + '\n\n' + refineRequest
-  );
-  
-  return result.trim();
-}
-```
-
-**輸出**：精煉後的 prompt（150-250 字），已去除重複、自然融合
-
-#### 7.6.3 潤飾處理項目
-
-| 項目 | 說明 |
-|------|------|
-| 去除重複 | 同一角色描述出現多次 → 保留一次 |
-| 融合一致性 | 「【角色】爸爸（方臉）\n\n方臉的爸爸站在...」→「方臉的爸爸站在...」 |
-| 語句流暢 | 關鍵字堆疊 → 完整句子 |
-| 填補 placeholder | `{comp.視角}` → 「平視」（合理預設值） |
-
-### 7.7 風格整合流程
-
-#### 7.7.1 系統 Prompt：`STYLE_INTEGRATION_PROMPT`
-
-```javascript
-const STYLE_INTEGRATION_PROMPT = `你是圖像 Prompt 整合專家。將指定的視覺風格融入每張圖的 prompt 中，保持內容描述不變但加入風格元素。
-
-## 融入原則
-1. **風格融合**：將風格元素（筆觸、質感、色調）融入場景描述中
-2. **保持一致**：所有圖片必須使用相同的風格語言
-3. **全局上下文**：將 global_context（人物一致性等）融入每張 prompt 開頭
-4. **自然語句**：用完整句子，不要只是堆疊關鍵字
-5. **保留 Placeholder**：如果 prompt 中有 {placeholder}，必須原封不動保留，不要替換
-
-## 範例
-原始 prompt: "一隻狐狸以{angle}站在樹下，{background_detail}，看著遠方"
-風格: "水彩童話風格，柔和筆觸，暈染邊緣"
-全局上下文: "保持狐狸的外觀一致：棕色毛皮，圓眼睛，短尾巴"
-
-融入後:
-"水彩童話風格的插畫，柔和筆觸與暈染邊緣。一隻棕色毛皮、圓眼睛、短尾巴的小狐狸以{angle}站在大樹下，{background_detail}，目光望向遠方。畫面色調溫暖，光線柔和，帶有手繪繪本的質感。"
-`;
-```
-
-#### 7.7.2 整合函數流程
-
-```javascript
-async function integrateStyleIntoPrompts(aiResult, selectedStyle, editedGlobalContext) {
-  // 1. 先用全局 paradigm 選擇置換 consistency_block 中的 placeholder
-  const processedConsistencyBlock = {
-    characters: composePromptFromParadigms(consistencyBlock.characters, paradigmSelections, null),
-    style: composePromptFromParadigms(consistencyBlock.style, paradigmSelections, null),
-    sceneCoherence: composePromptFromParadigms(consistencyBlock.sceneCoherence, paradigmSelections, null)
-  };
-  
-  // 2. AI 將風格融入 consistency_block（不動 base_prompt）
-  const styleIntegrationPrompt = `
-將選定的風格融入一致性區塊描述中...
-名稱：${selectedStyle.name}
-描述：${selectedStyle.description}
-`;
-  
-  const integratedConsistencyText = await queryModelNonStreaming(...);
-  
-  // 3. base_prompt 只處理全局 placeholder，保留單圖 placeholder
-  const processedImages = images.map(img => ({
-    ...img,
-    basePromptProcessed: composePromptFromParadigms(img.basePrompt, paradigmSelections, null)
-  }));
-  
-  return { integratedConsistencyText, images: processedImages };
-}
-```
-
-### 7.8 AI Prompt 生成系統：`IMAGE_PROMPT_SYSTEM`
-
-#### 7.8.1 核心指令
-
-```javascript
-const IMAGE_PROMPT_SYSTEM = `你是視覺設計專家和圖像生成 Prompt 工程師。根據提供的內容，運用符號學兩軸論（索緒爾理論）分析主題並生成結構化的圖像描述。
-
-## 動態分析原則（極重要）
-你必須根據使用者 prompt 內容**動態識別**敘事主體，而非使用固定模板：
-- 京都旅遊 → 識別：家庭成員、神社、庭園、和服
-- 科幻故事 → 識別：太空人、機器人、星艦、星球
-- 美食文章 → 識別：料理、食材、餐具、擺盤
-- 企業簡報 → 識別：圖表、數據標籤、版面區塊
-
-## 風格推薦規則
-根據內容主題推薦 3-5 個適合的視覺風格，必須：
-1. **貼近主題**：寓言→童話風、科技→賽博龐克、旅遊→插畫風
-2. **具體描述**：「柔和水彩筆觸，色彩暈染邊緣，童話繪本質感」
-3. **多樣選擇**：提供寫實、插畫、抽象等不同取向
-`;
-```
-
-#### 7.8.2 輸出 JSON 結構
-
-```json
-{
-  "image_count": 3,
-  "theme_type": "abstract|concrete|narrative|data",
-  "use_case": "用途說明",
-  
-  "recommended_styles": [
-    {
-      "id": "style_id_snake_case",
-      "name": "風格名稱",
-      "description": "詳細風格描述（30-50字）",
-      "suitable_for": "適合場景"
-    }
-  ],
-  
-  "global_paradigms": {
-    "characters": {
-      "角色名稱": {
-        "屬性類別1": ["選項1", "選項2", "選項3"],
-        "屬性類別2": ["選項1", "選項2"]
-      }
-    },
-    "style": {
-      "線條": ["細膩手繪", "粗獷筆觸", "平滑向量"],
-      "質感": ["紙本紋理", "平滑數位", "水彩暈染"]
-    },
-    "color_atmosphere": {
-      "色溫": ["暖色調", "冷色調", "中性"],
-      "飽和度": ["低飽和日系", "標準", "高飽和鮮明"],
-      "光線": ["柔和自然光", "強烈側光", "逆光剪影"]
-    }
-  },
-  
-  "consistency_block": {
-    "characters": "所有角色的精確外觀描述，使用 {角色名.屬性} placeholder",
-    "style": "畫風描述，使用 {style.屬性} placeholder",
-    "scene_coherence": "場景連貫性要求"
-  },
-  
-  "global_context": "簡短全局說明",
-  
-  "images": [
-    {
-      "title": "圖卡標題",
-      "use_case": "此圖用途",
-      "description": "圖片說明",
-      
-      "image_paradigms": {
-        "scene": {
-          "場景元素名": {
-            "屬性1": ["選項1", "選項2"],
-            "屬性2": ["選項1", "選項2"]
-          }
-        },
-        "object": {
-          "物件名": {
-            "屬性1": ["選項1", "選項2"]
-          }
-        },
-        "composition": {
-          "視角": ["平視", "俯視", "仰視"],
-          "景深": ["遠景全身", "中景半身", "近景特寫"],
-          "位置": ["主體置中", "三分法左", "三分法右"]
-        }
-      },
-      
-      "base_prompt": "包含 {placeholder} 的圖像描述（150-200字）"
-    }
-  ]
-}
-```
-
-### 7.9 圖片生成 API
-
-#### 7.9.1 生成函數：`runImageGeneration()`
+### 9.4 圖片生成 API
 
 ```javascript
 async function runImageGeneration(prompt, timeoutMs = 240000) {
   return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new Error('圖片生成逾時（超過 4 分鐘），請稍後再試'));
-    }, timeoutMs);
-    
-    chrome.runtime.sendMessage({ 
-      type: 'QUERY_IMAGE', 
-      payload: { 
-        model: DEFAULT_IMAGE_MODEL,  // google/gemini-2.0-flash-exp:free
-        prompt: prompt 
-      } 
+    chrome.runtime.sendMessage({
+      type: 'QUERY_IMAGE',
+      payload: {
+        model: 'google/gemini-2.0-flash-exp:free',
+        prompt: prompt
+      }
     }, (response) => {
-      clearTimeout(timeoutId);
       if (response?.images?.length) {
         resolve(response.images);
       } else {
@@ -1117,50 +1098,17 @@ async function runImageGeneration(prompt, timeoutMs = 240000) {
 }
 ```
 
-#### 7.9.2 最終 Prompt 組裝
-
-```
-┌────────────────────────────────────────┐
-│  最終送出的 Prompt                       │
-├────────────────────────────────────────┤
-│  【角色】爸爸（方臉，微笑）；媽媽...       │  ← 一致性區塊
-│  【畫風】水彩童話風格，柔和筆觸...         │    (consistency_block)
-│  【場景】京都冬日，積雪覆蓋...             │
-│                                        │
-│  一家四口站在積雪覆蓋的石階前，           │  ← 單圖描述
-│  成排綿延的朱紅燈籠沿階而上。             │    (base_prompt)
-│  仰視構圖下，微笑的爸爸牽著...            │    (已完成 placeholder 置換)
-└────────────────────────────────────────┘
-```
-
-### 7.10 相關函數索引
-
-| 函數名稱 | 檔案位置 | 功能說明 |
-|----------|----------|----------|
-| `generateImagePromptWithAI()` | `sidepanel/app.js` | Phase 1: AI 分析生成 JSON |
-| `showStyleSelectionUI()` | `sidepanel/app.js` | Phase 2: 風格選擇 UI |
-| `buildParadigmAxisHtml()` | `sidepanel/app.js` | 全局系譜軸 HTML 生成 |
-| `integrateStyleIntoPrompts()` | `sidepanel/app.js` | Phase 3: 風格整合 |
-| `composePromptFromParadigms()` | `sidepanel/app.js` | Placeholder 置換核心函數 |
-| `showPromptPreview()` | `sidepanel/app.js` | Phase 4: 預覽編輯 |
-| `buildPreviewContent()` | `sidepanel/app.js` | 建構預覽文字 |
-| `parsePreviewContent()` | `sidepanel/app.js` | 解析編輯後內容 |
-| `showMultiImageEditor()` | `sidepanel/app.js` | Phase 5: 多圖編輯器 |
-| `buildImageParadigmAxisHtml()` | `sidepanel/app.js` | 單圖系譜軸 HTML 生成 |
-| `refinePromptWithAI()` | `sidepanel/app.js` | Prompt 潤飾 |
-| `runImageGeneration()` | `sidepanel/app.js` | 圖片生成 API 呼叫 |
-
 ---
 
-## 8. React Native iOS 移轉技術細節
+## 10. React Native iOS 移轉技術細節
 
-### 8.1 目標平台
+### 10.1 目標平台
 
 - **主要目標**：iOS App（App Store 上架）
 - **次要目標**：Android App（Google Play）
 - **技術選型**：React Native + Expo
 
-### 8.2 架構對照
+### 10.2 架構對照
 
 | 層級 | Chrome Extension | React Native iOS |
 |------|------------------|------------------|
@@ -1173,30 +1121,26 @@ async function runImageGeneration(prompt, timeoutMs = 240000) {
 | **本地儲存** | chrome.storage.local | MMKV / SQLite |
 | **認證** | 無 | Apple Sign-In |
 
-### 8.3 系統架構圖
+### 10.3 系統架構圖
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                   React Native App (iOS)                     │
 ├──────────────────────────────────────────────────────────────┤
-│                                                              │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
 │  │ Expo Router │  │   Zustand   │  │    React Query      │  │
 │  │  (路由導航)  │  │  (狀態管理)  │  │  (API 快取/串流)    │  │
 │  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-│                                                              │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
 │  │ NativeWind  │  │    MMKV     │  │   Expo SecureStore  │  │
 │  │  (樣式系統)  │  │ (本地儲存)   │  │   (安全儲存 Token)  │  │
 │  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-│                                                              │
 └────────────────────────────┬─────────────────────────────────┘
                              │ HTTPS
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                 Serverless Backend (Vercel)                  │
 ├──────────────────────────────────────────────────────────────┤
-│                                                              │
 │  ┌─────────────────┐  ┌───────────────┐  ┌───────────────┐  │
 │  │  Edge Functions │  │   Vercel KV   │  │  Rate Limiter │  │
 │  │  (API 代理)     │  │  (Session)    │  │  (Upstash)    │  │
@@ -1206,7 +1150,6 @@ async function runImageGeneration(prompt, timeoutMs = 240000) {
 │  │  Auth Handler   │  │  Usage Track  │                     │
 │  │ (Apple Sign-In) │  │  (計費統計)    │                     │
 │  └─────────────────┘  └───────────────┘                     │
-│                                                              │
 └────────────────────────────┬─────────────────────────────────┘
                              │
          ┌───────────────────┼───────────────────┐
@@ -1217,7 +1160,7 @@ async function runImageGeneration(prompt, timeoutMs = 240000) {
    └───────────┘      └───────────┘      └───────────┘
 ```
 
-### 8.4 技術選型理由
+### 10.4 技術選型理由
 
 | 技術 | 選擇原因 |
 |------|---------|
@@ -1229,82 +1172,17 @@ async function runImageGeneration(prompt, timeoutMs = 240000) {
 | **MMKV** | 高效能 key-value 儲存，取代 AsyncStorage |
 | **Vercel Edge** | 低延遲、全球部署、Streaming Response |
 
-### 8.5 API 代理設計
-
-Chrome Extension 直接呼叫 OpenRouter，但 iOS App 需要後端代理：
-
-```
-[現況 - Chrome Extension]
-User → Extension → OpenRouter (直接呼叫，API Key 存本地)
-
-[目標 - iOS App]
-User → App → Vercel Edge → OpenRouter (代理呼叫，API Key 存後端)
-```
-
-**Edge Function 範例**：
-
-```typescript
-// /api/chat/stream.ts
-export const config = { runtime: 'edge' };
-
-export default async function handler(req: Request) {
-  const { model, messages } = await req.json();
-  const userId = await verifyAuth(req);
-  
-  // Rate limiting
-  await checkRateLimit(userId);
-  
-  // Proxy to OpenRouter with server-side API key
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ model, messages, stream: true }),
-  });
-  
-  // Track usage for billing
-  trackUsage(userId, model);
-  
-  // Stream response back to client
-  return new Response(response.body, {
-    headers: { 'Content-Type': 'text/event-stream' },
-  });
-}
-```
-
-### 8.6 商業模式選項
-
-| 模式 | 說明 | 適用場景 |
-|------|------|---------|
-| **BYOK** | 用戶自帶 API Key | 進階用戶、開發者 |
-| **訂閱制** | 月費 $X，含 N 次查詢 | 一般用戶 |
-| **Pay-as-you-go** | 按用量計費 | 輕度使用者 |
-| **Freemium** | 免費額度 + 付費升級 | 用戶獲取 |
-
-### 8.7 React Native 元件對應
-
-| Chrome Extension | React Native |
-|------------------|--------------|
-| `sidepanel/index.html` | `app/(tabs)/council.tsx` |
-| `canvas/index.html` | `app/(tabs)/canvas.tsx` |
-| `options/index.html` | `app/settings.tsx` |
-| Context Menu | Share Extension / Deep Link |
-| Badge | App Icon Badge |
-| Side Panel | Tab Navigation |
-
 ---
 
-## 9. 移轉需補足項目
+## 11. 移轉需補足項目
 
-### 9.1 優先級定義
+### 11.1 優先級定義
 
 - **P0**：App Store 上架必要條件
 - **P1**：核心用戶體驗
 - **P2**：進階功能
 
-### 9.2 後端開發
+### 11.2 後端開發
 
 | 項目 | 優先級 | 說明 | 預估工時 |
 |------|--------|------|---------|
@@ -1315,7 +1193,7 @@ export default async function handler(req: Request) {
 | 訂閱系統 | P1 | In-App Purchase 整合 | 5d |
 | API Key 託管 | P1 | 用戶自帶 Key 選項 | 2d |
 
-### 9.3 前端開發
+### 11.3 前端開發
 
 | 項目 | 優先級 | 說明 | 預估工時 |
 |------|--------|------|---------|
@@ -1328,17 +1206,7 @@ export default async function handler(req: Request) {
 | 離線儲存 | P1 | 對話歷史本地快取 | 2d |
 | Deep Link | P2 | 外部分享連結 | 1d |
 
-### 9.4 App Store 合規
-
-| 項目 | 優先級 | 說明 |
-|------|--------|------|
-| 隱私政策 | P0 | 詳述資料收集與使用 |
-| 資料處理說明 | P0 | App Store Connect 填寫 |
-| 年齡分級 | P0 | 17+ (AI 生成內容) |
-| App Review 準備 | P0 | 測試帳號、功能說明 |
-| 內容審核 | P1 | AI 輸出過濾機制 |
-
-### 9.5 移轉優先順序
+### 11.4 移轉優先順序
 
 ```
 Phase 1 (MVP - App Store 上架)
@@ -1365,9 +1233,9 @@ Phase 3 (進階功能)
 
 ---
 
-## 10. 相關文件索引
+## 12. 相關文件索引
 
-### 10.1 文件總覽
+### 12.1 文件總覽
 
 | 文件 | 用途 | 維護時機 |
 |------|------|---------|
@@ -1375,52 +1243,31 @@ Phase 3 (進階功能)
 | [`README.md`](README.md) | 安裝與快速入門 | 安裝流程變更時 |
 | [`CLAUDE.md`](CLAUDE.md) | AI 開發助手指南 | 架構、命名慣例變更時 |
 | [`PROMPTS_REFERENCE.md`](PROMPTS_REFERENCE.md) | Prompt 模板參考 | 新增/修改 Prompt 時 |
-| [`MODEL_UPDATE_GUIDE.md`](MODEL_UPDATE_GUIDE.md) | 模型更新機制 | 篩選邏輯變更時 |
+| [`USER_GUIDE.md`](USER_GUIDE.md) | 使用者功能文件 | 功能變更時 |
+| [`HANDOFF.md`](HANDOFF.md) | 技術棧轉移指南 | 架構變更時 |
+| [`MARKETING.md`](MARKETING.md) | 行銷素材與文案 | 版本發布時 |
 | [`PRIVACY.md`](PRIVACY.md) | 隱私政策 | 資料處理方式變更時 |
 
-### 10.2 PROMPTS_REFERENCE.md 摘要
+### 12.2 核心程式碼檔案
 
-Prompt 類別與位置：
-
-| 類別 | Prompt 名稱 | 檔案位置 |
-|------|------------|---------|
-| 用戶可設定 | `DEFAULT_REVIEW_PROMPT` | `options/options.js` |
-| 用戶可設定 | `DEFAULT_CHAIRMAN_PROMPT` | `options/options.js` |
-| Council 流程 | `COUNCIL_SEARCH_SUFFIX` | `sidepanel/app.js` |
-| Council 流程 | `SEARCH_STRATEGY_SUFFIX` | `sidepanel/app.js` |
-| Council 流程 | `TASK_DECOMPOSITION_SUFFIX` | `sidepanel/app.js` |
-| 學習者模式 | `LEARNER_CHAIRMAN_PROMPTS` | `sidepanel/app.js` |
-| 學習者模式 | `LEARNER_TASK_SUFFIXES` | `sidepanel/app.js` |
-| Vision | `generateVisionReviewPrompt` | `sidepanel/app.js` |
-| 圖片生成 | `IMAGE_PROMPT_SYSTEM` | `sidepanel/app.js` |
-| 圖片生成 | `STYLE_INTEGRATION_PROMPT` | `sidepanel/app.js` |
-| 圖片生成 | `REFINE_PROMPT_SYSTEM` | `sidepanel/app.js` |
-
-### 10.3 MODEL_UPDATE_GUIDE.md 摘要
-
-模型篩選邏輯：
-
-```javascript
-// 供應商限制
-const PROVIDER_LIMITS = {
-  'openai': 4,      // 前 4 個最新模型
-  'anthropic': 4,
-  'google': 4,
-  'meta-llama': 2
-};
-
-// 篩選條件
-const MIN_CONTEXT_LENGTH = 8000;
-const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
-
-// 排序：按 created 時間戳降序（最新優先）
-```
+| 檔案 | 功能 |
+|------|------|
+| `sidepanel/app.js` | 主應用 UI 與 Council 邏輯 |
+| `sidepanel/agent.js` | AgentContext, AgentLoop |
+| `sidepanel/planner.js` | Planner 類別（4 種） |
+| `sidepanel/tools.js` | Tool 定義與 ToolRegistry |
+| `sidepanel/orchestrator.js` | Multi-Agent Orchestration |
+| `sidepanel/hooks.js` | Lifecycle Hooks 系統 |
+| `sidepanel/skill-loader.js` | Skill 載入器 |
+| `background.js` | Service Worker |
+| `options/options.js` | 設定頁邏輯 |
+| `canvas/canvas.js` | Canvas 編輯器 |
 
 ---
 
-## 11. 使用手冊
+## 13. 使用手冊
 
-### 11.1 Chrome Extension 安裝
+### 13.1 Chrome Extension 安裝
 
 1. Clone 或下載此 repo
 2. 開啟 Chrome，前往 `chrome://extensions/`
@@ -1428,7 +1275,7 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
 4. 點擊「載入未封裝項目」
 5. 選擇 repo 資料夾
 
-### 11.2 初始設定
+### 13.2 初始設定
 
 1. 點擊擴充功能圖示 → 右鍵 → **選項**
 2. 輸入 **OpenRouter API Key**（必要）
@@ -1437,9 +1284,10 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
    - 前往 [brave.com/search/api](https://brave.com/search/api/) 取得
 4. 選擇參與 Council 的模型（至少 2 個）
 5. 選擇主席模型
-6. 點擊「儲存設定」
+6. 選擇 Planner 模型（決策用）
+7. 點擊「儲存設定」
 
-### 11.3 基本使用
+### 13.3 基本使用
 
 #### 發起 Council 查詢
 
@@ -1458,7 +1306,7 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
 - **選取文字**：在網頁選取文字 → 右鍵 → 「加入 AI Council Context」
 - **網路搜尋**：點擊「網搜」按鈕，輸入關鍵字
 
-### 11.4 進階功能
+### 13.4 進階功能
 
 #### Vision Mode（圖片分析）
 
@@ -1488,7 +1336,7 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
 3. 系統會自動搜尋並發起新的 Council 查詢
 4. 可設定最大迭代次數（預設 5 次）
 
-### 11.5 學習者模式
+### 13.5 學習者模式
 
 1. 前往選項頁
 2. 在「學習者模式」區塊選擇年齡層
@@ -1496,14 +1344,7 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
 4. 發起查詢後，回答風格會依年齡層調整
 5. 會生成探索任務引導學習
 
-### 11.6 輸出風格設定
-
-| 設定 | 選項 | 說明 |
-|------|------|------|
-| **輸出長度** | 簡潔 / 標準 / 詳盡 | 控制回答字數 |
-| **輸出格式** | 純文字 / 混合 / 結構化 | 控制 Markdown 使用程度 |
-
-### 11.7 常見問題
+### 13.6 常見問題
 
 **Q: 為什麼沒有回應？**
 - 確認 OpenRouter API Key 已正確設定
@@ -1557,22 +1398,22 @@ const EXCLUDED_KEYWORDS = ['free', 'online', 'extended', 'nitro', ':free'];
   enableReview: boolean,      // 是否啟用互評
   contextItems: [...],        // Context 項目
   visionMode: boolean,        // Vision 模式
-  imageData: string           // Base64 圖片（Vision 模式）
+  imageData: string           // Base64 圖片
 }
 
 // 模型回應
 {
   model: string,
   content: string,
-  latency: number,            // ms
-  tokenCount: number          // optional
+  latency: number,
+  tokenCount: number
 }
 
 // 互評結果
 {
-  reviewer: string,           // 評審模型（匿名化）
+  reviewer: string,
   rankings: [{
-    response: string,         // A, B, C...（匿名化）
+    response: string,
     rank: number,
     reason: string
   }]

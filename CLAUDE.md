@@ -176,11 +176,18 @@ Users can customize prompts in Options page:
 ## Chinese Localization
 
 UI is primarily in Traditional Chinese (繁體中文):
-- "開啟 MAV 面板" = "Open MAV Panel"
-- "加入 MAV Context" = "Add to MAV Context"
+- "開啟 AI Council 面板" = "Open AI Council Panel"
+- "加入 AI Council Context" = "Add to AI Council Context"
 - "在畫布中開啟" = "Open in Canvas"
 
 Keep this in mind when adding new UI text.
+
+## Related Documentation
+
+- [`SPEC.md`](SPEC.md) - Technical specification (v2.3)
+- [`USER_GUIDE.md`](USER_GUIDE.md) - User feature documentation with usage scenarios
+- [`PROMPTS_REFERENCE.md`](PROMPTS_REFERENCE.md) - All prompts with line numbers
+- [`HANDOFF.md`](HANDOFF.md) - Technology stack migration guide
 
 ## Common Gotchas
 

@@ -244,8 +244,6 @@ async function loadSettings() {
   
   const result = await chrome.storage.sync.get({
     language: 'zh-TW',
-    apiKey: '',
-    braveApiKey: '',
     councilModels: DEFAULT_MODELS,
     chairmanModel: DEFAULT_CHAIRMAN,
     plannerModel: '',  // Empty string means disabled (rule-based only)
@@ -258,6 +256,18 @@ async function loadSettings() {
     outputFormat: DEFAULT_OUTPUT_FORMAT,
     learnerMode: 'standard'
   });
+  const localKeys = await chrome.storage.local.get({ apiKey: '', braveApiKey: '' });
+  const legacyKeys = await chrome.storage.sync.get(['apiKey', 'braveApiKey']);
+  const migratedKeys = {
+    apiKey: localKeys.apiKey || legacyKeys.apiKey || '',
+    braveApiKey: localKeys.braveApiKey || legacyKeys.braveApiKey || ''
+  };
+  if ((!localKeys.apiKey && legacyKeys.apiKey) || (!localKeys.braveApiKey && legacyKeys.braveApiKey)) {
+    await chrome.storage.local.set(migratedKeys);
+  }
+  if (legacyKeys.apiKey || legacyKeys.braveApiKey) {
+    await chrome.storage.sync.remove(['apiKey', 'braveApiKey']);
+  }
 
   // Set language selector
   languageSelect.value = result.language;
@@ -268,8 +278,8 @@ async function loadSettings() {
     renderChairmanSelect();
   }
 
-  apiKeyInput.value = result.apiKey;
-  braveApiKeyInput.value = result.braveApiKey;
+  apiKeyInput.value = migratedKeys.apiKey;
+  braveApiKeyInput.value = migratedKeys.braveApiKey;
   enableReviewCheckbox.checked = result.enableReview;
   maxSearchIterationsSelect.value = result.maxSearchIterations;
   if (maxCardDepthSelect) maxCardDepthSelect.value = result.maxCardDepth;
@@ -331,10 +341,10 @@ async function saveSettings() {
     return;
   }
 
+  await chrome.storage.local.set({ apiKey, braveApiKey });
+  await chrome.storage.sync.remove(['apiKey', 'braveApiKey']);
   await chrome.storage.sync.set({
     language,
-    apiKey,
-    braveApiKey,
     councilModels,
     chairmanModel,
     plannerModel,

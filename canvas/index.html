@@ -114,6 +114,34 @@
           </svg>
         </button>
       </div>
+      <div class="toolbar-divider"></div>
+      <div class="toolbar-group tts-group">
+        <button id="ttsPlayBtn" class="toolbar-btn tts-btn" data-i18n-title="canvas.ttsPlay" title="朗讀">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+        </button>
+        <button id="ttsPauseBtn" class="toolbar-btn tts-btn hidden" data-i18n-title="canvas.ttsPause" title="暫停">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+        </button>
+        <button id="ttsStopBtn" class="toolbar-btn tts-btn hidden" data-i18n-title="canvas.ttsStop" title="停止">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+          </svg>
+        </button>
+        <button id="ttsVoiceBtn" class="toolbar-btn tts-btn tts-voice-btn" data-i18n-title="canvas.ttsVoice" title="切換語音">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+        </button>
+        <span id="ttsVoiceName" class="tts-voice-name"></span>
+      </div>
     </div>
 
     <!-- Main Content Area -->
@@ -361,6 +389,8 @@
   <script src="../locales/en-US.js"></script>
   <script src="../locales/ja-JP.js"></script>
   <script src="../locales/i18n.js"></script>
+  <script src="../sidepanel/tts.js"></script>
+  <script src="../sidepanel/core-utils.js"></script>
   <script src="canvas.js"></script>
 </body>
 </html>
